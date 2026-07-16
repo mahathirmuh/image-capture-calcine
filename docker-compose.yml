@@ -1,0 +1,26 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: image-capture-calcine:latest
+    container_name: image-capture-calcine
+    restart: unless-stopped
+    ports:
+      # host:container -- browse the app at http://<this-host>:8080
+      - "8080:3000"
+    environment:
+      # The Camera Control edge API running natively on the Mini PC next to the
+      # camera. It is NOT containerised: gphoto2 needs direct USB access to the
+      # Canon, which Docker on Windows cannot reliably pass through.
+      #
+      # This must be an address the CONTAINER can reach. localhost/127.0.0.1
+      # would resolve to the container itself, so a real LAN IP is required.
+      CAMERA_API_URL: ${CAMERA_API_URL:-http://10.60.20.196:3000}
+      # Optional bearer token; leave unset if the edge API needs no auth.
+      CAMERA_API_TOKEN: ${CAMERA_API_TOKEN:-}
+    # Reads CAMERA_API_URL/CAMERA_API_TOKEN from a local .env if present,
+    # otherwise the defaults above apply.
+    env_file:
+      - path: .env
+        required: false

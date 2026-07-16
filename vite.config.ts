@@ -44,7 +44,13 @@ export default defineConfig(async ({ command, mode }) => {
 
   if (command === "build") {
     const { nitro } = await import("nitro/vite");
-    plugins.push(nitro({ defaultPreset: "cloudflare-module" }));
+    // Build a plain Node server (.output/server/index.mjs), which is what the
+    // Docker image runs. Not Cloudflare Workers: this app must reach the
+    // Camera Control edge API on a private LAN address (CAMERA_API_URL), which
+    // a cloud-hosted Worker cannot route to -- it has to be self-hosted on the
+    // plant network. Override with NITRO_PRESET if a deploy ever needs to
+    // target something else.
+    plugins.push(nitro({ defaultPreset: process.env.NITRO_PRESET || "node-server" }));
   }
 
   if (mode === "development") {
