@@ -1,4 +1,4 @@
-import { Camera, Images, Network, Settings } from "lucide-react";
+import { Camera, Images, LayoutDashboard, Network, Settings } from "lucide-react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
@@ -19,6 +19,7 @@ import { loadGallery } from "@/lib/gallery-store";
 import { getDeviceStatus, type DeviceStatus } from "@/lib/camera-api";
 
 const items = [
+  { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
   { title: "Capture", url: "/capture", icon: Camera },
   { title: "Gallery", url: "/gallery", icon: Images },
   { title: "Devices", url: "/devices", icon: Network },
