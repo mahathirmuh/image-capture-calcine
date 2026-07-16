@@ -17,6 +17,16 @@ export default defineConfig(async ({ command, mode }) => {
     envDefine[`import.meta.env.${key}`] = JSON.stringify(value);
   }
 
+  // Separately, hydrate process.env for server-only code (createServerFn
+  // handlers read process.env.CAMERA_API_URL/CAMERA_API_TOKEN directly, as
+  // plain Node code -- loadEnv() above only returns a parsed object, it
+  // never mutates process.env itself, and this intentionally does NOT flow
+  // into envDefine/the client bundle). Same .env file precedence as Vite's
+  // own loading, just without the VITE_ prefix restriction.
+  for (const [key, value] of Object.entries(loadEnv(mode, process.cwd(), ""))) {
+    if (!(key in process.env)) process.env[key] = value;
+  }
+
   const plugins = [
     tailwindcss(),
     tsConfigPaths({ projects: ["./tsconfig.json"] }),
