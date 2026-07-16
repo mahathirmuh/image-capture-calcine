@@ -959,7 +959,11 @@ function CapturePage() {
                 <br />
                 {"{MMMM}"} = full month name (July), {"{LOCATION}"} = plant code (AP / CP)
                 <br />
-                Example: <span className="font-mono">{nextFilename}</span>
+                {/* nextFilename embeds the current clock, so it must not be
+                    rendered until after hydration -- the server's HH.mm and the
+                    browser's would differ by the time hydration runs, and React
+                    would throw a text-mismatch (#418) on this node. */}
+                Example: <span className="font-mono">{hydrated ? nextFilename : "—"}</span>
               </p>
             </div>
 
