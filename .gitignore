@@ -16,6 +16,9 @@ dist-ssr
 .nitro
 *.local
 
+# Lovable platform scaffold metadata (project no longer uses Lovable)
+.lovable/
+
 # Env / secrets
 .env
 .env.*
