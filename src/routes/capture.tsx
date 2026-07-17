@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { MapPin, RotateCcw, Crosshair } from "lucide-react";
 import {
@@ -982,24 +982,6 @@ function CapturePage() {
 
         <div className="mt-4 rounded-md bg-muted px-3 py-2 text-xs font-mono break-all">
           Next file will be saved as: {hydrated ? nextFilename : "—"}
-        </div>
-      </section>
-
-      {/* Gallery link */}
-      <section className="mt-6 rounded-lg border bg-card p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold">Gallery</h2>
-            <p className="text-sm text-muted-foreground">
-              View all saved captures, open, rename, or delete them.
-            </p>
-          </div>
-          <Link
-            to="/gallery"
-            className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-          >
-            Open gallery
-          </Link>
         </div>
       </section>
     </div>
