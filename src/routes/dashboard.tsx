@@ -1,15 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import {
-  Camera,
-  Database,
-  Images,
-  MapPin,
-  Package,
-  RefreshCw,
-  Settings as SettingsIcon,
-  Wifi,
-} from "lucide-react";
+import { Camera, Database, Images, MapPin, Package, RefreshCw, Wifi } from "lucide-react";
 import { type GalleryItem, loadGallery } from "@/lib/gallery-store";
 import { getDeviceStatus, type DeviceStatus } from "@/lib/camera-api";
 import { PLANTS } from "@/lib/locations";
@@ -563,34 +554,6 @@ function DashboardPage() {
           </dl>
         </section>
       </div>
-
-      {/* Quick actions */}
-      <section className="mt-6 flex flex-wrap gap-2">
-        <Link
-          to="/capture"
-          className="inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-        >
-          <Camera className="h-4 w-4" /> Go to Capture
-        </Link>
-        <Link
-          to="/gallery"
-          className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
-        >
-          <Images className="h-4 w-4" /> Open Gallery
-        </Link>
-        <Link
-          to="/devices"
-          className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
-        >
-          <Wifi className="h-4 w-4" /> Devices
-        </Link>
-        <Link
-          to="/settings"
-          className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
-        >
-          <SettingsIcon className="h-4 w-4" /> Settings
-        </Link>
-      </section>
     </div>
   );
 }
