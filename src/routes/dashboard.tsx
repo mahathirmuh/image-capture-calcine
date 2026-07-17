@@ -74,25 +74,42 @@ function NotAvailable() {
   return <span className="text-muted-foreground">Not available</span>;
 }
 
+// Metronic-style KPI tile: a colored icon box, not just an inline icon+label
+// row. Tone is a deliberate signal, not decoration -- "muted" is the honest
+// default for anything that isn't confirmed good, so a card never looks
+// cheerfully colored while reporting bad/unknown status (see the Camera tile,
+// which picks its tone from the real connection state below).
+const STAT_TONES = {
+  primary: "bg-primary/10 text-primary",
+  emerald: "bg-emerald-500/10 text-emerald-600",
+  amber: "bg-amber-500/10 text-amber-600",
+  sky: "bg-sky-500/10 text-sky-600",
+  muted: "bg-muted text-muted-foreground",
+} as const;
+
 function StatCard({
   icon: Icon,
   label,
   value,
   sub,
+  tone = "primary",
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: React.ReactNode;
   sub?: React.ReactNode;
+  tone?: keyof typeof STAT_TONES;
 }) {
   return (
     <div className="rounded-lg border bg-card p-4">
-      <div className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">
-        <Icon className="h-3.5 w-3.5" />
-        {label}
-      </div>
+      <span
+        className={`mb-3 inline-flex h-9 w-9 items-center justify-center rounded-lg ${STAT_TONES[tone]}`}
+      >
+        <Icon className="h-4 w-4" />
+      </span>
       <div className="text-2xl font-bold tracking-tight">{value}</div>
-      {sub && <div className="mt-1 text-xs text-muted-foreground">{sub}</div>}
+      <div className="mt-0.5 text-xs font-medium text-muted-foreground">{label}</div>
+      {sub && <div className="mt-1 text-[11px] text-muted-foreground/70">{sub}</div>}
     </div>
   );
 }
@@ -360,6 +377,7 @@ function DashboardPage() {
           label="Total Captures"
           value={hydrated ? gallery.length : "—"}
           sub="All-time, this device"
+          tone="primary"
         />
         <StatCard
           icon={Camera}
@@ -370,18 +388,21 @@ function DashboardPage() {
             month: "short",
             year: "numeric",
           })}
+          tone="sky"
         />
         <StatCard
           icon={Wifi}
           label="Camera"
           value={status?.online ? (cameraConnected ? "Connected" : "Session up") : "Offline"}
           sub={cameraLabel}
+          tone={cameraConnected ? "emerald" : status?.online ? "amber" : "muted"}
         />
         <StatCard
           icon={Database}
           label="Storage Used"
           value={hydrated ? formatBytes(totalBytes) : "—"}
           sub="Captured images kept in this browser"
+          tone="amber"
         />
       </section>
 

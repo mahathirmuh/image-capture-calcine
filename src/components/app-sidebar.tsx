@@ -1,4 +1,4 @@
-import { Camera, Images, LayoutDashboard, Network, Settings } from "lucide-react";
+import { Camera } from "lucide-react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
@@ -18,14 +18,9 @@ import {
 } from "@/components/ui/sidebar";
 import { loadGallery } from "@/lib/gallery-store";
 import { getDeviceStatus, type DeviceStatus } from "@/lib/camera-api";
+import { NAV_ITEMS } from "@/lib/nav-items";
 
-const items = [
-  { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
-  { title: "Capture", url: "/capture", icon: Camera },
-  { title: "Gallery", url: "/gallery", icon: Images },
-  { title: "Devices", url: "/devices", icon: Network },
-  { title: "Settings", url: "/settings", icon: Settings },
-];
+const items = NAV_ITEMS;
 
 const DEVICE_STATUS_POLL_MS = 30_000;
 

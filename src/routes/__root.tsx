@@ -4,6 +4,7 @@ import {
   Link,
   createRootRouteWithContext,
   useRouter,
+  useRouterState,
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
@@ -14,6 +15,7 @@ import appCss from "../styles.css?url";
 import { Button } from "@/components/ui/button";
 import { SidebarProvider, SidebarTrigger, SidebarInset, useSidebar } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
+import { NAV_ITEMS, SUB_PAGE_TITLES } from "@/lib/nav-items";
 
 function NotFoundComponent() {
   return (
@@ -147,6 +149,40 @@ function SidebarToggle() {
   );
 }
 
+// The sidebar already carries the "Capture App" brand mark, so the topbar's
+// job is to say *where you are*, not repeat the brand name -- a breadcrumb
+// derived from NAV_ITEMS (the same list the sidebar renders from, so they
+// can't disagree) instead of the old static link.
+function Breadcrumb() {
+  const currentPath = useRouterState({ select: (router) => router.location.pathname });
+  const section = NAV_ITEMS.find(
+    (item) => currentPath === item.url || currentPath.startsWith(`${item.url}/`),
+  );
+  const subTitle = SUB_PAGE_TITLES[currentPath];
+
+  if (!section) {
+    return <span className="font-semibold tracking-tight">Capture App</span>;
+  }
+
+  const Icon = section.icon;
+  return (
+    <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5 text-sm">
+      <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+      {subTitle ? (
+        <>
+          <Link to={section.url} className="truncate text-muted-foreground hover:text-foreground">
+            {section.title}
+          </Link>
+          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
+          <span className="truncate font-semibold text-foreground">{subTitle}</span>
+        </>
+      ) : (
+        <span className="truncate font-semibold text-foreground">{section.title}</span>
+      )}
+    </nav>
+  );
+}
+
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 
@@ -158,9 +194,7 @@ function RootComponent() {
           <SidebarInset className="transition-[width,margin] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]">
             <header className="flex h-14 items-center gap-2 border-b px-4">
               <SidebarToggle />
-              <Link to="/capture" className="font-semibold tracking-tight">
-                Capture App
-              </Link>
+              <Breadcrumb />
             </header>
             <div className="flex-1 overflow-auto">
               <Outlet />

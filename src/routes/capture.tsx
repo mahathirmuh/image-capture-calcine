@@ -648,23 +648,268 @@ function CapturePage() {
   const cameraAsleep = sessionActive && deviceStatus !== null && !cameraOnline;
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <div className="mx-auto max-w-6xl px-6 py-10">
-        <header className="mb-8 flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Image Capture System</h1>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Capture from camera, preview, and save to a chosen directory with a custom filename
-              format.
+    <div className="p-6">
+      <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Capture</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Capture from camera, preview, and save to a chosen directory with a custom filename
+            format.
+          </p>
+        </div>
+        <div className="inline-flex items-center gap-1.5 rounded-md border bg-card px-3 py-1.5 text-sm">
+          <MapPin className="h-4 w-4 text-muted-foreground" />
+          <span className="text-muted-foreground">Location:</span>
+          <select
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+            className="bg-transparent font-semibold outline-none"
+          >
+            {PLANTS.map((plant) => (
+              <option key={plant} value={plant}>
+                {plant}
+              </option>
+            ))}
+          </select>
+        </div>
+      </header>
+
+      {error && (
+        <div className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          {error}
+        </div>
+      )}
+      {status && (
+        <div className="mb-4 rounded-md border border-primary/30 bg-primary/5 px-4 py-3 text-sm">
+          {status}
+        </div>
+      )}
+      {hydrated && supportsFS && !dirName && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm">
+          <span>
+            No save folder chosen yet — captures will download to your browser's Downloads folder
+            instead.
+          </span>
+          <button
+            onClick={pickDirectory}
+            className="shrink-0 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            Choose folder
+          </button>
+        </div>
+      )}
+      {cameraAsleep && (
+        <div className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          Camera not responding{" "}
+          {deviceStatus?.connectionState ? `(${deviceStatus.connectionState})` : ""} — the Canon may
+          have gone to sleep. Wake it (half-press the shutter or power-cycle); capture is paused
+          until it reconnects.
+        </div>
+      )}
+
+      <div className="grid gap-6 md:grid-cols-2">
+        {(["BIN 1", "BIN 2"] as Bin[]).map((bin) => {
+          const preview = bin === "BIN 1" ? bin1 : bin2;
+          const isCapturing = capturingBin === bin;
+          const isSaving = savingBin === bin;
+          // Once this bin has a captured still, its panel freezes on that
+          // image instead of the shared live feed -- so BIN 1 and BIN 2 each
+          // hold their own photo and never visually overwrite each other.
+          const showFrozen = !!preview;
+          const tone = showFrozen
+            ? { pill: "bg-amber-500/10 text-amber-600", dot: "bg-amber-500", label: "Captured" }
+            : !sessionId
+              ? {
+                  pill: "bg-muted text-muted-foreground",
+                  dot: "bg-muted-foreground/40",
+                  label: "Camera Off",
+                }
+              : cameraAsleep
+                ? {
+                    pill: "bg-destructive/10 text-destructive",
+                    dot: "bg-destructive",
+                    label: "Sleeping",
+                  }
+                : {
+                    pill: "bg-emerald-500/10 text-emerald-600",
+                    dot: "bg-emerald-500",
+                    label: "Live",
+                  };
+          return (
+            <section key={bin} className="rounded-lg border bg-card p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-lg font-semibold">{bin}</h2>
+                <span
+                  className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium ${tone.pill}`}
+                >
+                  <span className={`h-1.5 w-1.5 rounded-full ${tone.dot}`} />
+                  {tone.label}
+                </span>
+              </div>
+
+              <div className="relative aspect-video overflow-hidden rounded-md bg-muted">
+                {showFrozen ? (
+                  <>
+                    <img
+                      src={preview.url}
+                      alt={`${bin} captured image`}
+                      className="h-full w-full object-cover"
+                    />
+                    <span className="absolute left-2 top-2 rounded bg-black/60 px-2 py-0.5 text-xs font-medium text-white">
+                      Captured still
+                    </span>
+                  </>
+                ) : cameraFrame ? (
+                  <img
+                    src={cameraFrame}
+                    alt={`${bin} live preview`}
+                    className={`h-full w-full object-cover transition-opacity duration-150 ${previewFetching ? "opacity-70" : "opacity-100"}`}
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                    {sessionStarting
+                      ? "Connecting to camera…"
+                      : cameraAsleep
+                        ? "Camera not responding…"
+                        : sessionId
+                          ? "Waiting for preview…"
+                          : "Camera is off"}
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
+                <span className="inline-flex items-center gap-1.5">
+                  <span className={`h-1.5 w-1.5 rounded-full ${tone.dot}`} />
+                  {showFrozen ? "Frozen capture" : cameraAsleep ? "No signal" : "Live preview"}
+                </span>
+                {showFrozen && <span className="text-emerald-600">Ready to save</span>}
+              </div>
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  onClick={() => captureToBin(bin)}
+                  disabled={!cameraUsable || capturingBin !== null || isSaving || autofocusing}
+                  className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                >
+                  {isCapturing ? "Capturing…" : showFrozen ? `Recapture ${bin}` : `Capture ${bin}`}
+                </button>
+                <button
+                  onClick={() => saveBin(bin)}
+                  disabled={!preview || isSaving}
+                  className="rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
+                >
+                  {isSaving ? "Saving…" : "Save image"}
+                </button>
+                {showFrozen && (
+                  <button
+                    onClick={() => clearBin(bin)}
+                    disabled={isSaving}
+                    className="rounded-md px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-accent disabled:opacity-50"
+                  >
+                    Discard
+                  </button>
+                )}
+              </div>
+            </section>
+          );
+        })}
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        {!sessionId ? (
+          waitingForCamera ? (
+            <>
+              <span className="inline-flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm text-amber-700">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
+                Camera in use by another station — waiting to connect…
+              </span>
+              <button
+                onClick={cancelStart}
+                className="rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={startCamera}
+              disabled={sessionStarting}
+              className="rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
+            >
+              {sessionStarting ? "Connecting…" : "Start camera"}
+            </button>
+          )
+        ) : (
+          <button
+            onClick={stopCamera}
+            className="rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
+          >
+            Stop camera
+          </button>
+        )}
+        <button
+          onClick={runAutofocus}
+          disabled={!cameraUsable || capturingBin !== null || autofocusing}
+          title="Tell the camera to autofocus (one physical camera, shared by both bins)"
+          className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
+        >
+          <Crosshair className="h-3.5 w-3.5" />
+          {autofocusing ? "Focusing…" : "Autofocus"}
+        </button>
+      </div>
+
+      {/* Settings */}
+      <section className="mt-6 rounded-lg border bg-card p-4">
+        <h2 className="mb-4 text-lg font-semibold">Save settings</h2>
+
+        <div className="grid gap-4 md:grid-cols-3">
+          <div className="md:col-span-3">
+            <label className="mb-1 block text-sm font-medium">Save directory (Shared Folder)</label>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={pickDirectory}
+                disabled={hydrated && !supportsFS}
+                className="rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
+              >
+                {dirName ? "Change folder" : "Choose folder"}
+              </button>
+              {pendingReconnect && (
+                <button
+                  onClick={reconnectDirectory}
+                  className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                >
+                  Reconnect
+                </button>
+              )}
+              {dirName && (
+                <button
+                  onClick={forgetDirectory}
+                  className="rounded-md border border-input bg-background px-3 py-2 text-sm hover:bg-accent"
+                >
+                  Forget
+                </button>
+              )}
+              <span className="text-sm text-muted-foreground">
+                {dirName
+                  ? `${dirName}${pendingReconnect ? " (permission needed)" : " · remembered"}`
+                  : fsUnsupportedNote
+                    ? "Not supported — will download"
+                    : "No folder selected"}
+              </span>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Images will be saved directly to the selected shared folder. Browsers only expose the
+              folder name, not the full network path.
             </p>
           </div>
-          <div className="inline-flex items-center gap-1.5 rounded-md border bg-card px-3 py-1.5 text-sm">
-            <MapPin className="h-4 w-4 text-muted-foreground" />
-            <span className="text-muted-foreground">Location:</span>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium">Location</label>
             <select
               value={location}
               onChange={(e) => setLocation(e.target.value)}
-              className="bg-transparent font-semibold outline-none"
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
             >
               {PLANTS.map((plant) => (
                 <option key={plant} value={plant}>
@@ -672,346 +917,91 @@ function CapturePage() {
                 </option>
               ))}
             </select>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Which plant this capture belongs to.
+            </p>
           </div>
-        </header>
 
-        {error && (
-          <div className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-            {error}
-          </div>
-        )}
-        {status && (
-          <div className="mb-4 rounded-md border border-primary/30 bg-primary/5 px-4 py-3 text-sm">
-            {status}
-          </div>
-        )}
-        {hydrated && supportsFS && !dirName && (
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm">
-            <span>
-              No save folder chosen yet — captures will download to your browser's Downloads folder
-              instead.
-            </span>
-            <button
-              onClick={pickDirectory}
-              className="shrink-0 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-            >
-              Choose folder
-            </button>
-          </div>
-        )}
-        {cameraAsleep && (
-          <div className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-            Camera not responding{" "}
-            {deviceStatus?.connectionState ? `(${deviceStatus.connectionState})` : ""} — the Canon
-            may have gone to sleep. Wake it (half-press the shutter or power-cycle); capture is
-            paused until it reconnects.
-          </div>
-        )}
-
-        <div className="grid gap-6 md:grid-cols-2">
-          {(["BIN 1", "BIN 2"] as Bin[]).map((bin) => {
-            const preview = bin === "BIN 1" ? bin1 : bin2;
-            const isCapturing = capturingBin === bin;
-            const isSaving = savingBin === bin;
-            // Once this bin has a captured still, its panel freezes on that
-            // image instead of the shared live feed -- so BIN 1 and BIN 2 each
-            // hold their own photo and never visually overwrite each other.
-            const showFrozen = !!preview;
-            const tone = showFrozen
-              ? { pill: "bg-amber-500/10 text-amber-600", dot: "bg-amber-500", label: "Captured" }
-              : !sessionId
-                ? {
-                    pill: "bg-muted text-muted-foreground",
-                    dot: "bg-muted-foreground/40",
-                    label: "Camera Off",
-                  }
-                : cameraAsleep
-                  ? {
-                      pill: "bg-destructive/10 text-destructive",
-                      dot: "bg-destructive",
-                      label: "Sleeping",
-                    }
-                  : {
-                      pill: "bg-emerald-500/10 text-emerald-600",
-                      dot: "bg-emerald-500",
-                      label: "Live",
-                    };
-            return (
-              <section key={bin} className="rounded-lg border bg-card p-4">
-                <div className="mb-3 flex items-center justify-between">
-                  <h2 className="text-lg font-semibold">{bin}</h2>
-                  <span
-                    className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium ${tone.pill}`}
-                  >
-                    <span className={`h-1.5 w-1.5 rounded-full ${tone.dot}`} />
-                    {tone.label}
-                  </span>
-                </div>
-
-                <div className="relative aspect-video overflow-hidden rounded-md bg-muted">
-                  {showFrozen ? (
-                    <>
-                      <img
-                        src={preview.url}
-                        alt={`${bin} captured image`}
-                        className="h-full w-full object-cover"
-                      />
-                      <span className="absolute left-2 top-2 rounded bg-black/60 px-2 py-0.5 text-xs font-medium text-white">
-                        Captured still
-                      </span>
-                    </>
-                  ) : cameraFrame ? (
-                    <img
-                      src={cameraFrame}
-                      alt={`${bin} live preview`}
-                      className={`h-full w-full object-cover transition-opacity duration-150 ${previewFetching ? "opacity-70" : "opacity-100"}`}
-                    />
-                  ) : (
-                    <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                      {sessionStarting
-                        ? "Connecting to camera…"
-                        : cameraAsleep
-                          ? "Camera not responding…"
-                          : sessionId
-                            ? "Waiting for preview…"
-                            : "Camera is off"}
-                    </div>
-                  )}
-                </div>
-
-                <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
-                  <span className="inline-flex items-center gap-1.5">
-                    <span className={`h-1.5 w-1.5 rounded-full ${tone.dot}`} />
-                    {showFrozen ? "Frozen capture" : cameraAsleep ? "No signal" : "Live preview"}
-                  </span>
-                  {showFrozen && <span className="text-emerald-600">Ready to save</span>}
-                </div>
-
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <button
-                    onClick={() => captureToBin(bin)}
-                    disabled={!cameraUsable || capturingBin !== null || isSaving || autofocusing}
-                    className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-                  >
-                    {isCapturing
-                      ? "Capturing…"
-                      : showFrozen
-                        ? `Recapture ${bin}`
-                        : `Capture ${bin}`}
-                  </button>
-                  <button
-                    onClick={() => saveBin(bin)}
-                    disabled={!preview || isSaving}
-                    className="rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
-                  >
-                    {isSaving ? "Saving…" : "Save image"}
-                  </button>
-                  {showFrozen && (
-                    <button
-                      onClick={() => clearBin(bin)}
-                      disabled={isSaving}
-                      className="rounded-md px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-accent disabled:opacity-50"
-                    >
-                      Discard
-                    </button>
-                  )}
-                </div>
-              </section>
-            );
-          })}
-        </div>
-
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          {!sessionId ? (
-            waitingForCamera ? (
-              <>
-                <span className="inline-flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm text-amber-700">
-                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
-                  Camera in use by another station — waiting to connect…
-                </span>
-                <button
-                  onClick={cancelStart}
-                  className="rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
-                >
-                  Cancel
-                </button>
-              </>
-            ) : (
-              <button
-                onClick={startCamera}
-                disabled={sessionStarting}
-                className="rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
-              >
-                {sessionStarting ? "Connecting…" : "Start camera"}
-              </button>
-            )
-          ) : (
-            <button
-              onClick={stopCamera}
-              className="rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
-            >
-              Stop camera
-            </button>
-          )}
-          <button
-            onClick={runAutofocus}
-            disabled={!cameraUsable || capturingBin !== null || autofocusing}
-            title="Tell the camera to autofocus (one physical camera, shared by both bins)"
-            className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
-          >
-            <Crosshair className="h-3.5 w-3.5" />
-            {autofocusing ? "Focusing…" : "Autofocus"}
-          </button>
-        </div>
-
-        {/* Settings */}
-        <section className="mt-6 rounded-lg border bg-card p-4">
-          <h2 className="mb-4 text-lg font-semibold">Save settings</h2>
-
-          <div className="grid gap-4 md:grid-cols-3">
-            <div className="md:col-span-3">
-              <label className="mb-1 block text-sm font-medium">
-                Save directory (Shared Folder)
-              </label>
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  onClick={pickDirectory}
-                  disabled={hydrated && !supportsFS}
-                  className="rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
-                >
-                  {dirName ? "Change folder" : "Choose folder"}
-                </button>
-                {pendingReconnect && (
-                  <button
-                    onClick={reconnectDirectory}
-                    className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-                  >
-                    Reconnect
-                  </button>
-                )}
-                {dirName && (
-                  <button
-                    onClick={forgetDirectory}
-                    className="rounded-md border border-input bg-background px-3 py-2 text-sm hover:bg-accent"
-                  >
-                    Forget
-                  </button>
-                )}
-                <span className="text-sm text-muted-foreground">
-                  {dirName
-                    ? `${dirName}${pendingReconnect ? " (permission needed)" : " · remembered"}`
-                    : fsUnsupportedNote
-                      ? "Not supported — will download"
-                      : "No folder selected"}
-                </span>
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Images will be saved directly to the selected shared folder. Browsers only expose
-                the folder name, not the full network path.
-              </p>
+          <div>
+            <label className="mb-1 block text-sm font-medium">Source</label>
+            <div className="rounded-md border border-input bg-muted px-3 py-2 text-sm">
+              BIN 1 / BIN 2
             </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Set by whichever bin's Capture button you use.
+            </p>
+          </div>
 
-            <div>
-              <label className="mb-1 block text-sm font-medium">Location</label>
-              <select
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              >
-                {PLANTS.map((plant) => (
-                  <option key={plant} value={plant}>
-                    {plant}
-                  </option>
-                ))}
-              </select>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Which plant this capture belongs to.
-              </p>
-            </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium">File format</label>
+            <div className="rounded-md border border-input bg-muted px-3 py-2 text-sm">JPEG</div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Saved straight from the camera as JPEG (.jpg).
+            </p>
+          </div>
 
-            <div>
-              <label className="mb-1 block text-sm font-medium">Source</label>
-              <div className="rounded-md border border-input bg-muted px-3 py-2 text-sm">
-                BIN 1 / BIN 2
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Set by whichever bin's Capture button you use.
-              </p>
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium">File format</label>
-              <div className="rounded-md border border-input bg-muted px-3 py-2 text-sm">JPEG</div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Saved straight from the camera as JPEG (.jpg).
-              </p>
-            </div>
-
-            <div className="md:col-span-2">
-              <label className="mb-1 block text-sm font-medium">Filename format</label>
-              <input
-                value={pattern}
-                onChange={(e) => setPattern(e.target.value)}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
-              />
-              <p className="mt-1 text-xs text-muted-foreground">
-                Tokens: {"{DD} {MMMM} {MM} {YYYY} {HH} {mm} {ss} {LOCATION} {SOURCE} {INDEX} {TS}"}
-                <br />
-                {"{MMMM}"} = full month name (July), {"{LOCATION}"} = plant code (AP / CP)
-                <br />
-                {/* nextFilename embeds the current clock, so it must not be
+          <div className="md:col-span-2">
+            <label className="mb-1 block text-sm font-medium">Filename format</label>
+            <input
+              value={pattern}
+              onChange={(e) => setPattern(e.target.value)}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              Tokens: {"{DD} {MMMM} {MM} {YYYY} {HH} {mm} {ss} {LOCATION} {SOURCE} {INDEX} {TS}"}
+              <br />
+              {"{MMMM}"} = full month name (July), {"{LOCATION}"} = plant code (AP / CP)
+              <br />
+              {/* nextFilename embeds the current clock, so it must not be
                     rendered until after hydration -- the server's HH.mm and the
                     browser's would differ by the time hydration runs, and React
                     would throw a text-mismatch (#418) on this node. */}
-                Example: <span className="font-mono">{hydrated ? nextFilename : "—"}</span>
-              </p>
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium">Image index</label>
-              <div className="flex items-center gap-2">
-                <input
-                  value={String(counter).padStart(3, "0")}
-                  readOnly
-                  className="w-full rounded-md border border-input bg-muted px-3 py-2 text-sm font-mono"
-                />
-                <button
-                  onClick={resetCounter}
-                  title="Reset to 001"
-                  className="inline-flex shrink-0 items-center gap-1 rounded-md border border-input bg-background px-3 py-2 text-sm hover:bg-accent"
-                >
-                  <RotateCcw className="h-3.5 w-3.5" /> Reset
-                </button>
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Auto-increment after each capture.
-              </p>
-            </div>
+              Example: <span className="font-mono">{hydrated ? nextFilename : "—"}</span>
+            </p>
           </div>
 
-          <div className="mt-4 rounded-md bg-muted px-3 py-2 text-xs font-mono break-all">
-            Next file will be saved as: {hydrated ? nextFilename : "—"}
-          </div>
-        </section>
-
-        {/* Gallery link */}
-        <section className="mt-6 rounded-lg border bg-card p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold">Gallery</h2>
-              <p className="text-sm text-muted-foreground">
-                View all saved captures, open, rename, or delete them.
-              </p>
+          <div>
+            <label className="mb-1 block text-sm font-medium">Image index</label>
+            <div className="flex items-center gap-2">
+              <input
+                value={String(counter).padStart(3, "0")}
+                readOnly
+                className="w-full rounded-md border border-input bg-muted px-3 py-2 text-sm font-mono"
+              />
+              <button
+                onClick={resetCounter}
+                title="Reset to 001"
+                className="inline-flex shrink-0 items-center gap-1 rounded-md border border-input bg-background px-3 py-2 text-sm hover:bg-accent"
+              >
+                <RotateCcw className="h-3.5 w-3.5" /> Reset
+              </button>
             </div>
-            <Link
-              to="/gallery"
-              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-            >
-              Open gallery
-            </Link>
+            <p className="mt-1 text-xs text-muted-foreground">Auto-increment after each capture.</p>
           </div>
-        </section>
-      </div>
+        </div>
+
+        <div className="mt-4 rounded-md bg-muted px-3 py-2 text-xs font-mono break-all">
+          Next file will be saved as: {hydrated ? nextFilename : "—"}
+        </div>
+      </section>
+
+      {/* Gallery link */}
+      <section className="mt-6 rounded-lg border bg-card p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold">Gallery</h2>
+            <p className="text-sm text-muted-foreground">
+              View all saved captures, open, rename, or delete them.
+            </p>
+          </div>
+          <Link
+            to="/gallery"
+            className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            Open gallery
+          </Link>
+        </div>
+      </section>
     </div>
   );
 }
