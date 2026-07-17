@@ -10,6 +10,7 @@ import {
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
+  SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
@@ -81,7 +82,7 @@ function DeviceStatusCard() {
       <div className="mb-2 flex items-center justify-between">
         <span className="font-medium text-sidebar-foreground">Device Status</span>
         <span
-          className={`h-2 w-2 rounded-full ${status?.online ? "bg-emerald-500" : "bg-muted-foreground/40"}`}
+          className={`h-2 w-2 rounded-full ${status?.online ? "bg-emerald-500" : "bg-sidebar-foreground/30"}`}
           title={status?.online ? "Online" : "Offline"}
         />
       </div>
@@ -133,10 +134,27 @@ export function AppSidebar() {
   const isActive = (path: string) => currentPath === path;
 
   return (
-    <Sidebar collapsible="icon">
+    <Sidebar collapsible="icon" className="sidebar-dark">
+      <SidebarHeader className="gap-0 border-b border-sidebar-border px-3 py-3.5">
+        <div className="flex items-center gap-2.5">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+            <Camera className="h-4 w-4" />
+          </span>
+          <div className="flex flex-col overflow-hidden transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] group-data-[collapsible=icon]:w-0 group-data-[collapsible=icon]:opacity-0">
+            <span className="truncate text-sm font-semibold leading-tight text-sidebar-foreground">
+              Capture App
+            </span>
+            <span className="truncate text-[11px] leading-tight text-sidebar-foreground/50">
+              Calcine Sampling
+            </span>
+          </div>
+        </div>
+      </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Capture App</SidebarGroupLabel>
+          <SidebarGroupLabel className="px-2 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">
+            Menu
+          </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {items.map((item) => {
@@ -147,7 +165,14 @@ export function AppSidebar() {
                     <SidebarMenuButton
                       asChild
                       isActive={active}
-                      className="data-[active=true]:bg-sidebar-primary data-[active=true]:text-sidebar-primary-foreground data-[active=true]:shadow-sm"
+                      tooltip={item.title}
+                      // text-sidebar-foreground is set explicitly here (not
+                      // just inherited) -- the base Sidebar primitive applies
+                      // that class on an ancestor OUTSIDE the .sidebar-dark
+                      // subtree, so relying on inheritance would resolve
+                      // against the app's light-mode --sidebar-foreground
+                      // instead of the dark one scoped further down.
+                      className="text-sidebar-foreground hover:text-sidebar-foreground data-[active=true]:bg-sidebar-primary data-[active=true]:text-sidebar-primary-foreground data-[active=true]:shadow-sm"
                     >
                       <Link
                         to={item.url}
@@ -160,10 +185,7 @@ export function AppSidebar() {
                           {item.title}
                         </span>
                         {showBadge && (
-                          <Badge
-                            variant="secondary"
-                            className="ml-auto h-5 shrink-0 px-1.5 text-[10px] transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] group-data-[collapsible=icon]:hidden"
-                          >
+                          <Badge className="ml-auto h-5 shrink-0 border-transparent bg-sidebar-primary px-1.5 text-[10px] text-sidebar-primary-foreground transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] group-data-[collapsible=icon]:hidden">
                             {captureCount}
                           </Badge>
                         )}
@@ -171,7 +193,7 @@ export function AppSidebar() {
                     </SidebarMenuButton>
                     {showBadge && (
                       <span
-                        className="absolute right-1 top-1 h-2 w-2 rounded-full bg-primary transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] group-data-[state=expanded]:scale-0 group-data-[state=expanded]:opacity-0 group-data-[state=collapsed]:scale-100 group-data-[state=collapsed]:opacity-100"
+                        className="absolute right-1 top-1 h-2 w-2 rounded-full bg-sidebar-primary transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] group-data-[state=expanded]:scale-0 group-data-[state=expanded]:opacity-0 group-data-[state=collapsed]:scale-100 group-data-[state=collapsed]:opacity-100"
                         aria-hidden="true"
                       />
                     )}
@@ -182,7 +204,7 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      <SidebarFooter>
+      <SidebarFooter className="border-t border-sidebar-border">
         <DeviceStatusCard />
       </SidebarFooter>
     </Sidebar>

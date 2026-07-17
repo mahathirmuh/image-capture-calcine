@@ -132,6 +132,27 @@
   --sidebar-ring: oklch(0.551 0.027 264.364);
 }
 
+/* Metronic-style dark sidebar, independent of the app-wide light/dark mode
+   (which nothing currently toggles). Reuses the same sidebar values already
+   defined in .dark above, just scoped to the sidebar's own subtree via CSS
+   custom property inheritance -- bg-sidebar/text-sidebar-foreground/etc.
+   resolve to whichever of these was last redefined by an ancestor, so the
+   rest of the app (topbar, page content) stays on the light theme. */
+.sidebar-dark {
+  --sidebar: oklch(0.208 0.042 265.755);
+  --sidebar-foreground: oklch(0.984 0.003 247.858);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.984 0.003 247.858);
+  --sidebar-accent: oklch(0.279 0.041 260.031);
+  --sidebar-accent-foreground: oklch(0.984 0.003 247.858);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.551 0.027 264.364);
+  /* Plain `border`/`border-t` utilities (e.g. on the device-status card) read
+     --border, not --sidebar-border -- override it too so those hairlines
+     match the dark panel instead of keeping the light theme's gray. */
+  --border: oklch(1 0 0 / 10%);
+}
+
 @layer base {
   * {
     border-color: var(--color-border);
