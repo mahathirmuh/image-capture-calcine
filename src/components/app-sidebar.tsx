@@ -129,7 +129,7 @@ export function AppSidebar() {
   const isActive = (path: string) => currentPath === path;
 
   return (
-    <Sidebar collapsible="icon" className="sidebar-dark">
+    <Sidebar collapsible="icon">
       <SidebarHeader className="gap-0 border-b border-sidebar-border px-3 py-3.5">
         <div className="flex items-center gap-2.5">
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
@@ -161,12 +161,6 @@ export function AppSidebar() {
                       asChild
                       isActive={active}
                       tooltip={item.title}
-                      // text-sidebar-foreground is set explicitly here (not
-                      // just inherited) -- the base Sidebar primitive applies
-                      // that class on an ancestor OUTSIDE the .sidebar-dark
-                      // subtree, so relying on inheritance would resolve
-                      // against the app's light-mode --sidebar-foreground
-                      // instead of the dark one scoped further down.
                       className="text-sidebar-foreground hover:text-sidebar-foreground data-[active=true]:bg-sidebar-primary data-[active=true]:text-sidebar-primary-foreground data-[active=true]:shadow-sm"
                     >
                       <Link
