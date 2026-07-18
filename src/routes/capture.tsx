@@ -129,6 +129,25 @@ async function resolveUniqueName(dir: DirHandle, base: string, ext: string): Pro
   return `${base} ${Date.now()}.${ext}`;
 }
 
+// Nested Year/Month/Day subfolders (zero-padded, e.g. 2026/07/18) under
+// whichever base folder the operator picked -- keeps years of captures
+// browsable instead of one flat folder of thousands of files, and sorts
+// correctly in Explorer (which only sorts alphabetically -- month *names*
+// would put April before January). Created on demand each save; no extra
+// setup needed when a new day/month/year starts.
+async function getDatedDirHandle(
+  root: DirHandle,
+  date = new Date(),
+): Promise<{ dir: DirHandle; path: string }> {
+  const yyyy = String(date.getFullYear());
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  const yearDir = await root.getDirectoryHandle(yyyy, { create: true });
+  const monthDir = await yearDir.getDirectoryHandle(mm, { create: true });
+  const dayDir = await monthDir.getDirectoryHandle(dd, { create: true });
+  return { dir: dayDir, path: `${yyyy}/${mm}/${dd}` };
+}
+
 function CapturePage() {
   const [cameraFrame, setCameraFrame] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -579,20 +598,42 @@ function CapturePage() {
     let parentDir: DirHandle | null = null;
 
     try {
+      let savedNetworkPath: string | null = null;
+      let permissionAlreadyReported = false;
+
       if (dirHandle && supportsFS) {
-        if (!(await ensurePermission())) return;
         try {
-          filename = await resolveUniqueName(dirHandle, base, ext);
-          fileHandle = await dirHandle.getFileHandle(filename, { create: true });
+          if (!(await ensurePermission())) {
+            // ensurePermission() already surfaced its own "click Reconnect"
+            // error and flipped pendingReconnect -- don't clobber that with
+            // the generic message below, just fall through to the download.
+            permissionAlreadyReported = true;
+            throw new Error("Folder permission not granted");
+          }
+          const { dir: dayDir, path: datedPath } = await getDatedDirHandle(dirHandle);
+          filename = await resolveUniqueName(dayDir, base, ext);
+          fileHandle = await dayDir.getFileHandle(filename, { create: true });
           const writable = await fileHandle.createWritable();
           await writable.write(previewItem.blob);
           await writable.close();
-          parentDir = dirHandle;
-          setStatus(`Saved to ${dirName}/${filename}`);
+          parentDir = dayDir;
+          savedNetworkPath = `${dirName}/${datedPath}/${filename}`;
         } catch (e: any) {
-          setError(e?.message ?? "Failed to save to directory");
-          return;
+          // Network share unreachable, permission lost, or write failed --
+          // don't lose the capture, fall back to a local download. The
+          // operator moves it to the shared folder by hand once it's back.
+          fileHandle = null;
+          parentDir = null;
+          if (!permissionAlreadyReported) {
+            setError(
+              `Network folder unavailable (${e?.message ?? "unknown error"}) — this capture was downloaded locally instead. Move it to the shared folder manually.`,
+            );
+          }
         }
+      }
+
+      if (savedNetworkPath) {
+        setStatus(`Saved to ${savedNetworkPath}`);
       } else {
         const url = URL.createObjectURL(previewItem.blob);
         const a = document.createElement("a");
@@ -600,7 +641,9 @@ function CapturePage() {
         a.download = filename;
         a.click();
         URL.revokeObjectURL(url);
-        setStatus(`Downloaded ${filename}`);
+        setStatus(
+          dirHandle && supportsFS ? `Downloaded ${filename} locally` : `Downloaded ${filename}`,
+        );
       }
 
       const item = {
@@ -899,8 +942,12 @@ function CapturePage() {
               </span>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              Images will be saved directly to the selected shared folder. Browsers only expose the
-              folder name, not the full network path.
+              Images are saved under Year/Month/Day subfolders inside the folder you choose here
+              (e.g. 2026/07/18) — browse to a network share like{" "}
+              <span className="font-mono">{"\\\\10.1.1.44\\Data Analythics\\ML\\MTI"}</span> to
+              centralize captures there. Browsers only expose the folder name, not the full network
+              path. If that folder becomes unreachable, the capture is downloaded locally instead so
+              nothing is lost.
             </p>
           </div>
 
