@@ -286,3 +286,47 @@ export const getMediaContent = createServerFn({ method: "GET" })
       headers: { "content-type": res.headers.get("content-type") ?? "application/octet-stream" },
     });
   });
+
+// Has the edge device (a native process, not a browser) copy an
+// already-captured asset straight to its configured network share --
+// zero-click, no File System Access picker involved. `ok:false` with code
+// NETWORK_SAVE_NOT_CONFIGURED means that edge device has no NETWORK_SAVE_ROOT
+// set; the caller should fall back to the browser-side save flow.
+export const exportMediaToNetwork = createServerFn({ method: "POST" })
+  .validator(sessionRefSchema.extend({ assetId: z.string(), relativePath: z.string() }))
+  .handler(
+    async ({ data }): Promise<ApiSuccess<{ savedTo: string; filename: string }> | ApiFailure> => {
+      let res: Response;
+      try {
+        res = await fetch(`${baseUrl()}/v1/media/${data.assetId}/export`, {
+          method: "POST",
+          headers: edgeHeaders({
+            "content-type": "application/json",
+            "X-Session-Token": data.leaseToken,
+          }),
+          body: JSON.stringify({ relativePath: data.relativePath }),
+        });
+      } catch {
+        return { ok: false, code: "UNREACHABLE", message: "Can't reach the camera service" };
+      }
+      if (res.status === 409) {
+        return {
+          ok: false,
+          code: "NETWORK_SAVE_NOT_CONFIGURED",
+          message: "This edge device has no network save folder configured",
+        };
+      }
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        return {
+          ok: false,
+          code: (body as { code?: string })?.code ?? "REQUEST_FAILED",
+          message:
+            (body as { message?: string })?.message ??
+            `Failed to save to the network folder (${res.status})`,
+        };
+      }
+      const body = (await res.json()) as { assetId: string; savedTo: string; filename: string };
+      return { ok: true, savedTo: body.savedTo, filename: body.filename };
+    },
+  );

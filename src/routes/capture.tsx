@@ -21,6 +21,7 @@ import {
   pollJob,
   getMediaContent,
   getDeviceStatus,
+  exportMediaToNetwork,
   type DeviceStatus,
 } from "@/lib/camera-api";
 import { PLANTS, toLocationToken } from "@/lib/locations";
@@ -49,7 +50,10 @@ type DirHandle = any;
 type FileHandle = any;
 type CameraSessionRef = { sessionId: string; leaseToken: string };
 type Bin = "BIN 1" | "BIN 2";
-type BinPreview = { blob: Blob; url: string };
+// assetId is kept around so Save can later ask the edge device to export the
+// already-captured asset straight to its network share, without the browser
+// re-uploading the bytes it already downloaded once for the preview.
+type BinPreview = { blob: Blob; url: string; assetId: string };
 
 // Release with `keepalive: true` so the request survives page teardown —
 // used both when the user clicks "Stop camera" (the UI updates optimistically
@@ -129,23 +133,32 @@ async function resolveUniqueName(dir: DirHandle, base: string, ext: string): Pro
   return `${base} ${Date.now()}.${ext}`;
 }
 
-// Nested Year/Month/Day subfolders (zero-padded, e.g. 2026/07/18) under
-// whichever base folder the operator picked -- keeps years of captures
-// browsable instead of one flat folder of thousands of files, and sorts
+// Zero-padded Year/Month/Day path segment (e.g. "2026/07/18") -- sorts
 // correctly in Explorer (which only sorts alphabetically -- month *names*
-// would put April before January). Created on demand each save; no extra
-// setup needed when a new day/month/year starts.
+// would put April before January), used both for the browser's own nested
+// folders below and for the relative path sent to the edge device's network
+// export endpoint.
+function datedPathSegment(date = new Date()): string {
+  const yyyy = String(date.getFullYear());
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${yyyy}/${mm}/${dd}`;
+}
+
+// Nested Year/Month/Day subfolders under whichever base folder the operator
+// picked -- keeps years of captures browsable instead of one flat folder of
+// thousands of files. Created on demand each save; no extra setup needed
+// when a new day/month/year starts.
 async function getDatedDirHandle(
   root: DirHandle,
   date = new Date(),
 ): Promise<{ dir: DirHandle; path: string }> {
-  const yyyy = String(date.getFullYear());
-  const mm = String(date.getMonth() + 1).padStart(2, "0");
-  const dd = String(date.getDate()).padStart(2, "0");
+  const path = datedPathSegment(date);
+  const [yyyy, mm, dd] = path.split("/");
   const yearDir = await root.getDirectoryHandle(yyyy, { create: true });
   const monthDir = await yearDir.getDirectoryHandle(mm, { create: true });
   const dayDir = await monthDir.getDirectoryHandle(dd, { create: true });
-  return { dir: dayDir, path: `${yyyy}/${mm}/${dd}` };
+  return { dir: dayDir, path };
 }
 
 function CapturePage() {
@@ -494,7 +507,7 @@ function CapturePage() {
       const setBin = bin === "BIN 1" ? setBin1 : setBin2;
       setBin((prev) => {
         if (prev) URL.revokeObjectURL(prev.url);
-        return { blob, url };
+        return { blob, url, assetId };
       });
       setLastSource(bin);
       setStatus(null);
@@ -601,7 +614,35 @@ function CapturePage() {
       let savedNetworkPath: string | null = null;
       let permissionAlreadyReported = false;
 
-      if (dirHandle && supportsFS) {
+      // Tier 1: ask the edge device to export the asset it already has to its
+      // configured network share -- zero-click, no File System Access picker
+      // involved, since it's a native process doing a plain fs write, not the
+      // browser. This is the primary path when the edge device is set up for
+      // it; ok:false (not configured, unreachable, or the write itself
+      // failed) falls through to the browser's own save flow below instead of
+      // failing the capture outright.
+      if (sessionId && leaseToken) {
+        const relativePath = `${datedPathSegment()}/${base}.${ext}`;
+        const exported = await exportMediaToNetwork({
+          data: { sessionId, leaseToken, assetId: previewItem.assetId, relativePath },
+        });
+        if (exported.ok) {
+          filename = exported.filename;
+          savedNetworkPath = exported.savedTo;
+        } else if (exported.code !== "NETWORK_SAVE_NOT_CONFIGURED") {
+          // NOT_CONFIGURED is the expected/common case (not every edge device
+          // has a network share set up) and not worth alarming anyone about.
+          // Anything else (unreachable, write failed) is a genuine anomaly --
+          // still fall through to the folder/download tiers below so the
+          // capture isn't lost, but say so, the same way the folder tier's
+          // own failure gets a banner rather than failing silently.
+          setError(
+            `Edge device network save failed (${exported.message}) — trying the fallback save location instead.`,
+          );
+        }
+      }
+
+      if (!savedNetworkPath && dirHandle && supportsFS) {
         try {
           if (!(await ensurePermission())) {
             // ensurePermission() already surfaced its own "click Reconnect"
@@ -942,12 +983,13 @@ function CapturePage() {
               </span>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              Images are saved under Year/Month/Day subfolders inside the folder you choose here
-              (e.g. 2026/07/18) — browse to a network share like{" "}
-              <span className="font-mono">{"\\\\10.1.1.44\\Data Analythics\\ML\\MTI"}</span> to
-              centralize captures there. Browsers only expose the folder name, not the full network
-              path. If that folder becomes unreachable, the capture is downloaded locally instead so
-              nothing is lost.
+              If the connected edge device has a network share configured, every capture is saved
+              there automatically — no folder needed here. This picker is the fallback for edge
+              devices without one: choose a folder (e.g. a network share like{" "}
+              <span className="font-mono">{"\\\\10.1.1.44\\Data Analythics\\ML\\MTI"}</span>) and
+              images go there instead, in the same Year/Month/Day subfolders (e.g. 2026/07/18).
+              Browsers only expose the folder name, not the full network path. If neither save path
+              is reachable, the capture is downloaded locally instead so nothing is lost.
             </p>
           </div>
 
