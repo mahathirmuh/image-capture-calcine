@@ -288,14 +288,25 @@ export const getMediaContent = createServerFn({ method: "GET" })
   });
 
 // Has the edge device (a native process, not a browser) copy an
-// already-captured asset straight to its configured network share --
-// zero-click, no File System Access picker involved. `ok:false` with code
-// NETWORK_SAVE_NOT_CONFIGURED means that edge device has no NETWORK_SAVE_ROOT
+// already-captured asset straight to a network share -- zero-click, no File
+// System Access picker involved. The destination folder is owned entirely by
+// this app (NETWORK_SAVE_ROOT below), not the edge device: it's sent with
+// every request, so pointing captures at a different share is a one-line env
+// change here, with no edge-device redeploy needed. `ok:false` with code
+// NETWORK_SAVE_NOT_CONFIGURED means this app itself has no NETWORK_SAVE_ROOT
 // set; the caller should fall back to the browser-side save flow.
 export const exportMediaToNetwork = createServerFn({ method: "POST" })
   .validator(sessionRefSchema.extend({ assetId: z.string(), relativePath: z.string() }))
   .handler(
     async ({ data }): Promise<ApiSuccess<{ savedTo: string; filename: string }> | ApiFailure> => {
+      const targetRoot = process.env.NETWORK_SAVE_ROOT?.trim();
+      if (!targetRoot) {
+        return {
+          ok: false,
+          code: "NETWORK_SAVE_NOT_CONFIGURED",
+          message: "No network save folder is configured for this app",
+        };
+      }
       let res: Response;
       try {
         res = await fetch(`${baseUrl()}/v1/media/${data.assetId}/export`, {
@@ -304,17 +315,10 @@ export const exportMediaToNetwork = createServerFn({ method: "POST" })
             "content-type": "application/json",
             "X-Session-Token": data.leaseToken,
           }),
-          body: JSON.stringify({ relativePath: data.relativePath }),
+          body: JSON.stringify({ relativePath: data.relativePath, targetRoot }),
         });
       } catch {
         return { ok: false, code: "UNREACHABLE", message: "Can't reach the camera service" };
-      }
-      if (res.status === 409) {
-        return {
-          ok: false,
-          code: "NETWORK_SAVE_NOT_CONFIGURED",
-          message: "This edge device has no network save folder configured",
-        };
       }
       if (!res.ok) {
         const body = await res.json().catch(() => null);

@@ -614,12 +614,13 @@ function CapturePage() {
       let savedNetworkPath: string | null = null;
       let permissionAlreadyReported = false;
 
-      // Tier 1: ask the edge device to export the asset it already has to its
-      // configured network share -- zero-click, no File System Access picker
-      // involved, since it's a native process doing a plain fs write, not the
-      // browser. This is the primary path when the edge device is set up for
-      // it; ok:false (not configured, unreachable, or the write itself
-      // failed) falls through to the browser's own save flow below instead of
+      // Tier 1: ask the edge device to export the asset it already has to the
+      // network share configured here (NETWORK_SAVE_ROOT, this app's own
+      // env) -- zero-click, no File System Access picker involved, since the
+      // edge device is a native process doing a plain fs write, not the
+      // browser. This is the primary path whenever NETWORK_SAVE_ROOT is set;
+      // ok:false (not configured, unreachable, or the write itself failed)
+      // falls through to the browser's own save flow below instead of
       // failing the capture outright.
       if (sessionId && leaseToken) {
         const relativePath = `${datedPathSegment()}/${base}.${ext}`;
@@ -983,9 +984,9 @@ function CapturePage() {
               </span>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              If the connected edge device has a network share configured, every capture is saved
-              there automatically — no folder needed here. This picker is the fallback for edge
-              devices without one: choose a folder (e.g. a network share like{" "}
+              If this app has a network save folder configured, every capture is saved there
+              automatically — no folder needed here. This picker is the fallback for when that isn't
+              set: choose a folder (e.g. a network share like{" "}
               <span className="font-mono">{"\\\\10.1.1.44\\Data Analythics\\ML\\MTI"}</span>) and
               images go there instead, in the same Year/Month/Day subfolders (e.g. 2026/07/18).
               Browsers only expose the folder name, not the full network path. If neither save path
