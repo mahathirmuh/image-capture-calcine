@@ -7,8 +7,11 @@ services:
     container_name: image-capture-calcine
     restart: unless-stopped
     ports:
-      # host:container -- browse the app at http://<this-host>:8080
-      - "8080:3000"
+      # host:container -- browse the app at http://<this-host>:9104
+      # 8080 is already taken on the production host by nginx-proxy-manager,
+      # which fronts most other apps there -- pick a free host port and put
+      # this behind a Proxy Host entry in NPM instead of exposing it directly.
+      - "9104:3000"
     environment:
       # The Camera Control edge API running natively on the Mini PC next to the
       # camera. It is NOT containerised: gphoto2 needs direct USB access to the
