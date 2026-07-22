@@ -1,8 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ArrowRight,
   Calendar,
+  Camera,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -14,14 +15,46 @@ import {
   Package,
   Settings2,
 } from "lucide-react";
+import { toast } from "sonner";
+import {
+  PresetCompareTable,
+  PresetExplorerGrid,
+  PresetFilterBar,
+  PresetTemplatePreview,
+} from "@/components/preset-ui";
 import { PLANTS } from "@/lib/locations";
+import {
+  APERTURE_OPTIONS,
+  DEVICE_BINS,
+  DEVICE_SCHEDULES,
+  DEVICE_STATIONS,
+  DEVICE_TEMPLATES,
+  DEVICE_TIMEZONES,
+  FOCUS_MODE_OPTIONS,
+  ISO_OPTIONS,
+  PRESET_FILTERS,
+  PICTURE_STYLE_OPTIONS,
+  SHUTTER_OPTIONS,
+  WHITE_BALANCE_OPTIONS,
+  createDefaultDeviceProfile,
+  createProfileFromInput,
+  filterTemplatesByTag,
+  getTemplateById,
+  getTemplateCameraSettings,
+  loadDeviceProfile,
+  loadPresetFilterPreference,
+  saveDeviceProfile,
+  savePresetFilterPreference,
+  type CameraSettings,
+  type PresetFilter,
+} from "@/lib/device-config";
 
 export const Route = createFileRoute("/devices/register")({
   component: RegisterDevicePage,
   head: () => ({
     meta: [
-      { title: "Register Device — Capture App" },
-      { name: "description", content: "Register a new Mini PC and camera to the system." },
+      { title: "Daftarkan Device — Capture App" },
+      { name: "description", content: "Daftarkan Mini PC dan kamera baru ke alur operasional." },
     ],
   }),
 });
@@ -29,14 +62,8 @@ export const Route = createFileRoute("/devices/register")({
 // This page is a UI/UX preview of a future multi-device registration flow.
 // There is no device registry, pairing protocol, or Capture Agent behind it
 // yet -- this app only ever talks to one edge device (CAMERA_API_URL).
-// Nothing here writes to a real backend; "Register Device" just shows a
+// Nothing here writes to a real backend; "Daftarkan Device" just shows a
 // mock confirmation.
-
-const BINS = ["Bin 1 / Bin 2", "Bin 1", "Bin 2"];
-const STATIONS = ["Main Area", "Secondary Area", "Loading Bay"];
-const TEMPLATES = ["Default - Calcine Sampling (R50)", "High-Res Sampling (R50)", "Manual Only"];
-const SCHEDULES = ["Every Hour", "Every 3 Hours", "Every 6 Hours", "Manual only"];
-const TIMEZONES = ["Asia/Makassar (WITA)", "Asia/Jakarta (WIB)", "Asia/Jayapura (WIT)"];
 
 function formatNow() {
   const date = new Date();
@@ -52,44 +79,76 @@ function formatNow() {
 const HOW_IT_WORKS = [
   {
     title: "Install Capture Agent",
-    body: "Install the Capture Agent on the Mini PC and connect the camera.",
-  },
-  { title: "Get Device Code", body: "Open the Capture Agent. You will see a unique Device Code." },
-  {
-    title: "Register in Web UI",
-    body: "Enter the device code here and complete the registration.",
+    body: "Pasang Capture Agent di Mini PC lalu hubungkan kameranya.",
   },
   {
-    title: "Sync & Ready",
-    body: "The device will sync configuration from the server and be ready to capture.",
+    title: "Ambil Device Code",
+    body: "Buka Capture Agent. Anda akan melihat Device Code yang unik.",
+  },
+  {
+    title: "Daftarkan di Web UI",
+    body: "Masukkan device code di halaman ini lalu selesaikan proses pendaftarannya.",
+  },
+  {
+    title: "Sinkron & Siap",
+    body: "Device akan menyelaraskan konfigurasi dari server lalu siap dipakai capture.",
   },
 ];
 
 const WHAT_GETS_CONFIGURED = [
-  "Camera settings (ISO, Shutter, Aperture, etc.)",
-  "File naming format",
-  "Capture schedule",
-  "Save directory (local)",
-  "Upload destination (shared folder)",
-  "Network & API settings",
-  "Fallback connection settings",
+  "Template profil kamera dan default exposure manual",
+  "Metadata plant, source bin, dan station",
+  "Jadwal capture",
+  "Timezone dan catatan operator",
+  "Payload sinkronisasi untuk rollout edge-agent berikutnya",
 ];
 
 function RegisterDevicePage() {
   const [deviceCode, setDeviceCode] = useState("");
   const [deviceName, setDeviceName] = useState("");
   const [plant, setPlant] = useState<string>(PLANTS[0]);
-  const [bin, setBin] = useState(BINS[0]);
-  const [station, setStation] = useState(STATIONS[0]);
+  const [bin, setBin] = useState<string>(DEVICE_BINS[0]);
+  const [station, setStation] = useState<string>(DEVICE_STATIONS[0]);
   const [description, setDescription] = useState("");
-  const [template, setTemplate] = useState(TEMPLATES[0]);
-  const [schedule, setSchedule] = useState(SCHEDULES[1]);
-  const [timezone, setTimezone] = useState(TIMEZONES[0]);
+  const [templateId, setTemplateId] = useState(DEVICE_TEMPLATES[0].id);
+  const [templateFilter, setTemplateFilter] = useState<PresetFilter>(PRESET_FILTERS[0]);
+  const [compareTemplateId, setCompareTemplateId] = useState(
+    DEVICE_TEMPLATES[1]?.id ?? DEVICE_TEMPLATES[0].id,
+  );
+  const [schedule, setSchedule] = useState<string>(DEVICE_SCHEDULES[1]);
+  const [timezone, setTimezone] = useState<string>(DEVICE_TIMEZONES[0]);
+  const [cameraSettings, setCameraSettings] = useState<CameraSettings>(
+    getTemplateCameraSettings(DEVICE_TEMPLATES[0].id),
+  );
 
   const [howItWorksOpen, setHowItWorksOpen] = useState(true);
   const [showReview, setShowReview] = useState(false);
   const [registered, setRegistered] = useState(false);
   const [lastSeen] = useState(formatNow());
+
+  useEffect(() => {
+    const existing = loadDeviceProfile();
+    setTemplateFilter(loadPresetFilterPreference());
+    if (!existing) return;
+    setDeviceCode(existing.deviceCode);
+    setDeviceName(existing.deviceName);
+    setPlant(existing.plant);
+    setBin(existing.bin);
+    setStation(existing.station);
+    setDescription(existing.description);
+    setTemplateId(existing.templateId);
+    setCompareTemplateId(
+      DEVICE_TEMPLATES.find((template) => template.id !== existing.templateId)?.id ??
+        existing.templateId,
+    );
+    setSchedule(existing.schedule);
+    setTimezone(existing.timezone);
+    setCameraSettings(existing.cameraSettings);
+  }, []);
+
+  useEffect(() => {
+    savePresetFilterPreference(templateFilter);
+  }, [templateFilter]);
 
   const codeValid = deviceCode.trim().length >= 4;
   const mockHostname = codeValid
@@ -105,8 +164,49 @@ function RegisterDevicePage() {
   }
 
   function handleRegister() {
+    const existing = loadDeviceProfile();
+    const profile = createProfileFromInput({
+      deviceCode: deviceCode.trim(),
+      deviceName: deviceName.trim(),
+      plant,
+      bin,
+      station,
+      description: description.trim(),
+      templateId,
+      schedule,
+      timezone,
+      cameraSettings,
+      registeredAt: existing?.registeredAt ?? createDefaultDeviceProfile().registeredAt,
+    });
+    saveDeviceProfile(profile);
     setRegistered(true);
   }
+
+  function updateCameraSetting<K extends keyof CameraSettings>(key: K, value: CameraSettings[K]) {
+    setCameraSettings((current) => ({ ...current, [key]: value }));
+  }
+
+  function selectTemplate(nextTemplateId: string) {
+    setTemplateId(nextTemplateId);
+    setCameraSettings(getTemplateCameraSettings(nextTemplateId));
+  }
+
+  function handleUseTemplate(nextTemplateId: string) {
+    selectTemplate(nextTemplateId);
+    const nextTemplate = getTemplateById(nextTemplateId);
+    toast.success(`Preset aktif diubah ke "${nextTemplate.label}"`, {
+      description: "Camera defaults telah mengikuti template terpilih.",
+    });
+  }
+
+  const selectedTemplate = getTemplateById(templateId);
+  const filteredTemplates = filterTemplatesByTag(templateFilter);
+  const compareCandidates = filteredTemplates.filter((template) => template.id !== templateId);
+
+  useEffect(() => {
+    if (filteredTemplates.some((template) => template.id === compareTemplateId)) return;
+    setCompareTemplateId(compareCandidates[0]?.id ?? templateId);
+  }, [compareCandidates, compareTemplateId, filteredTemplates, templateId]);
 
   return (
     <div className="p-6">
@@ -115,15 +215,15 @@ function RegisterDevicePage() {
           Devices
         </Link>
         <span>/</span>
-        <span className="text-foreground">Register Device</span>
+        <span className="text-foreground">Daftarkan Device</span>
       </div>
 
       <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Register New Device</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Daftarkan Device Baru</h1>
           <p className="text-sm text-muted-foreground">
-            Register a new Mini PC and camera to the system. The device will be synchronized with
-            the server configuration.
+            Daftarkan Mini PC aktif lalu siapkan profil devicenya. Pengaturan kamera disimpan di
+            aplikasi ini sekarang dan nantinya bisa disinkronkan ke edge agent.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -131,7 +231,7 @@ function RegisterDevicePage() {
             onClick={() => setHowItWorksOpen((v) => !v)}
             className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent"
           >
-            <Info className="h-4 w-4" /> How it works
+            <Info className="h-4 w-4" /> Cara kerjanya
             <ChevronDown
               className={`h-3.5 w-3.5 transition-transform ${howItWorksOpen ? "rotate-180" : ""}`}
             />
@@ -140,14 +240,14 @@ function RegisterDevicePage() {
             to="/devices"
             className="rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent"
           >
-            Cancel
+            Batal
           </Link>
         </div>
       </header>
 
       {/* Step indicator (visual only -- this is a mock, single-scroll form) */}
       <div className="mb-6 flex items-center justify-center gap-2 rounded-lg border bg-card px-6 py-4">
-        {["Device Identification", "Location & Source", "Configuration", "Review & Finish"].map(
+        {["Identifikasi Device", "Lokasi & Sumber", "Konfigurasi", "Tinjau & Selesai"].map(
           (label, i) => {
             const stepNum = i + 1;
             const active = showReview ? stepNum === 4 : stepNum === 1;
@@ -178,8 +278,8 @@ function RegisterDevicePage() {
       {registered && (
         <div className="mb-6 flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700">
           <CheckCircle2 className="h-4 w-4 shrink-0" />
-          Device registered (demo only — this preview isn't connected to a real device registry
-          yet).
+          Profil device sudah disimpan lokal. Konfigurasinya sudah terlihat di halaman Devices,
+          tetapi sinkronisasi ke camera agent belum tersedia.
         </div>
       )}
 
@@ -192,9 +292,9 @@ function RegisterDevicePage() {
                 1
               </span>
               <div>
-                <h2 className="font-semibold">Device Identification</h2>
+                <h2 className="font-semibold">Identifikasi Device</h2>
                 <p className="text-xs text-muted-foreground">
-                  Enter the device code displayed on the Mini PC Capture Agent.
+                  Masukkan device code yang tampil di Mini PC Capture Agent.
                 </p>
               </div>
             </div>
@@ -216,11 +316,11 @@ function RegisterDevicePage() {
                   )}
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  The device code is shown on the Capture Agent after installation.
+                  Device code ditampilkan oleh Capture Agent setelah proses instalasi.
                 </p>
 
                 <label className="mb-1 mt-4 block text-sm font-medium">
-                  Device Name <span className="text-destructive">*</span>
+                  Nama Device <span className="text-destructive">*</span>
                 </label>
                 <input
                   value={deviceName}
@@ -229,7 +329,7 @@ function RegisterDevicePage() {
                   className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                 />
                 <p className="mt-1 text-xs text-muted-foreground">
-                  A unique name to identify this device.
+                  Gunakan nama unik agar device ini mudah dikenali operator.
                 </p>
               </div>
 
@@ -237,10 +337,10 @@ function RegisterDevicePage() {
                 {codeValid ? (
                   <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3">
                     <div className="mb-2 flex items-center gap-1.5 text-sm font-medium text-emerald-700">
-                      <CheckCircle2 className="h-4 w-4" /> Device Code Valid
+                      <CheckCircle2 className="h-4 w-4" /> Device Code sudah valid
                     </div>
                     <p className="mb-3 text-xs text-emerald-700/80">
-                      Device found and ready to register.
+                      Device ditemukan dan siap didaftarkan.
                     </p>
                     <dl className="space-y-1 text-xs">
                       <div className="flex justify-between">
@@ -260,14 +360,14 @@ function RegisterDevicePage() {
                         <dd className="font-medium">10.10.30.16</dd>
                       </div>
                       <div className="flex justify-between">
-                        <dt className="text-muted-foreground">Last Seen</dt>
+                        <dt className="text-muted-foreground">Terakhir terlihat</dt>
                         <dd className="font-medium text-emerald-700">{lastSeen}</dd>
                       </div>
                     </dl>
                   </div>
                 ) : (
                   <div className="flex h-full items-center justify-center rounded-md border border-dashed p-6 text-center text-xs text-muted-foreground">
-                    Enter a device code to look it up.
+                    Masukkan device code untuk mulai pengecekan.
                   </div>
                 )}
               </div>
@@ -281,9 +381,9 @@ function RegisterDevicePage() {
                 2
               </span>
               <div>
-                <h2 className="font-semibold">Location &amp; Source</h2>
+                <h2 className="font-semibold">Lokasi &amp; Sumber</h2>
                 <p className="text-xs text-muted-foreground">
-                  Set the location (plant) and source (bin) for this sampling device.
+                  Tentukan lokasi plant dan sumber bin untuk device sampling ini.
                 </p>
               </div>
             </div>
@@ -291,7 +391,7 @@ function RegisterDevicePage() {
             <div className="grid gap-4 md:grid-cols-3">
               <div>
                 <label className="mb-1 flex items-center gap-1 text-sm font-medium">
-                  <MapPin className="h-3.5 w-3.5 text-muted-foreground" /> Plant / Location{" "}
+                  <MapPin className="h-3.5 w-3.5 text-muted-foreground" /> Plant / Lokasi{" "}
                   <span className="text-destructive">*</span>
                 </label>
                 <select
@@ -308,7 +408,7 @@ function RegisterDevicePage() {
               </div>
               <div>
                 <label className="mb-1 flex items-center gap-1 text-sm font-medium">
-                  <Package className="h-3.5 w-3.5 text-muted-foreground" /> Source (Bin){" "}
+                  <Package className="h-3.5 w-3.5 text-muted-foreground" /> Sumber (Bin){" "}
                   <span className="text-destructive">*</span>
                 </label>
                 <select
@@ -316,7 +416,7 @@ function RegisterDevicePage() {
                   onChange={(e) => setBin(e.target.value)}
                   className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                 >
-                  {BINS.map((b) => (
+                  {DEVICE_BINS.map((b) => (
                     <option key={b} value={b}>
                       {b}
                     </option>
@@ -324,13 +424,13 @@ function RegisterDevicePage() {
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium">Station / Area (Optional)</label>
+                <label className="mb-1 block text-sm font-medium">Station / Area (Opsional)</label>
                 <select
                   value={station}
                   onChange={(e) => setStation(e.target.value)}
                   className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                 >
-                  {STATIONS.map((s) => (
+                  {DEVICE_STATIONS.map((s) => (
                     <option key={s} value={s}>
                       {s}
                     </option>
@@ -340,7 +440,7 @@ function RegisterDevicePage() {
             </div>
 
             <div className="mt-4">
-              <label className="mb-1 block text-sm font-medium">Description (Optional)</label>
+              <label className="mb-1 block text-sm font-medium">Deskripsi (Opsional)</label>
               <input
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
@@ -357,9 +457,10 @@ function RegisterDevicePage() {
                 3
               </span>
               <div>
-                <h2 className="font-semibold">Configuration (from server template)</h2>
+                <h2 className="font-semibold">Konfigurasi &amp; Profil Kamera</h2>
                 <p className="text-xs text-muted-foreground">
-                  Select a configuration template to apply to this device.
+                  Pilih template, lalu rapikan default kamera yang akan menjadi bagian dari profil
+                  device ini.
                 </p>
               </div>
             </div>
@@ -367,24 +468,29 @@ function RegisterDevicePage() {
             <div className="grid gap-4 md:grid-cols-3">
               <div>
                 <label className="mb-1 flex items-center gap-1 text-sm font-medium">
-                  <Settings2 className="h-3.5 w-3.5 text-muted-foreground" /> Configuration Template{" "}
+                  <Settings2 className="h-3.5 w-3.5 text-muted-foreground" /> Template Konfigurasi{" "}
                   <span className="text-destructive">*</span>
                 </label>
                 <select
-                  value={template}
-                  onChange={(e) => setTemplate(e.target.value)}
+                  value={templateId}
+                  onChange={(e) => {
+                    selectTemplate(e.target.value);
+                  }}
                   className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                 >
-                  {TEMPLATES.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
+                  {DEVICE_TEMPLATES.map((template) => (
+                    <option key={template.id} value={template.id}>
+                      {template.label}
                     </option>
                   ))}
                 </select>
+                <div className="mt-3">
+                  <PresetTemplatePreview template={selectedTemplate} compact />
+                </div>
               </div>
               <div>
                 <label className="mb-1 flex items-center gap-1 text-sm font-medium">
-                  <Calendar className="h-3.5 w-3.5 text-muted-foreground" /> Capture Schedule{" "}
+                  <Calendar className="h-3.5 w-3.5 text-muted-foreground" /> Jadwal Capture{" "}
                   <span className="text-destructive">*</span>
                 </label>
                 <select
@@ -392,7 +498,7 @@ function RegisterDevicePage() {
                   onChange={(e) => setSchedule(e.target.value)}
                   className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                 >
-                  {SCHEDULES.map((s) => (
+                  {DEVICE_SCHEDULES.map((s) => (
                     <option key={s} value={s}>
                       {s}
                     </option>
@@ -409,7 +515,7 @@ function RegisterDevicePage() {
                   onChange={(e) => setTimezone(e.target.value)}
                   className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                 >
-                  {TIMEZONES.map((t) => (
+                  {DEVICE_TIMEZONES.map((t) => (
                     <option key={t} value={t}>
                       {t}
                     </option>
@@ -418,12 +524,174 @@ function RegisterDevicePage() {
               </div>
             </div>
 
+            <div className="mt-4 rounded-lg border bg-muted/30 p-4">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="flex items-center gap-1.5 text-sm font-semibold">
+                    <Camera className="h-4 w-4" /> Default Kamera
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    Pengaturan ini disimpan sebagai baseline profil device. Proses apply atau sync
+                    ke hardware akan disambungkan pada fase backend berikutnya.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCameraSettings(getTemplateCameraSettings(templateId))}
+                  className="rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent"
+                >
+                  Reset dari template
+                </button>
+              </div>
+
+              <PresetTemplatePreview template={selectedTemplate} />
+
+              <div className="mb-4 mt-4 rounded-md border bg-background/70 p-3">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-medium">Filter Preset</div>
+                    <p className="text-xs text-muted-foreground">
+                      Saring preset explorer berdasarkan skenario sebelum memilih template.
+                    </p>
+                  </div>
+                </div>
+                <PresetFilterBar value={templateFilter} onChange={setTemplateFilter} />
+                <div className="mt-3">
+                  <PresetExplorerGrid
+                    templates={filteredTemplates}
+                    selectedTemplateId={templateId}
+                    onSelectTemplate={selectTemplate}
+                    onUseTemplate={handleUseTemplate}
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-3">
+                <div>
+                  <label className="mb-1 block text-sm font-medium">ISO</label>
+                  <select
+                    value={cameraSettings.iso}
+                    onChange={(e) =>
+                      updateCameraSetting("iso", e.target.value as CameraSettings["iso"])
+                    }
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  >
+                    {ISO_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium">Shutter Speed</label>
+                  <select
+                    value={cameraSettings.shutter}
+                    onChange={(e) =>
+                      updateCameraSetting("shutter", e.target.value as CameraSettings["shutter"])
+                    }
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  >
+                    {SHUTTER_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium">Aperture</label>
+                  <select
+                    value={cameraSettings.aperture}
+                    onChange={(e) =>
+                      updateCameraSetting("aperture", e.target.value as CameraSettings["aperture"])
+                    }
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  >
+                    {APERTURE_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium">White Balance</label>
+                  <select
+                    value={cameraSettings.whiteBalance}
+                    onChange={(e) =>
+                      updateCameraSetting(
+                        "whiteBalance",
+                        e.target.value as CameraSettings["whiteBalance"],
+                      )
+                    }
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  >
+                    {WHITE_BALANCE_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium">Picture Style</label>
+                  <select
+                    value={cameraSettings.pictureStyle}
+                    onChange={(e) =>
+                      updateCameraSetting(
+                        "pictureStyle",
+                        e.target.value as CameraSettings["pictureStyle"],
+                      )
+                    }
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  >
+                    {PICTURE_STYLE_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium">Focus Mode</label>
+                  <select
+                    value={cameraSettings.focusMode}
+                    onChange={(e) =>
+                      updateCameraSetting(
+                        "focusMode",
+                        e.target.value as CameraSettings["focusMode"],
+                      )
+                    }
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  >
+                    {FOCUS_MODE_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="mt-4">
+                <PresetCompareTable
+                  title="Perbandingan Preset"
+                  baseTemplate={selectedTemplate}
+                  compareOptions={compareCandidates}
+                  compareTemplateId={compareTemplateId}
+                  onCompareTemplateChange={setCompareTemplateId}
+                  onUseBaseTemplate={() => handleUseTemplate(templateId)}
+                />
+              </div>
+            </div>
+
             <div className="mt-4 flex items-start gap-2 rounded-md border border-primary/30 bg-primary/5 p-3 text-xs">
               <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
               <span>
-                The selected template includes camera settings, naming format, folder paths, and
-                upload configuration. You can customize these settings later from the device detail
-                page.
+                Tahap ini menyimpan profil device di dalam aplikasi agar `/devices` bisa menjadi
+                pusat kontrol default kamera. Mengirim nilai tersebut ke kamera fisik masih
+                memerlukan endpoint sinkronisasi backend pada fase berikutnya.
               </span>
             </div>
           </section>
@@ -436,9 +704,9 @@ function RegisterDevicePage() {
                   4
                 </span>
                 <div>
-                  <h2 className="font-semibold">Review &amp; Finish</h2>
+                  <h2 className="font-semibold">Tinjau &amp; Selesai</h2>
                   <p className="text-xs text-muted-foreground">
-                    Confirm the details before registering.
+                    Konfirmasi detail konfigurasi sebelum device didaftarkan.
                   </p>
                 </div>
               </div>
@@ -448,15 +716,15 @@ function RegisterDevicePage() {
                   <dd className="font-medium">{deviceCode || "—"}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-muted-foreground">Device Name</dt>
+                  <dt className="text-xs text-muted-foreground">Nama Device</dt>
                   <dd className="font-medium">{deviceName || "—"}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-muted-foreground">Plant / Location</dt>
+                  <dt className="text-xs text-muted-foreground">Plant / Lokasi</dt>
                   <dd className="font-medium">{plant}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-muted-foreground">Source (Bin)</dt>
+                  <dt className="text-xs text-muted-foreground">Sumber (Bin)</dt>
                   <dd className="font-medium">{bin}</dd>
                 </div>
                 <div>
@@ -465,15 +733,39 @@ function RegisterDevicePage() {
                 </div>
                 <div>
                   <dt className="text-xs text-muted-foreground">Template</dt>
-                  <dd className="font-medium">{template}</dd>
+                  <dd className="font-medium">{selectedTemplate.label}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-muted-foreground">Schedule</dt>
+                  <dt className="text-xs text-muted-foreground">Jadwal</dt>
                   <dd className="font-medium">{schedule}</dd>
                 </div>
                 <div>
                   <dt className="text-xs text-muted-foreground">Timezone</dt>
                   <dd className="font-medium">{timezone}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">ISO</dt>
+                  <dd className="font-medium">{cameraSettings.iso}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">Shutter</dt>
+                  <dd className="font-medium">{cameraSettings.shutter}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">Aperture</dt>
+                  <dd className="font-medium">{cameraSettings.aperture}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">White Balance</dt>
+                  <dd className="font-medium">{cameraSettings.whiteBalance}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">Picture Style</dt>
+                  <dd className="font-medium">{cameraSettings.pictureStyle}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">Focus Mode</dt>
+                  <dd className="font-medium">{cameraSettings.focusMode}</dd>
                 </div>
               </dl>
             </section>
@@ -484,7 +776,7 @@ function RegisterDevicePage() {
               to="/devices"
               className="rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
             >
-              Cancel
+              Batal
             </Link>
             {!showReview ? (
               <button
@@ -492,7 +784,7 @@ function RegisterDevicePage() {
                 disabled={!codeValid || !deviceName.trim()}
                 className="inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
               >
-                Next <ArrowRight className="h-4 w-4" />
+                Lanjut <ArrowRight className="h-4 w-4" />
               </button>
             ) : (
               <button
@@ -500,7 +792,7 @@ function RegisterDevicePage() {
                 disabled={registered}
                 className="inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
               >
-                <Cpu className="h-4 w-4" /> {registered ? "Registered" : "Register Device"}
+                <Cpu className="h-4 w-4" /> {registered ? "Sudah didaftarkan" : "Daftarkan Device"}
               </button>
             )}
           </div>
@@ -510,7 +802,7 @@ function RegisterDevicePage() {
         {howItWorksOpen && (
           <aside className="space-y-4">
             <div className="rounded-lg border bg-card p-4">
-              <h3 className="mb-3 text-sm font-semibold">How to Register a Device</h3>
+              <h3 className="mb-3 text-sm font-semibold">Cara Mendaftarkan Device</h3>
               <ol className="space-y-3">
                 {HOW_IT_WORKS.map((step, i) => (
                   <li key={step.title} className="flex gap-2">
@@ -528,7 +820,7 @@ function RegisterDevicePage() {
                           </div>
                           <div className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground">
                             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Status:
-                            Ready to register
+                            Siap didaftarkan
                           </div>
                         </div>
                       )}
@@ -539,7 +831,7 @@ function RegisterDevicePage() {
             </div>
 
             <div className="rounded-lg border bg-card p-4">
-              <h3 className="mb-3 text-sm font-semibold">What will be configured?</h3>
+              <h3 className="mb-3 text-sm font-semibold">Apa saja yang akan dikonfigurasi?</h3>
               <ul className="space-y-1.5">
                 {WHAT_GETS_CONFIGURED.map((item) => (
                   <li key={item} className="flex items-center gap-2 text-xs">
@@ -551,7 +843,10 @@ function RegisterDevicePage() {
 
             <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
               <Lightbulb className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
-              <span>You can edit all settings after registration from the device detail page.</span>
+              <span>
+                Semua pengaturan masih bisa diedit lagi setelah pendaftaran dari halaman detail
+                device.
+              </span>
             </div>
           </aside>
         )}

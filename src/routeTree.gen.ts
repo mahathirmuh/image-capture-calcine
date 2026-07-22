@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as StorageRouteImport } from './routes/storage'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as GalleryRouteImport } from './routes/gallery'
 import { Route as DashboardRouteImport } from './routes/dashboard'
@@ -17,6 +18,11 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as DevicesIndexRouteImport } from './routes/devices/index'
 import { Route as DevicesRegisterRouteImport } from './routes/devices/register'
 
+const StorageRoute = StorageRouteImport.update({
+  id: '/storage',
+  path: '/storage',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -59,6 +65,7 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof DashboardRoute
   '/gallery': typeof GalleryRoute
   '/settings': typeof SettingsRoute
+  '/storage': typeof StorageRoute
   '/devices/register': typeof DevicesRegisterRoute
   '/devices/': typeof DevicesIndexRoute
 }
@@ -68,6 +75,7 @@ export interface FileRoutesByTo {
   '/dashboard': typeof DashboardRoute
   '/gallery': typeof GalleryRoute
   '/settings': typeof SettingsRoute
+  '/storage': typeof StorageRoute
   '/devices/register': typeof DevicesRegisterRoute
   '/devices': typeof DevicesIndexRoute
 }
@@ -78,6 +86,7 @@ export interface FileRoutesById {
   '/dashboard': typeof DashboardRoute
   '/gallery': typeof GalleryRoute
   '/settings': typeof SettingsRoute
+  '/storage': typeof StorageRoute
   '/devices/register': typeof DevicesRegisterRoute
   '/devices/': typeof DevicesIndexRoute
 }
@@ -89,6 +98,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/gallery'
     | '/settings'
+    | '/storage'
     | '/devices/register'
     | '/devices/'
   fileRoutesByTo: FileRoutesByTo
@@ -98,6 +108,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/gallery'
     | '/settings'
+    | '/storage'
     | '/devices/register'
     | '/devices'
   id:
@@ -107,6 +118,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/gallery'
     | '/settings'
+    | '/storage'
     | '/devices/register'
     | '/devices/'
   fileRoutesById: FileRoutesById
@@ -117,12 +129,20 @@ export interface RootRouteChildren {
   DashboardRoute: typeof DashboardRoute
   GalleryRoute: typeof GalleryRoute
   SettingsRoute: typeof SettingsRoute
+  StorageRoute: typeof StorageRoute
   DevicesRegisterRoute: typeof DevicesRegisterRoute
   DevicesIndexRoute: typeof DevicesIndexRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/storage': {
+      id: '/storage'
+      path: '/storage'
+      fullPath: '/storage'
+      preLoaderRoute: typeof StorageRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/settings': {
       id: '/settings'
       path: '/settings'
@@ -181,6 +201,7 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardRoute: DashboardRoute,
   GalleryRoute: GalleryRoute,
   SettingsRoute: SettingsRoute,
+  StorageRoute: StorageRoute,
   DevicesRegisterRoute: DevicesRegisterRoute,
   DevicesIndexRoute: DevicesIndexRoute,
 }

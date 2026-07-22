@@ -5,6 +5,7 @@ import viteReact from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import tsConfigPaths from "vite-tsconfig-paths";
 import { devtools } from "@tanstack/devtools-vite";
+import { parseServerEnv } from "./src/lib/env";
 
 export default defineConfig(async ({ command, mode }) => {
   const isDevBuild = command === "build" && mode === "development";
@@ -26,6 +27,7 @@ export default defineConfig(async ({ command, mode }) => {
   for (const [key, value] of Object.entries(loadEnv(mode, process.cwd(), ""))) {
     if (!(key in process.env)) process.env[key] = value;
   }
+  const serverEnv = parseServerEnv(process.env);
 
   const plugins = [
     tailwindcss(),
@@ -50,7 +52,7 @@ export default defineConfig(async ({ command, mode }) => {
     // a cloud-hosted Worker cannot route to -- it has to be self-hosted on the
     // plant network. Override with NITRO_PRESET if a deploy ever needs to
     // target something else.
-    plugins.push(nitro({ defaultPreset: process.env.NITRO_PRESET || "node-server" }));
+    plugins.push(nitro({ defaultPreset: serverEnv.NITRO_PRESET || "node-server" }));
   }
 
   if (mode === "development") {
@@ -61,7 +63,7 @@ export default defineConfig(async ({ command, mode }) => {
         enhancedLogs: { enabled: false },
         consolePiping: { enabled: false },
         removeDevtoolsOnBuild: false,
-        injectSource: { enabled: true },
+        injectSource: { enabled: false },
       }),
     );
   }

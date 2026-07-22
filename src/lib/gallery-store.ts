@@ -5,8 +5,8 @@ const IDB_NAME = "capture-system";
 const IDB_STORE = "gallery";
 const IDB_BLOB_STORE = "gallery-blobs";
 
-type DirHandle = any;
-type FileHandle = any;
+type DirHandle = FileSystemDirectoryHandle;
+type FileHandle = FileSystemFileHandle;
 
 export type GalleryItem = {
   id: string;

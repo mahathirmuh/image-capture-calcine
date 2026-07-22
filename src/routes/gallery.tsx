@@ -1,11 +1,13 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useEffect, useMemo, useState } from "react";
 import {
   Calendar,
+  CheckSquare,
   ChevronLeft,
   ChevronRight,
   Columns2,
   Download,
+  HardDrive,
   LayoutGrid,
   List,
   Maximize2,
@@ -13,11 +15,27 @@ import {
   MoreVertical,
   Pencil,
   Package,
+  Search,
   User,
+  Wifi,
   X,
 } from "lucide-react";
 import { type GalleryItem, loadGallery, saveGallery, removeGalleryItem } from "@/lib/gallery-store";
 import { getDeviceStatus, type DeviceStatus } from "@/lib/camera-api";
+import {
+  DEFAULT_GALLERY_VIEW_STATE,
+  GALLERY_PAGE_SIZE_OPTIONS,
+  GALLERY_SAVED_VIEWS,
+  type GallerySavedViewPreference,
+  type GallerySortOption,
+  type GalleryViewState,
+  galleryViewStateMatchesSavedView,
+  getGallerySavedViewById,
+  loadGallerySavedViewPreference,
+  loadGalleryViewState,
+  saveGallerySavedViewPreference,
+  saveGalleryViewState,
+} from "@/lib/gallery-preferences";
 import { getImageDimensions, computeHistogram, type Histogram } from "@/lib/image-analysis";
 import {
   DropdownMenu,
@@ -31,14 +49,22 @@ export const Route = createFileRoute("/gallery")({
   head: () => ({
     meta: [
       { title: "Gallery — Capture App" },
-      { name: "description", content: "Browse, review, and manage captured images." },
+      {
+        name: "description",
+        content: "Telusuri, review, dan kelola hasil capture yang tersimpan lokal.",
+      },
       { property: "og:title", content: "Gallery — Capture App" },
-      { property: "og:description", content: "Browse, review, and manage captured images." },
+      {
+        property: "og:description",
+        content: "Telusuri, review, dan kelola hasil capture yang tersimpan lokal.",
+      },
     ],
   }),
 });
 
-type SortOption = "newest" | "oldest" | "name-asc" | "name-desc";
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
+}
 
 function formatDateTime(ts: number) {
   const date = new Date(ts);
@@ -115,8 +141,35 @@ function QcBadge({ className = "" }: { className?: string }) {
     <span
       className={`rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground ${className}`}
     >
-      Pending
+      Menunggu
     </span>
+  );
+}
+
+function OverviewCard({
+  icon: Icon,
+  label,
+  value,
+  hint,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: React.ReactNode;
+  hint: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-lg border bg-card p-4">
+      <div className="mb-2 flex items-center gap-2">
+        <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+          <Icon className="h-4 w-4" />
+        </span>
+        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          {label}
+        </span>
+      </div>
+      <div className="text-2xl font-bold tracking-tight">{value}</div>
+      <div className="mt-1 text-xs text-muted-foreground">{hint}</div>
+    </div>
   );
 }
 
@@ -133,13 +186,18 @@ function GalleryPage() {
   const [detailHistogram, setDetailHistogram] = useState<Histogram | null>(null);
   const [fullscreenUrl, setFullscreenUrl] = useState<string | null>(null);
 
-  const [sortOption, setSortOption] = useState<SortOption>("newest");
+  const [sortOption, setSortOption] = useState<GallerySortOption>(
+    DEFAULT_GALLERY_VIEW_STATE.sortOption,
+  );
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
 
   const [searchQuery, setSearchQuery] = useState("");
   const [filterDate, setFilterDate] = useState("");
   const [filterLocation, setFilterLocation] = useState("");
   const [filterBin, setFilterBin] = useState("");
+  const [savedViewPreference, setSavedViewPreference] =
+    useState<GallerySavedViewPreference>("all-images");
+  const [galleryViewLoaded, setGalleryViewLoaded] = useState(false);
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [compareOpen, setCompareOpen] = useState(false);
@@ -150,6 +208,17 @@ function GalleryPage() {
   useEffect(() => {
     let cancelled = false;
     setHydrated(true);
+    const savedViewState = loadGalleryViewState();
+    const savedView = loadGallerySavedViewPreference();
+    setSortOption(savedViewState.sortOption);
+    setViewMode(savedViewState.viewMode);
+    setPageSize(savedViewState.pageSize);
+    setSearchQuery(savedViewState.searchQuery);
+    setFilterDate(savedViewState.filterDate);
+    setFilterLocation(savedViewState.filterLocation);
+    setFilterBin(savedViewState.filterBin);
+    setSavedViewPreference(savedView);
+    setGalleryViewLoaded(true);
     loadGallery().then((items) => {
       if (!cancelled) setGallery(items);
     });
@@ -160,6 +229,29 @@ function GalleryPage() {
       cancelled = true;
     };
   }, []);
+
+  const currentViewState = useMemo<GalleryViewState>(
+    () => ({
+      sortOption,
+      viewMode,
+      pageSize,
+      searchQuery,
+      filterDate,
+      filterLocation,
+      filterBin,
+    }),
+    [filterBin, filterDate, filterLocation, pageSize, searchQuery, sortOption, viewMode],
+  );
+
+  useEffect(() => {
+    if (!galleryViewLoaded) return;
+    saveGalleryViewState(currentViewState);
+  }, [currentViewState, galleryViewLoaded]);
+
+  useEffect(() => {
+    if (!galleryViewLoaded) return;
+    saveGallerySavedViewPreference(savedViewPreference);
+  }, [galleryViewLoaded, savedViewPreference]);
 
   // Real values computed on demand for whichever item is open in the detail
   // panel -- dimensions + a histogram read straight from the pixels.
@@ -205,8 +297,8 @@ function GalleryPage() {
         next.delete(item.id);
         return next;
       });
-    } catch (e: any) {
-      alert(e?.message ?? "Failed to delete");
+    } catch (error: unknown) {
+      alert(getErrorMessage(error, "Gagal menghapus item"));
     }
   }
 
@@ -227,8 +319,8 @@ function GalleryPage() {
       const next = gallery.map((x) => (x.id === item.id ? updated : x));
       await persist(next);
       if (detailItem?.id === item.id) setDetailItem(updated);
-    } catch (e: any) {
-      alert(e?.message ?? "Failed to rename");
+    } catch (error: unknown) {
+      alert(getErrorMessage(error, "Gagal mengubah nama file"));
     }
   }
 
@@ -289,6 +381,23 @@ function GalleryPage() {
     setFilterDate("");
     setFilterLocation("");
     setFilterBin("");
+    setPage(1);
+  }
+
+  function applyViewState(viewState: GalleryViewState) {
+    setSortOption(viewState.sortOption);
+    setViewMode(viewState.viewMode);
+    setPageSize(viewState.pageSize);
+    setSearchQuery(viewState.searchQuery);
+    setFilterDate(viewState.filterDate);
+    setFilterLocation(viewState.filterLocation);
+    setFilterBin(viewState.filterBin);
+    setPage(1);
+  }
+
+  function selectSavedView(savedViewId: GallerySavedViewPreference) {
+    setSavedViewPreference(savedViewId);
+    applyViewState(getGallerySavedViewById(savedViewId).state);
   }
 
   const uniqueLocations = Array.from(
@@ -325,6 +434,46 @@ function GalleryPage() {
   const pageStart = (clampedPage - 1) * pageSize;
   const pageItems = filteredGallery.slice(pageStart, pageStart + pageSize);
   const selectedItems = gallery.filter((item) => selectedIds.has(item.id));
+  const totalBytes = gallery.reduce((sum, item) => sum + item.blob.size, 0);
+  const filteredBytes = filteredGallery.reduce((sum, item) => sum + item.blob.size, 0);
+  const selectedBytes = selectedItems.reduce((sum, item) => sum + item.blob.size, 0);
+  const cameraStateLabel = deviceStatus?.online
+    ? deviceStatus.camera?.connected
+      ? "Kamera terhubung"
+      : "Edge online"
+    : "Offline";
+  const activeFilters = [
+    filterLocation
+      ? {
+          key: "location",
+          label: `Lokasi: ${filterLocation}`,
+          clear: () => setFilterLocation(""),
+        }
+      : null,
+    filterBin
+      ? {
+          key: "bin",
+          label: `Bin: ${formatBin(filterBin)}`,
+          clear: () => setFilterBin(""),
+        }
+      : null,
+    filterDate
+      ? {
+          key: "date",
+          label: `Tanggal: ${filterDate}`,
+          clear: () => setFilterDate(""),
+        }
+      : null,
+    searchQuery.trim()
+      ? {
+          key: "search",
+          label: `Cari: ${searchQuery.trim()}`,
+          clear: () => setSearchQuery(""),
+        }
+      : null,
+  ].filter(Boolean) as Array<{ key: string; label: string; clear: () => void }>;
+  const selectedSavedView = getGallerySavedViewById(savedViewPreference);
+  const isCustomView = !galleryViewStateMatchesSavedView(currentViewState, savedViewPreference);
 
   if (!hydrated) {
     return (
@@ -341,7 +490,7 @@ function GalleryPage() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Gallery</h1>
             <p className="text-sm text-muted-foreground">
-              Browse, review, and manage captured images.
+              Telusuri, review, dan kelola hasil capture yang tersimpan.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -350,14 +499,14 @@ function GalleryPage() {
               disabled={selectedIds.size < 2}
               className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
             >
-              <Columns2 className="h-4 w-4" /> Compare
+              <Columns2 className="h-4 w-4" /> Bandingkan
             </button>
             <button
               onClick={downloadSelected}
               disabled={selectedIds.size === 0}
               className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
             >
-              <Download className="h-4 w-4" /> Download
+              <Download className="h-4 w-4" /> Unduh
             </button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -367,17 +516,116 @@ function GalleryPage() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={exportCSV} disabled={gallery.length === 0}>
-                  Export CSV
+                  Ekspor CSV
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
         </header>
 
+        <section className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <OverviewCard
+            icon={Search}
+            label="Hasil Tersaring"
+            value={filteredGallery.length}
+            hint={`${gallery.length} total image tersimpan lokal`}
+          />
+          <OverviewCard
+            icon={CheckSquare}
+            label="Item Terpilih"
+            value={selectedIds.size}
+            hint={
+              selectedIds.size > 0
+                ? `${formatBytes(selectedBytes)} siap compare/download`
+                : "Belum ada item dipilih"
+            }
+          />
+          <OverviewCard
+            icon={HardDrive}
+            label="Storage Terlihat"
+            value={formatBytes(filteredBytes)}
+            hint={`${formatBytes(totalBytes)} total browser storage`}
+          />
+          <OverviewCard
+            icon={Wifi}
+            label="Status Device"
+            value={cameraStateLabel}
+            hint={deviceStatus?.deviceId ?? "Device status belum tersedia"}
+          />
+        </section>
+
+        <section className="mb-4 rounded-lg border bg-card p-4">
+          <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                View Tersimpan
+              </div>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Filter, sort, mode tampilan, dan page size terakhir akan tersimpan di browser ini.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
+                  isCustomView ? "bg-amber-500/10 text-amber-700" : "bg-primary/10 text-primary"
+                }`}
+              >
+                {isCustomView ? "View kustom" : selectedSavedView.label}
+              </span>
+              {isCustomView && (
+                <button
+                  type="button"
+                  onClick={() => selectSavedView(savedViewPreference)}
+                  className="text-xs font-medium text-primary hover:underline"
+                >
+                  Terapkan ulang view tersimpan
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {GALLERY_SAVED_VIEWS.map((savedView) => {
+              const isActive = savedView.id === savedViewPreference && !isCustomView;
+              const isSelected = savedView.id === savedViewPreference;
+              return (
+                <button
+                  key={savedView.id}
+                  type="button"
+                  onClick={() => selectSavedView(savedView.id)}
+                  className={`rounded-lg border p-3 text-left transition-colors ${
+                    isActive
+                      ? "border-primary bg-primary/5"
+                      : isSelected
+                        ? "border-amber-500/30 bg-amber-500/5"
+                        : "bg-background hover:bg-accent/40"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-semibold">{savedView.label}</span>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                        isActive
+                          ? "bg-primary/10 text-primary"
+                          : isSelected
+                            ? "bg-amber-500/10 text-amber-700"
+                            : "bg-muted text-muted-foreground"
+                      }`}
+                    >
+                      {isActive ? "Aktif" : isSelected ? "Dipilih" : "Preset"}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">{savedView.description}</p>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
         {/* Filter bar */}
         <section className="mb-4 grid gap-3 rounded-lg border bg-card p-4 sm:grid-cols-3 lg:grid-cols-6">
           <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">Location</label>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">Lokasi</label>
             <select
               value={filterLocation}
               onChange={(e) => {
@@ -386,7 +634,7 @@ function GalleryPage() {
               }}
               className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-xs"
             >
-              <option value="">All locations</option>
+              <option value="">Semua lokasi</option>
               {uniqueLocations.map((loc) => (
                 <option key={loc} value={loc}>
                   {loc}
@@ -396,7 +644,7 @@ function GalleryPage() {
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">
-              Source (Bin)
+              Sumber (Bin)
             </label>
             <select
               value={filterBin}
@@ -406,13 +654,13 @@ function GalleryPage() {
               }}
               className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-xs"
             >
-              <option value="">All Bins</option>
+              <option value="">Semua Bin</option>
               <option value="BIN1">BIN 1</option>
               <option value="BIN2">BIN 2</option>
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">Date</label>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">Tanggal</label>
             <input
               type="date"
               value={filterDate}
@@ -429,7 +677,7 @@ function GalleryPage() {
               disabled
               className="w-full rounded-md border border-input bg-muted px-2 py-1.5 text-xs opacity-60"
             >
-              <option>All Shift</option>
+              <option>Semua Shift</option>
             </select>
           </div>
           <div>
@@ -440,7 +688,7 @@ function GalleryPage() {
               disabled
               className="w-full rounded-md border border-input bg-muted px-2 py-1.5 text-xs opacity-60"
             >
-              <option>All</option>
+              <option>Semua</option>
             </select>
           </div>
           <div className="flex items-end">
@@ -448,12 +696,12 @@ function GalleryPage() {
               onClick={clearFilters}
               className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent"
             >
-              Clear Filter
+              Bersihkan Filter
             </button>
           </div>
           <div className="sm:col-span-3 lg:col-span-6">
             <label className="mb-1 block text-xs font-medium text-muted-foreground">
-              Search file name
+              Cari nama file
             </label>
             <input
               type="text"
@@ -462,41 +710,121 @@ function GalleryPage() {
                 setSearchQuery(e.target.value);
                 setPage(1);
               }}
-              placeholder="e.g. capture-001"
+              placeholder="mis. capture-001"
               className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-xs"
             />
           </div>
         </section>
 
+        {activeFilters.length > 0 && (
+          <section className="mb-4 rounded-lg border bg-card p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Filter Aktif
+              </span>
+              {activeFilters.map((filter) => (
+                <button
+                  key={filter.key}
+                  type="button"
+                  onClick={() => {
+                    filter.clear();
+                    setPage(1);
+                  }}
+                  className="inline-flex items-center gap-1 rounded-full border border-input bg-background px-2.5 py-1 text-xs hover:bg-accent"
+                >
+                  <span>{filter.label}</span>
+                  <X className="h-3 w-3" />
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => {
+                  clearFilters();
+                  setPage(1);
+                }}
+                className="text-xs font-medium text-primary hover:underline"
+              >
+                Reset semua
+              </button>
+            </div>
+          </section>
+        )}
+
+        {selectedIds.size > 0 && (
+          <section className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/30 bg-primary/5 p-3">
+            <div>
+              <div className="text-sm font-semibold">
+                {selectedIds.size} gambar dipilih untuk tindakan batch
+              </div>
+              <div className="text-xs text-muted-foreground">
+                Gunakan compare untuk review visual, atau download batch untuk export lokal.
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => setCompareOpen(true)}
+                disabled={selectedIds.size < 2}
+                className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-2 text-xs font-medium hover:bg-accent disabled:opacity-50"
+              >
+                <Columns2 className="h-3.5 w-3.5" />
+                Bandingkan pilihan
+              </button>
+              <button
+                onClick={downloadSelected}
+                className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-2 text-xs font-medium hover:bg-accent"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Unduh pilihan
+              </button>
+              <button
+                onClick={() => setSelectedIds(new Set())}
+                className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-2 text-xs font-medium hover:bg-accent"
+              >
+                <X className="h-3.5 w-3.5" />
+                Bersihkan pilihan
+              </button>
+            </div>
+          </section>
+        )}
+
         {/* Content header */}
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <span className="text-sm font-medium">Total {filteredGallery.length} images</span>
+          <span className="text-sm font-medium">Total {filteredGallery.length} gambar</span>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1.5 text-xs">
-              <label className="text-muted-foreground">Sort by</label>
+              <label className="text-muted-foreground">Urutkan</label>
               <select
                 value={sortOption}
-                onChange={(e) => setSortOption(e.target.value as SortOption)}
+                onChange={(e) => {
+                  setSortOption(e.target.value as GallerySortOption);
+                  setPage(1);
+                }}
                 className="rounded-md border border-input bg-background px-2 py-1.5 text-xs"
               >
-                <option value="newest">Newest First</option>
-                <option value="oldest">Oldest First</option>
-                <option value="name-asc">Name A → Z</option>
-                <option value="name-desc">Name Z → A</option>
+                <option value="newest">Terbaru dulu</option>
+                <option value="oldest">Terlama dulu</option>
+                <option value="name-asc">Nama A → Z</option>
+                <option value="name-desc">Nama Z → A</option>
               </select>
             </div>
             <div className="flex overflow-hidden rounded-md border border-input">
               <button
-                onClick={() => setViewMode("grid")}
+                onClick={() => {
+                  setViewMode("grid");
+                  setPage(1);
+                }}
                 className={`p-1.5 ${viewMode === "grid" ? "bg-accent" : "bg-background hover:bg-accent/50"}`}
-                title="Grid view"
+                title="Mode grid"
               >
                 <LayoutGrid className="h-4 w-4" />
               </button>
               <button
-                onClick={() => setViewMode("list")}
+                onClick={() => {
+                  setViewMode("list");
+                  setPage(1);
+                }}
                 className={`p-1.5 ${viewMode === "list" ? "bg-accent" : "bg-background hover:bg-accent/50"}`}
-                title="List view"
+                title="Mode list"
               >
                 <List className="h-4 w-4" />
               </button>
@@ -506,11 +834,25 @@ function GalleryPage() {
 
         {gallery.length === 0 ? (
           <div className="rounded-md border border-dashed py-10 text-center text-sm text-muted-foreground">
-            Saved captures will appear here.
+            <p>Hasil capture tersimpan akan muncul di sini.</p>
+            <div className="mt-3 flex flex-wrap justify-center gap-2">
+              <Link
+                to="/capture"
+                className="inline-flex items-center rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+              >
+                Buka Capture
+              </Link>
+              <Link
+                to="/storage"
+                className="inline-flex items-center rounded-md border border-input bg-background px-3 py-2 text-xs font-medium text-foreground hover:bg-accent"
+              >
+                Cek Alur Storage
+              </Link>
+            </div>
           </div>
         ) : filteredGallery.length === 0 ? (
           <div className="rounded-md border border-dashed py-10 text-center text-sm text-muted-foreground">
-            No captures match the current search or filters.
+            Tidak ada capture yang cocok dengan pencarian atau filter saat ini.
           </div>
         ) : viewMode === "grid" ? (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
@@ -524,13 +866,13 @@ function GalleryPage() {
                   checked={selectedIds.has(item.id)}
                   onChange={() => toggleSelect(item.id)}
                   className="absolute left-2 top-2 z-10 h-4 w-4 rounded"
-                  aria-label={`Select ${item.name}`}
+                  aria-label={`Pilih ${item.name}`}
                 />
                 <QcBadge className="absolute right-2 top-2 z-10" />
                 <button
                   onClick={() => setDetailItem(item)}
                   className="block aspect-square w-full overflow-hidden bg-muted"
-                  title="Open"
+                  title="Buka"
                 >
                   <img
                     src={item.url}
@@ -565,14 +907,16 @@ function GalleryPage() {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem onClick={() => downloadItem(item)}>
-                          Download
+                          Unduh
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => renameItem(item)}>Rename</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => renameItem(item)}>
+                          Ubah nama
+                        </DropdownMenuItem>
                         <DropdownMenuItem
                           onClick={() => deleteItem(item)}
                           className="text-destructive"
                         >
-                          Delete
+                          Hapus
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -588,9 +932,9 @@ function GalleryPage() {
                 <tr>
                   <th className="w-8 p-2"></th>
                   <th className="w-8 p-2"></th>
-                  <th className="p-2">Name</th>
-                  <th className="p-2">Captured</th>
-                  <th className="p-2">Location</th>
+                  <th className="p-2">Nama</th>
+                  <th className="p-2">Waktu Capture</th>
+                  <th className="p-2">Lokasi</th>
                   <th className="p-2">Bin</th>
                   <th className="p-2">QC</th>
                   <th className="w-8 p-2"></th>
@@ -604,7 +948,7 @@ function GalleryPage() {
                         type="checkbox"
                         checked={selectedIds.has(item.id)}
                         onChange={() => toggleSelect(item.id)}
-                        aria-label={`Select ${item.name}`}
+                        aria-label={`Pilih ${item.name}`}
                       />
                     </td>
                     <td className="p-2">
@@ -637,16 +981,16 @@ function GalleryPage() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => downloadItem(item)}>
-                            Download
+                            Unduh
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => renameItem(item)}>
-                            Rename
+                            Ubah nama
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             onClick={() => deleteItem(item)}
                             className="text-destructive"
                           >
-                            Delete
+                            Hapus
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -661,8 +1005,9 @@ function GalleryPage() {
         {filteredGallery.length > 0 && (
           <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
             <span>
-              Showing {pageStart + 1} to {Math.min(pageStart + pageSize, filteredGallery.length)} of{" "}
-              {filteredGallery.length} images
+              Menampilkan {pageStart + 1} sampai{" "}
+              {Math.min(pageStart + pageSize, filteredGallery.length)} dari {filteredGallery.length}{" "}
+              gambar
             </span>
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-1">
@@ -685,14 +1030,14 @@ function GalleryPage() {
               <select
                 value={pageSize}
                 onChange={(e) => {
-                  setPageSize(Number(e.target.value));
+                  setPageSize(Number(e.target.value) as (typeof GALLERY_PAGE_SIZE_OPTIONS)[number]);
                   setPage(1);
                 }}
                 className="rounded-md border border-input bg-background px-2 py-1.5"
               >
-                {[12, 24, 48, 96].map((n) => (
+                {GALLERY_PAGE_SIZE_OPTIONS.map((n) => (
                   <option key={n} value={n}>
-                    {n} / page
+                    {n} / halaman
                   </option>
                 ))}
               </select>
@@ -725,7 +1070,7 @@ function GalleryPage() {
             <button
               onClick={() => setFullscreenUrl(detailItem.url)}
               className="absolute right-2 top-2 rounded-md bg-background/80 p-1.5 hover:bg-background"
-              title="Fullscreen"
+              title="Layar penuh"
             >
               <Maximize2 className="h-3.5 w-3.5" />
             </button>
@@ -742,25 +1087,25 @@ function GalleryPage() {
               </button>
             </div>
             <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs">
-              <dt className="text-muted-foreground">Location</dt>
+              <dt className="text-muted-foreground">Lokasi</dt>
               <dd className="text-right font-medium">{detailItem.folder || "—"}</dd>
               <dt className="text-muted-foreground">Source (Bin)</dt>
               <dd className="text-right font-medium">{formatBin(detailItem.bin)}</dd>
-              <dt className="text-muted-foreground">Capture Time</dt>
+              <dt className="text-muted-foreground">Waktu Capture</dt>
               <dd className="text-right font-medium">{formatDateTime(detailItem.createdAt)}</dd>
               <dt className="text-muted-foreground">Operator</dt>
               <dd className="text-right font-medium">—</dd>
-              <dt className="text-muted-foreground">Camera</dt>
+              <dt className="text-muted-foreground">Kamera</dt>
               <dd className="text-right font-medium">{deviceStatus?.camera?.model ?? "—"}</dd>
               <dt className="text-muted-foreground">Mini PC</dt>
               <dd className="text-right font-medium">{deviceStatus?.deviceId ?? "—"}</dd>
-              <dt className="text-muted-foreground">File Size</dt>
+              <dt className="text-muted-foreground">Ukuran File</dt>
               <dd className="text-right font-medium">{formatBytes(detailItem.blob.size)}</dd>
-              <dt className="text-muted-foreground">Image Size</dt>
+              <dt className="text-muted-foreground">Ukuran Gambar</dt>
               <dd className="text-right font-medium">
                 {detailDimensions ? `${detailDimensions.width} x ${detailDimensions.height}` : "—"}
               </dd>
-              <dt className="text-muted-foreground">File Format</dt>
+              <dt className="text-muted-foreground">Format File</dt>
               <dd className="text-right font-medium">{getFileFormat(detailItem.name)}</dd>
             </dl>
           </div>
@@ -778,7 +1123,7 @@ function GalleryPage() {
                 <dd className="font-medium">—</dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-muted-foreground">Lens Clean</dt>
+                <dt className="text-muted-foreground">Kebersihan Lensa</dt>
                 <dd className="font-medium">—</dd>
               </div>
               <div className="flex justify-between">
@@ -786,7 +1131,7 @@ function GalleryPage() {
                 <dd className="font-medium">—</dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-muted-foreground">Resolution</dt>
+                <dt className="text-muted-foreground">Resolusi</dt>
                 <dd className="font-medium">
                   {detailDimensions
                     ? `${detailDimensions.width} x ${detailDimensions.height}`
@@ -794,11 +1139,11 @@ function GalleryPage() {
                 </dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-muted-foreground">Lighting</dt>
+                <dt className="text-muted-foreground">Pencahayaan</dt>
                 <dd className="font-medium">—</dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-muted-foreground">Blur Level</dt>
+                <dt className="text-muted-foreground">Level Blur</dt>
                 <dd className="font-medium">—</dd>
               </div>
             </dl>
@@ -812,7 +1157,7 @@ function GalleryPage() {
               <HistogramChart histogram={detailHistogram} />
             ) : (
               <div className="flex h-24 items-center justify-center text-xs text-muted-foreground">
-                Computing…
+                Menghitung...
               </div>
             )}
           </div>
@@ -822,19 +1167,19 @@ function GalleryPage() {
               onClick={() => downloadItem(detailItem)}
               className="flex-1 rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90"
             >
-              Download
+              Unduh
             </button>
             <button
               onClick={() => toggleSelect(detailItem.id)}
               className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-xs font-medium hover:bg-accent"
             >
-              {selectedIds.has(detailItem.id) ? "Deselect" : "Compare"}
+              {selectedIds.has(detailItem.id) ? "Batalkan pilih" : "Bandingkan"}
             </button>
             <button
               onClick={() => deleteItem(detailItem)}
               className="flex-1 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive hover:bg-destructive/20"
             >
-              Delete
+              Hapus
             </button>
           </div>
         </aside>
@@ -867,7 +1212,7 @@ function GalleryPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Compare ({selectedItems.length})</h2>
+              <h2 className="text-lg font-semibold">Bandingkan ({selectedItems.length})</h2>
               <button onClick={() => setCompareOpen(false)} className="rounded p-1 hover:bg-accent">
                 <X className="h-4 w-4" />
               </button>

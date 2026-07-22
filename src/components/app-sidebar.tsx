@@ -69,16 +69,17 @@ function DeviceStatusCard() {
 
   const cameraConnected = !!status?.camera?.connected;
   const cameraLabel = status?.camera
-    ? [status.camera.manufacturer, status.camera.model].filter(Boolean).join(" ") || "Unknown model"
-    : "Not detected";
+    ? [status.camera.manufacturer, status.camera.model].filter(Boolean).join(" ") ||
+      "Model tidak diketahui"
+    : "Belum terdeteksi";
 
   return (
     <div className="rounded-md border bg-sidebar-accent/40 p-3 text-xs group-data-[collapsible=icon]:hidden">
       <div className="mb-2 flex items-center justify-between">
-        <span className="font-medium text-sidebar-foreground">Device Status</span>
+        <span className="font-medium text-sidebar-foreground">Status Device</span>
         <span
           className={`h-2 w-2 rounded-full ${status?.online ? "bg-emerald-500" : "bg-sidebar-foreground/30"}`}
-          title={status?.online ? "Online" : "Offline"}
+          title={status?.online ? "Terhubung" : "Offline"}
         />
       </div>
       <dl className="space-y-1 text-sidebar-foreground/70">
@@ -92,24 +93,24 @@ function DeviceStatusCard() {
           </dd>
         </div>
         <div className="flex items-center justify-between gap-2">
-          <dt>Camera</dt>
+          <dt>Kamera</dt>
           <dd className="truncate font-medium text-sidebar-foreground" title={cameraLabel}>
             {cameraLabel}
           </dd>
         </div>
         <div className="flex items-center justify-between gap-2">
-          <dt>Connection</dt>
+          <dt>Koneksi</dt>
           <dd className="font-medium text-sidebar-foreground">{cameraConnected ? "USB" : "—"}</dd>
         </div>
         <div className="flex items-center justify-between gap-2">
-          <dt>Network</dt>
+          <dt>Jaringan</dt>
           <dd className="font-medium text-sidebar-foreground">
-            {status?.online ? "Online" : "Offline"}
+            {status?.online ? "Terhubung" : "Offline"}
           </dd>
         </div>
       </dl>
       <div className="mt-2 border-t pt-2 text-[10px] text-sidebar-foreground/50">
-        Last sync: {lastSync ? formatSyncTime(lastSync) : "—"}
+        Sinkron terakhir: {lastSync ? formatSyncTime(lastSync) : "—"}
       </div>
     </div>
   );
@@ -140,7 +141,7 @@ export function AppSidebar() {
               Capture App
             </span>
             <span className="truncate text-[11px] leading-tight text-sidebar-foreground/50">
-              Calcine Sampling
+              Operasional Calcine
             </span>
           </div>
         </div>
@@ -148,7 +149,7 @@ export function AppSidebar() {
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupLabel className="px-2 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">
-            Menu
+            Navigasi
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>

@@ -19,3 +19,7 @@ is `src/routes/__root.tsx`.
 | `__root.tsx` | app shell — wraps every page; preserve `<Outlet />` |
 
 `routeTree.gen.ts` is auto-generated. Don't edit it by hand.
+
+## UI Copy
+
+For route-level UI wording, follow the project guide in `UI_LANGUAGE_STYLE_GUIDE.md`.

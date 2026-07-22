@@ -1,6 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { MapPin, RotateCcw, Crosshair } from "lucide-react";
+import {
+  Activity,
+  AlertTriangle,
+  Camera,
+  CheckCircle2,
+  Crosshair,
+  MapPin,
+  RotateCcw,
+  Wifi,
+} from "lucide-react";
+import { useCaptureCameraSession } from "@/hooks/use-capture-camera-session";
 import {
   loadPrefs,
   savePrefs,
@@ -12,18 +22,19 @@ import {
 } from "@/lib/capture-prefs";
 import { addGalleryItem } from "@/lib/gallery-store";
 import {
-  createSession,
-  releaseSession,
-  renewSession,
-  getPreviewFrame,
   triggerCapture,
   triggerAutofocus,
   pollJob,
   getMediaContent,
-  getDeviceStatus,
   exportMediaToNetwork,
-  type DeviceStatus,
 } from "@/lib/camera-api";
+import {
+  describeCameraRuntimeIssue,
+  getCaptureActionHint,
+  getCaptureRuntimeActions,
+  getCaptureSessionSummary,
+  getRuntimeErrorCode,
+} from "@/lib/camera-runtime";
 import { PLANTS, toLocationToken } from "@/lib/locations";
 
 export const Route = createFileRoute("/capture")({
@@ -34,43 +45,32 @@ export const Route = createFileRoute("/capture")({
       {
         name: "description",
         content:
-          "Capture images from your camera, preview, and save to a chosen directory with custom filename formats.",
+          "Ambil gambar dari kamera, lihat preview, lalu simpan ke folder pilihan dengan format nama file kustom.",
       },
       { property: "og:title", content: "Capture — Capture App" },
       {
         property: "og:description",
         content:
-          "Capture images from your camera, preview, and save to a chosen directory with custom filename formats.",
+          "Ambil gambar dari kamera, lihat preview, lalu simpan ke folder pilihan dengan format nama file kustom.",
       },
     ],
   }),
 });
 
-type DirHandle = any;
-type FileHandle = any;
-type CameraSessionRef = { sessionId: string; leaseToken: string };
+type DirHandle = FileSystemDirectoryHandle;
+type FileHandle = FileSystemFileHandle;
 type Bin = "BIN 1" | "BIN 2";
 // assetId is kept around so Save can later ask the edge device to export the
 // already-captured asset straight to its network share, without the browser
 // re-uploading the bytes it already downloaded once for the preview.
 type BinPreview = { blob: Blob; url: string; assetId: string };
 
-// Release with `keepalive: true` so the request survives page teardown —
-// used both when the user clicks "Stop camera" (the UI updates optimistically
-// right after this fires) and on tab close, where a plain fetch would
-// otherwise get cancelled mid-flight and leak the session for the full lease.
-function releaseSessionKeepalive(session: CameraSessionRef) {
-  return releaseSession({
-    data: session,
-    fetch: (input: RequestInfo | URL, init?: RequestInit) =>
-      fetch(input, { ...init, keepalive: true }),
-  }).catch(() => {
-    /* best effort */
-  });
-}
-
 function binToken(bin: Bin) {
   return bin.replace(" ", "");
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
 }
 
 // Fixed English month names so {MMMM} always renders "July", never a localized
@@ -161,41 +161,70 @@ async function getDatedDirHandle(
   return { dir: dayDir, path };
 }
 
+function formatRelativeTime(timestamp: number | null) {
+  if (!timestamp) return "Belum ada data";
+  const diffMinutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60000));
+  if (diffMinutes < 1) return "Baru saja";
+  if (diffMinutes < 60) return `${diffMinutes} menit lalu`;
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours} jam lalu`;
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays} hari lalu`;
+}
+
+function RuntimeCard({
+  title,
+  status,
+  detail,
+  hint,
+  icon: Icon,
+  tone,
+}: {
+  title: string;
+  status: string;
+  detail: string;
+  hint: string;
+  icon: React.ComponentType<{ className?: string }>;
+  tone: "success" | "warning" | "danger";
+}) {
+  const toneClass =
+    tone === "success"
+      ? "bg-emerald-500/10 text-emerald-700"
+      : tone === "danger"
+        ? "bg-destructive/10 text-destructive"
+        : "bg-amber-500/10 text-amber-700";
+  return (
+    <div className="rounded-lg border bg-card p-4">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+          <Icon className="h-4 w-4" />
+        </span>
+        <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${toneClass}`}>
+          {status}
+        </span>
+      </div>
+      <div className="text-sm font-semibold">{title}</div>
+      <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
+      <p className="mt-3 text-[11px] text-muted-foreground/80">{hint}</p>
+    </div>
+  );
+}
+
 function CapturePage() {
-  const [cameraFrame, setCameraFrame] = useState<string | null>(null);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [leaseToken, setLeaseToken] = useState<string | null>(null);
-  const [sessionStarting, setSessionStarting] = useState(false);
   const [capturingBin, setCapturingBin] = useState<Bin | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
-  const [previewFetching, setPreviewFetching] = useState(false);
 
   const [bin1, setBin1] = useState<BinPreview | null>(null);
   const [bin2, setBin2] = useState<BinPreview | null>(null);
   const [lastSource, setLastSource] = useState<Bin>("BIN 1");
   const [savingBin, setSavingBin] = useState<Bin | null>(null);
   const [autofocusing, setAutofocusing] = useState(false);
-  const [deviceStatus, setDeviceStatus] = useState<DeviceStatus | null>(null);
-  // True while we're blocked on another station holding the single-camera lock
-  // and are auto-retrying to grab it once it frees.
-  const [waitingForCamera, setWaitingForCamera] = useState(false);
-  // Bumped on every start/cancel so a stale retry loop can detect it's been
-  // superseded (also cleanly cancels the Strict Mode double-mount's first run).
-  const startAttemptRef = useRef(0);
-
-  const sessionRef = useRef<{ sessionId: string; leaseToken: string } | null>(null);
   // Synchronous re-entrancy guard for saves. `savingBin` is state (async), so a
   // fast double-click could pass its check twice before re-render; this ref
   // closes that window and prevents the same still being written under the same
   // index twice (which would silently overwrite the first file).
   const savingRef = useRef(false);
-  // While true, the preview loop yields the camera. A still capture is a
-  // multi-step gphoto2 sequence (set target → set capture → full-press); if the
-  // preview poll interleaves a `--capture-preview` (liveview) between those
-  // steps, the Canon rejects the full-press with "PTP Device Busy". Pausing
-  // preview for the duration keeps the camera to the capture alone.
-  const cameraBusyRef = useRef(false);
 
   const [dirHandle, setDirHandle] = useState<DirHandle | null>(null);
   const [dirName, setDirName] = useState<string>("");
@@ -208,6 +237,24 @@ function CapturePage() {
   const [supportsFS, setSupportsFS] = useState(false);
   const [prefsLoaded, setPrefsLoaded] = useState(false);
   const [pendingReconnect, setPendingReconnect] = useState(false);
+
+  const {
+    cameraAsleep,
+    cameraBusyRef,
+    cameraFrame,
+    cameraUsable,
+    deviceStatus,
+    deviceStatusLoaded,
+    leaseToken,
+    previewFetching,
+    sessionId,
+    sessionStarting,
+    sessionIssue,
+    startCamera,
+    stopCamera,
+    cancelStart,
+    waitingForCamera,
+  } = useCaptureCameraSession({ setError, setStatus });
 
   // Load persisted preferences + directory handle after hydration.
   useEffect(() => {
@@ -256,226 +303,13 @@ function CapturePage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [startCamera]);
 
   // Persist preferences whenever they change (after the initial load).
   useEffect(() => {
     if (!prefsLoaded) return;
     savePrefs({ location, pattern, ext, counter });
   }, [prefsLoaded, location, pattern, ext, counter]);
-
-  // Release the camera session on tab close / navigation away, best-effort.
-  // Deliberately NOT tied to visibilitychange="hidden" -- that fires on
-  // ordinary tab-switching too, which would kill the session (and its
-  // leaseToken) every time the user looks away, while the preview loop below
-  // expects to pause and resume against that same still-live session.
-  useEffect(() => {
-    function releaseOnExit() {
-      const session = sessionRef.current;
-      if (!session) return;
-      releaseSessionKeepalive(session);
-    }
-    window.addEventListener("beforeunload", releaseOnExit);
-    return () => {
-      window.removeEventListener("beforeunload", releaseOnExit);
-      releaseOnExit();
-    };
-  }, []);
-
-  // Sequential preview polling: GET /v1/camera/preview does a real
-  // gphoto2 --capture-preview round-trip over USB, measured at ~1.0-1.2s per
-  // call against real hardware — well under 1fps. A fixed-tick setInterval
-  // would stack up overlapping in-flight requests queued behind gphoto2 on
-  // the edge node, so this awaits each call before scheduling the next one.
-  // Shared by both bin panels, since there's one physical camera used
-  // alternately between bins. Paused while the tab is hidden.
-  useEffect(() => {
-    if (!sessionId || !leaseToken) return;
-    const session = { sessionId, leaseToken };
-    let cancelled = false;
-    let loopRunning = false;
-
-    async function pollLoop() {
-      if (loopRunning) return;
-      loopRunning = true;
-      while (!cancelled && document.visibilityState === "visible") {
-        // Stand down while a capture/autofocus owns the camera.
-        if (cameraBusyRef.current) {
-          await new Promise((resolve) => setTimeout(resolve, 200));
-          continue;
-        }
-        setPreviewFetching(true);
-        try {
-          const res = await getPreviewFrame({ data: session });
-          const blob = await res.blob();
-          if (!cancelled) {
-            setCameraFrame((prev) => {
-              if (prev) URL.revokeObjectURL(prev);
-              return URL.createObjectURL(blob);
-            });
-          }
-        } catch {
-          // Preview can be transiently unavailable (mid-capture, or a
-          // camera-state 422) — one failed frame shouldn't kill the loop.
-        } finally {
-          setPreviewFetching(false);
-        }
-        if (cancelled || document.visibilityState !== "visible") break;
-        await new Promise((resolve) => setTimeout(resolve, 200));
-      }
-      loopRunning = false;
-    }
-
-    function handleVisibility() {
-      if (document.visibilityState === "visible") pollLoop();
-    }
-
-    pollLoop();
-    document.addEventListener("visibilitychange", handleVisibility);
-    return () => {
-      cancelled = true;
-      document.removeEventListener("visibilitychange", handleVisibility);
-    };
-  }, [sessionId, leaseToken]);
-
-  // Poll real device/camera connectivity independently of the session lock.
-  // A session can stay "active" while the Canon has gone to sleep or dropped off
-  // USB, so this drives an honest "is the camera actually there?" signal for the
-  // badges and Capture buttons instead of trusting the session alone.
-  useEffect(() => {
-    let cancelled = false;
-    async function poll() {
-      try {
-        const s = await getDeviceStatus();
-        if (!cancelled) setDeviceStatus(s);
-      } catch {
-        /* keep last known status */
-      }
-    }
-    poll();
-    const id = setInterval(poll, 6000);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, []);
-
-  // Heartbeat: the edge API fixes a lease at creation and never extends it on
-  // activity, so a continuously-open station must renew or its session dies
-  // after ~120s and the camera drops out mid-use.
-  //
-  // Crucially, renew ONLY while this tab is visible. The camera is a single
-  // shared resource: if a hidden/forgotten tab kept heartbeating it would hold
-  // the camera hostage forever and every other station would be permanently
-  // stuck on "Camera is in use". By pausing while hidden, a backgrounded tab
-  // lets its lease lapse (≤120s) so the tab actually being used can take over
-  // (its startCamera auto-retry grabs it as soon as it frees). Returning to a
-  // tab renews immediately, or re-establishes if the lease already lapsed.
-  useEffect(() => {
-    if (!sessionId || !leaseToken) return;
-    const sid = sessionId;
-    const tok = leaseToken;
-    let cancelled = false;
-
-    async function beat() {
-      if (cancelled || document.visibilityState !== "visible") return;
-      const r = await renewSession({
-        data: { sessionId: sid, leaseToken: tok, leaseSeconds: 120 },
-      });
-      if (cancelled) return;
-      if (!r.ok) {
-        sessionRef.current = null;
-        setSessionId(null);
-        setLeaseToken(null);
-        startCamera();
-      }
-    }
-
-    const id = setInterval(beat, 60000);
-    function onVisible() {
-      if (document.visibilityState === "visible") beat();
-    }
-    document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, leaseToken]);
-
-  async function startCamera() {
-    const attempt = ++startAttemptRef.current;
-    setError(null);
-    setSessionStarting(true);
-    setWaitingForCamera(false);
-    try {
-      // The camera is a single-writer resource: only one station/tab can hold
-      // the session at a time. If another one has it, don't just fail — keep
-      // retrying so this station grabs the camera automatically the moment the
-      // other releases it (or its lease expires), instead of getting stuck on a
-      // "Camera is in use" error that never clears.
-      for (;;) {
-        if (startAttemptRef.current !== attempt) return; // superseded / cancelled
-        let result;
-        try {
-          const ownerId = `web-${Math.random().toString(36).slice(2, 10)}`;
-          // Short lease: normal exits (Stop camera / unmount / tab close) always
-          // release explicitly below, and the heartbeat renews it while in use,
-          // so this only bounds the damage from a hard crash.
-          result = await createSession({ data: { ownerId, leaseSeconds: 120 } });
-        } catch (e: any) {
-          setError(e?.message ?? "Failed to reach the camera service");
-          return;
-        }
-        if (startAttemptRef.current !== attempt) return;
-        if (result.ok) {
-          const session = {
-            sessionId: result.session.sessionId,
-            leaseToken: result.session.leaseToken,
-          };
-          sessionRef.current = session;
-          setSessionId(session.sessionId);
-          setLeaseToken(session.leaseToken);
-          setWaitingForCamera(false);
-          return;
-        }
-        if (result.code === "SESSION_CONFLICT") {
-          setWaitingForCamera(true);
-          setError(null);
-          await new Promise((r) => setTimeout(r, 4000));
-          continue;
-        }
-        setError(result.message);
-        return;
-      }
-    } finally {
-      if (startAttemptRef.current === attempt) setSessionStarting(false);
-    }
-  }
-
-  // Give up waiting for another station to release the camera.
-  function cancelStart() {
-    startAttemptRef.current++;
-    setSessionStarting(false);
-    setWaitingForCamera(false);
-    setStatus(null);
-    setError(null);
-  }
-
-  async function stopCamera() {
-    const session = sessionRef.current;
-    sessionRef.current = null;
-    setSessionId(null);
-    setLeaseToken(null);
-    setCameraFrame((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
-      return null;
-    });
-    if (session) {
-      await releaseSessionKeepalive(session);
-    }
-  }
 
   async function captureToBin(bin: Bin) {
     if (!sessionId || !leaseToken) return;
@@ -493,12 +327,12 @@ function CapturePage() {
       }
       const job = await pollJob(triggered.job.jobId);
       if (job.status === "failed") {
-        setError(job.error?.message ?? "Capture failed");
+        setError(job.error?.message ?? "Capture gagal");
         return;
       }
       const assetId = job.result?.asset.assetId;
       if (!assetId) {
-        setError("Capture succeeded but no image was returned");
+        setError("Capture berhasil, tetapi tidak ada gambar yang dikembalikan");
         return;
       }
       const res = await getMediaContent({ data: { assetId } });
@@ -511,8 +345,10 @@ function CapturePage() {
       });
       setLastSource(bin);
       setStatus(null);
-    } catch (e: any) {
-      setError(e?.message ?? "Capture failed");
+    } catch (error: unknown) {
+      const message = getErrorMessage(error, "Capture gagal");
+      const issue = describeCameraRuntimeIssue(getRuntimeErrorCode(error), message);
+      setError(issue.detail);
     } finally {
       setCapturingBin(null);
       cameraBusyRef.current = false;
@@ -533,12 +369,14 @@ function CapturePage() {
       }
       const job = await pollJob(triggered.job.jobId);
       if (job.status === "failed") {
-        setError(job.error?.message ?? "Autofocus failed");
+        setError(job.error?.message ?? "Autofocus gagal");
         return;
       }
-      setStatus("Focused");
-    } catch (e: any) {
-      setError(e?.message ?? "Autofocus failed");
+      setStatus("Fokus selesai");
+    } catch (error: unknown) {
+      const message = getErrorMessage(error, "Autofocus gagal");
+      const issue = describeCameraRuntimeIssue(getRuntimeErrorCode(error), message);
+      setError(issue.detail);
     } finally {
       setAutofocusing(false);
       cameraBusyRef.current = false;
@@ -554,8 +392,10 @@ function CapturePage() {
       setDirName(handle.name);
       setPendingReconnect(false);
       await saveDirHandle(handle);
-    } catch (e: any) {
-      if (e?.name !== "AbortError") setError(e?.message ?? "Failed to pick directory");
+    } catch (error: unknown) {
+      if (!(error instanceof DOMException && error.name === "AbortError")) {
+        setError(getErrorMessage(error, "Gagal memilih folder"));
+      }
     }
   }
 
@@ -564,9 +404,9 @@ function CapturePage() {
     const ok = await verifyPermission(dirHandle, true);
     if (ok) {
       setPendingReconnect(false);
-      setStatus(`Reconnected to ${dirName}`);
+      setStatus(`Folder ${dirName} berhasil tersambung ulang`);
     } else {
-      setError("Permission denied — pick the folder again");
+      setError("Izin folder ditolak, pilih ulang folder simpan");
     }
   }
 
@@ -582,7 +422,7 @@ function CapturePage() {
     const ok = await verifyPermission(dirHandle, true);
     if (!ok) {
       setPendingReconnect(true);
-      setError("Folder permission required — click Reconnect");
+      setError("Izin folder diperlukan, klik Sambungkan ulang");
     }
     return ok;
   }
@@ -612,6 +452,7 @@ function CapturePage() {
 
     try {
       let savedNetworkPath: string | null = null;
+      let saveConfirmed = false;
       let permissionAlreadyReported = false;
 
       // Tier 1: ask the edge device to export the asset it already has to the
@@ -630,6 +471,7 @@ function CapturePage() {
         if (exported.ok) {
           filename = exported.filename;
           savedNetworkPath = exported.savedTo;
+          saveConfirmed = true;
         } else if (exported.code !== "NETWORK_SAVE_NOT_CONFIGURED") {
           // NOT_CONFIGURED is the expected/common case (not every edge device
           // has a network share set up) and not worth alarming anyone about.
@@ -638,7 +480,7 @@ function CapturePage() {
           // capture isn't lost, but say so, the same way the folder tier's
           // own failure gets a banner rather than failing silently.
           setError(
-            `Edge device network save failed (${exported.message}) — trying the fallback save location instead.`,
+            `Network save dari edge device gagal (${exported.message}) — mencoba jalur simpan fallback.`,
           );
         }
       }
@@ -660,7 +502,8 @@ function CapturePage() {
           await writable.close();
           parentDir = dayDir;
           savedNetworkPath = `${dirName}/${datedPath}/${filename}`;
-        } catch (e: any) {
+          saveConfirmed = true;
+        } catch (error: unknown) {
           // Network share unreachable, permission lost, or write failed --
           // don't lose the capture, fall back to a local download. The
           // operator moves it to the shared folder by hand once it's back.
@@ -668,14 +511,14 @@ function CapturePage() {
           parentDir = null;
           if (!permissionAlreadyReported) {
             setError(
-              `Network folder unavailable (${e?.message ?? "unknown error"}) — this capture was downloaded locally instead. Move it to the shared folder manually.`,
+              `Folder jaringan tidak tersedia (${getErrorMessage(error, "error tidak diketahui")}) — hasil capture diunduh lokal sebagai gantinya. Pindahkan manual ke shared folder bila diperlukan.`,
             );
           }
         }
       }
 
       if (savedNetworkPath) {
-        setStatus(`Saved to ${savedNetworkPath}`);
+        setStatus(`Tersimpan ke ${savedNetworkPath}`);
       } else {
         const url = URL.createObjectURL(previewItem.blob);
         const a = document.createElement("a");
@@ -683,9 +526,9 @@ function CapturePage() {
         a.download = filename;
         a.click();
         URL.revokeObjectURL(url);
-        setStatus(
-          dirHandle && supportsFS ? `Downloaded ${filename} locally` : `Downloaded ${filename}`,
-        );
+        const downloadStatus =
+          dirHandle && supportsFS ? `${filename} diunduh lokal` : `${filename} berhasil diunduh`;
+        setStatus(downloadStatus);
       }
 
       const item = {
@@ -701,10 +544,13 @@ function CapturePage() {
       };
       await addGalleryItem(item);
       setCounter((c) => c + 1);
-      // Saved successfully -> drop this bin's frozen still so the panel returns
-      // to the live preview, ready to frame the next sample. This also disables
-      // its Save button, so the same file can't be written twice.
-      clearBin(bin);
+      // Only clear the frozen still when we know the save really completed.
+      // A browser download triggered via <a download> gives no signal for
+      // whether the user actually saved the file or cancelled the dialog, so
+      // keep the preview visible on that fallback path.
+      if (saveConfirmed) {
+        clearBin(bin);
+      }
     } finally {
       savingRef.current = false;
       setSavingBin(null);
@@ -717,20 +563,129 @@ function CapturePage() {
 
   const nextFilename = `${formatFilename(pattern, counter, toLocationToken(location), binToken(lastSource))}.${ext}`;
   const fsUnsupportedNote = hydrated && !supportsFS;
-
-  // The camera is only truly usable when the edge node reports the Canon
-  // connected and ready. A live session alone isn't enough — the camera can
-  // sleep or drop off USB while the session lock is still held.
-  const cameraOnline = !!(
-    deviceStatus?.online &&
-    deviceStatus.camera?.connected &&
-    deviceStatus.connectionState === "ready"
-  );
-  const sessionActive = !!sessionId;
-  // Only gate on connectivity once we actually have a device reading, so the
-  // first second before the first poll doesn't flash a false "disconnected".
-  const cameraUsable = sessionActive && (deviceStatus === null || cameraOnline);
-  const cameraAsleep = sessionActive && deviceStatus !== null && !cameraOnline;
+  const currentOperationRunning =
+    capturingBin !== null || autofocusing || savingBin !== null || previewFetching;
+  const sessionIssueDetails = sessionIssue
+    ? describeCameraRuntimeIssue(sessionIssue.code, sessionIssue.message)
+    : null;
+  const runtimeBootstrapping =
+    !deviceStatusLoaded && !sessionIssue && !sessionId && !waitingForCamera && !sessionStarting;
+  const sessionSummary = getCaptureSessionSummary({
+    deviceStatus,
+    sessionId,
+    sessionStarting,
+    waitingForCamera,
+  });
+  const prioritizedSessionIssue =
+    sessionIssue?.code === "SESSION_CONFLICT" &&
+    deviceStatusLoaded &&
+    (!deviceStatus?.online || !deviceStatus.camera?.connected)
+      ? null
+      : sessionIssueDetails;
+  const activeRuntimeIssue = runtimeBootstrapping
+    ? null
+    : (prioritizedSessionIssue ??
+      (!deviceStatus?.online
+        ? describeCameraRuntimeIssue(
+            "UNREACHABLE",
+            "Aplikasi belum bisa menjangkau service kamera pada edge device.",
+          )
+        : !deviceStatus.camera?.connected
+          ? describeCameraRuntimeIssue(
+              "CAMERA_DISCONNECTED",
+              "Kamera belum terdeteksi oleh edge node.",
+            )
+          : cameraAsleep
+            ? describeCameraRuntimeIssue(
+                "PREVIEW_UNAVAILABLE",
+                "Kamera tersambung tetapi belum memberi preview yang stabil.",
+              )
+            : null));
+  const captureActionHint = getCaptureActionHint({
+    sessionId,
+    sessionStarting,
+    waitingForCamera,
+    cameraAsleep,
+    deviceStatus,
+    operationInProgress: currentOperationRunning,
+  });
+  const runtimeActions = getCaptureRuntimeActions({
+    sessionId,
+    sessionStarting,
+    waitingForCamera,
+    cameraAsleep,
+    deviceStatus,
+    operationInProgress: currentOperationRunning,
+  });
+  const runtimeCards = [
+    {
+      title: "Edge API",
+      status: !deviceStatusLoaded
+        ? "Sinkronisasi"
+        : deviceStatus?.online
+          ? "Terjangkau"
+          : "Offline",
+      detail: !deviceStatusLoaded
+        ? "Status edge device sedang dimuat dari service kamera."
+        : deviceStatus?.online
+          ? `Status koneksi: ${deviceStatus.connectionState ?? "unknown"}.`
+          : "Aplikasi belum bisa menjangkau edge camera service.",
+      hint: !deviceStatusLoaded
+        ? "Tunggu sampai aplikasi selesai membaca status edge runtime."
+        : deviceStatus?.deviceId
+          ? `Device ID: ${deviceStatus.deviceId}`
+          : "Periksa jaringan LAN dan status service edge device.",
+      icon: Wifi,
+      tone: !deviceStatusLoaded
+        ? ("warning" as const)
+        : deviceStatus?.online
+          ? ("success" as const)
+          : ("danger" as const),
+    },
+    {
+      title: "Camera USB",
+      status: !deviceStatusLoaded
+        ? "Menunggu"
+        : deviceStatus?.camera?.connected
+          ? "Terhubung"
+          : "Terputus",
+      detail: !deviceStatusLoaded
+        ? "Deteksi kamera USB menunggu status edge pertama selesai dibaca."
+        : deviceStatus?.camera?.connected
+          ? `${deviceStatus.camera.manufacturer ?? "Camera"} ${deviceStatus.camera.model ?? ""}`.trim()
+          : "Kamera belum terdeteksi oleh edge node.",
+      hint: !deviceStatusLoaded
+        ? "Status kabel USB dan model kamera akan tampil setelah sinkronisasi awal."
+        : deviceStatus?.camera?.connected
+          ? `Serial: ${deviceStatus.camera.serialNumber ?? "tidak tersedia"}`
+          : "Pastikan kabel USB dan power kamera aktif.",
+      icon: Camera,
+      tone: !deviceStatusLoaded
+        ? ("warning" as const)
+        : deviceStatus?.camera?.connected
+          ? ("success" as const)
+          : ("danger" as const),
+    },
+    {
+      title: "Session Lease",
+      status: waitingForCamera
+        ? "Menunggu"
+        : sessionStarting
+          ? "Menghubungkan"
+          : sessionId
+            ? "Aktif"
+            : "Berhenti",
+      detail: !deviceStatusLoaded
+        ? "Aplikasi sedang menyelaraskan status edge dan session awal."
+        : sessionSummary.detail,
+      hint:
+        prioritizedSessionIssue && sessionIssue
+          ? `${prioritizedSessionIssue.title} · ${formatRelativeTime(sessionIssue.updatedAt)}`
+          : "Lease akan diperbarui otomatis selama tab aktif.",
+      icon: Activity,
+      tone: sessionSummary.tone === "info" ? ("warning" as const) : sessionSummary.tone,
+    },
+  ];
 
   return (
     <div className="p-6">
@@ -738,13 +693,13 @@ function CapturePage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Capture</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Capture from camera, preview, and save to a chosen directory with a custom filename
-            format.
+            Ambil gambar dari kamera, lihat preview, lalu simpan ke folder pilihan dengan format
+            nama file kustom.
           </p>
         </div>
         <div className="inline-flex items-center gap-1.5 rounded-md border bg-card px-3 py-1.5 text-sm">
           <MapPin className="h-4 w-4 text-muted-foreground" />
-          <span className="text-muted-foreground">Location:</span>
+          <span className="text-muted-foreground">Lokasi:</span>
           <select
             value={location}
             onChange={(e) => setLocation(e.target.value)}
@@ -772,25 +727,99 @@ function CapturePage() {
       {hydrated && supportsFS && !dirName && (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm">
           <span>
-            No save folder chosen yet — captures will download to your browser's Downloads folder
-            instead.
+            Belum ada folder simpan yang dipilih. Hasil capture akan diunduh ke folder `Downloads`
+            browser sebagai fallback.
           </span>
           <button
             onClick={pickDirectory}
             className="shrink-0 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
           >
-            Choose folder
+            Pilih folder
           </button>
         </div>
       )}
       {cameraAsleep && (
         <div className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-          Camera not responding{" "}
-          {deviceStatus?.connectionState ? `(${deviceStatus.connectionState})` : ""} — the Canon may
-          have gone to sleep. Wake it (half-press the shutter or power-cycle); capture is paused
-          until it reconnects.
+          Kamera tidak merespons{" "}
+          {deviceStatus?.connectionState ? `(${deviceStatus.connectionState})` : ""}. Kamera Canon
+          kemungkinan sleep. Bangunkan kamera dengan half-press shutter atau power-cycle; capture
+          dijeda sampai koneksi kembali stabil.
         </div>
       )}
+      <section className="mb-6 grid gap-4 xl:grid-cols-[1.35fr_1fr]">
+        <div className="rounded-lg border bg-card p-5">
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Runtime Kamera
+              </h2>
+              <div className="mt-1 text-xl font-semibold">
+                {runtimeBootstrapping
+                  ? "Menyelaraskan status kamera"
+                  : (activeRuntimeIssue?.title ?? sessionSummary.title)}
+              </div>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Status ini membantu operator membedakan masalah edge API, koneksi kamera USB, dan
+                lease session sebelum menjalankan capture.
+              </p>
+            </div>
+            <div className="rounded-lg border bg-background px-3 py-2 text-right text-xs">
+              <div className="text-muted-foreground">Hint tindakan</div>
+              <div className="mt-1 max-w-64 font-medium text-foreground">{captureActionHint}</div>
+            </div>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-3">
+            {runtimeCards.map((card) => (
+              <RuntimeCard key={card.title} {...card} />
+            ))}
+          </div>
+        </div>
+
+        <section className="rounded-lg border bg-card p-5">
+          <div className="mb-3 flex items-center gap-2">
+            {activeRuntimeIssue?.tone === "danger" ? (
+              <AlertTriangle className="h-4 w-4 text-destructive" />
+            ) : activeRuntimeIssue ? (
+              <AlertTriangle className="h-4 w-4 text-amber-600" />
+            ) : (
+              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+            )}
+            <h2 className="text-sm font-semibold">Tindakan Berikutnya</h2>
+          </div>
+          {activeRuntimeIssue ? (
+            <div
+              className={`rounded-lg border px-3 py-3 text-sm ${
+                activeRuntimeIssue.tone === "danger"
+                  ? "border-destructive/30 bg-destructive/5 text-destructive"
+                  : "border-amber-500/30 bg-amber-500/5 text-amber-700"
+              }`}
+            >
+              <div className="font-medium">{activeRuntimeIssue.title}</div>
+              <div className="mt-1">{activeRuntimeIssue.detail}</div>
+              <div className="mt-2 text-xs">{activeRuntimeIssue.nextAction}</div>
+            </div>
+          ) : runtimeBootstrapping ? (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-3 text-sm text-muted-foreground">
+              Aplikasi sedang memuat status edge device dan mencoba menyelaraskan session kamera.
+            </div>
+          ) : (
+            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-3 text-sm text-muted-foreground">
+              Session, edge API, dan kamera tidak menunjukkan blocker utama saat ini.
+            </div>
+          )}
+          <div className="mt-3 space-y-2">
+            {runtimeActions.map((item) => (
+              <div
+                key={item}
+                className="rounded-md border bg-background px-3 py-2 text-xs text-muted-foreground"
+              >
+                {item}
+              </div>
+            ))}
+          </div>
+        </section>
+      </section>
 
       <div className="grid gap-6 md:grid-cols-2">
         {(["BIN 1", "BIN 2"] as Bin[]).map((bin) => {
@@ -802,18 +831,22 @@ function CapturePage() {
           // hold their own photo and never visually overwrite each other.
           const showFrozen = !!preview;
           const tone = showFrozen
-            ? { pill: "bg-amber-500/10 text-amber-600", dot: "bg-amber-500", label: "Captured" }
+            ? {
+                pill: "bg-amber-500/10 text-amber-600",
+                dot: "bg-amber-500",
+                label: "Sudah dicapture",
+              }
             : !sessionId
               ? {
                   pill: "bg-muted text-muted-foreground",
                   dot: "bg-muted-foreground/40",
-                  label: "Camera Off",
+                  label: "Kamera Off",
                 }
               : cameraAsleep
                 ? {
                     pill: "bg-destructive/10 text-destructive",
                     dot: "bg-destructive",
-                    label: "Sleeping",
+                    label: "Kamera sleep",
                   }
                 : {
                     pill: "bg-emerald-500/10 text-emerald-600",
@@ -837,28 +870,28 @@ function CapturePage() {
                   <>
                     <img
                       src={preview.url}
-                      alt={`${bin} captured image`}
+                      alt={`${bin} hasil capture`}
                       className="h-full w-full object-cover"
                     />
                     <span className="absolute left-2 top-2 rounded bg-black/60 px-2 py-0.5 text-xs font-medium text-white">
-                      Captured still
+                      Hasil capture
                     </span>
                   </>
                 ) : cameraFrame ? (
                   <img
                     src={cameraFrame}
-                    alt={`${bin} live preview`}
+                    alt={`${bin} preview live`}
                     className={`h-full w-full object-cover transition-opacity duration-150 ${previewFetching ? "opacity-70" : "opacity-100"}`}
                   />
                 ) : (
                   <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
                     {sessionStarting
-                      ? "Connecting to camera…"
+                      ? "Menghubungkan ke kamera…"
                       : cameraAsleep
-                        ? "Camera not responding…"
+                        ? "Kamera tidak merespons…"
                         : sessionId
-                          ? "Waiting for preview…"
-                          : "Camera is off"}
+                          ? "Menunggu preview…"
+                          : "Kamera belum aktif"}
                   </div>
                 )}
               </div>
@@ -866,25 +899,34 @@ function CapturePage() {
               <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
                 <span className="inline-flex items-center gap-1.5">
                   <span className={`h-1.5 w-1.5 rounded-full ${tone.dot}`} />
-                  {showFrozen ? "Frozen capture" : cameraAsleep ? "No signal" : "Live preview"}
+                  {showFrozen
+                    ? "Capture dibekukan"
+                    : cameraAsleep
+                      ? "Tidak ada sinyal"
+                      : "Preview langsung"}
                 </span>
-                {showFrozen && <span className="text-emerald-600">Ready to save</span>}
+                {showFrozen && <span className="text-emerald-600">Siap disimpan</span>}
               </div>
 
               <div className="mt-3 flex flex-wrap gap-2">
                 <button
                   onClick={() => captureToBin(bin)}
                   disabled={!cameraUsable || capturingBin !== null || isSaving || autofocusing}
+                  title={captureActionHint}
                   className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
                 >
-                  {isCapturing ? "Capturing…" : showFrozen ? `Recapture ${bin}` : `Capture ${bin}`}
+                  {isCapturing
+                    ? "Mengambil…"
+                    : showFrozen
+                      ? `Ambil ulang ${bin}`
+                      : `Capture ${bin}`}
                 </button>
                 <button
                   onClick={() => saveBin(bin)}
                   disabled={!preview || isSaving}
                   className="rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
                 >
-                  {isSaving ? "Saving…" : "Save image"}
+                  {isSaving ? "Menyimpan…" : `Simpan ${bin}`}
                 </button>
                 {showFrozen && (
                   <button
@@ -892,7 +934,7 @@ function CapturePage() {
                     disabled={isSaving}
                     className="rounded-md px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-accent disabled:opacity-50"
                   >
-                    Discard
+                    Buang
                   </button>
                 )}
               </div>
@@ -907,13 +949,13 @@ function CapturePage() {
             <>
               <span className="inline-flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm text-amber-700">
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
-                Camera in use by another station — waiting to connect…
+                Kamera sedang dipakai station lain, menunggu giliran untuk terhubung…
               </span>
               <button
                 onClick={cancelStart}
                 className="rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
               >
-                Cancel
+                Hentikan tunggu
               </button>
             </>
           ) : (
@@ -922,7 +964,7 @@ function CapturePage() {
               disabled={sessionStarting}
               className="rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
             >
-              {sessionStarting ? "Connecting…" : "Start camera"}
+              {sessionStarting ? "Menghubungkan…" : "Mulai kamera"}
             </button>
           )
         ) : (
@@ -930,41 +972,41 @@ function CapturePage() {
             onClick={stopCamera}
             className="rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
           >
-            Stop camera
+            Hentikan session
           </button>
         )}
         <button
           onClick={runAutofocus}
           disabled={!cameraUsable || capturingBin !== null || autofocusing}
-          title="Tell the camera to autofocus (one physical camera, shared by both bins)"
+          title={captureActionHint}
           className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
         >
           <Crosshair className="h-3.5 w-3.5" />
-          {autofocusing ? "Focusing…" : "Autofocus"}
+          {autofocusing ? "Memfokuskan…" : "Autofocus"}
         </button>
       </div>
 
       {/* Settings */}
       <section className="mt-6 rounded-lg border bg-card p-4">
-        <h2 className="mb-4 text-lg font-semibold">Save settings</h2>
+        <h2 className="mb-4 text-lg font-semibold">Pengaturan Simpan</h2>
 
         <div className="grid gap-4 md:grid-cols-3">
           <div className="md:col-span-3">
-            <label className="mb-1 block text-sm font-medium">Save directory (Shared Folder)</label>
+            <label className="mb-1 block text-sm font-medium">Folder simpan (Shared Folder)</label>
             <div className="flex flex-wrap items-center gap-2">
               <button
                 onClick={pickDirectory}
                 disabled={hydrated && !supportsFS}
                 className="rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
               >
-                {dirName ? "Change folder" : "Choose folder"}
+                {dirName ? "Ganti folder" : "Pilih folder"}
               </button>
               {pendingReconnect && (
                 <button
                   onClick={reconnectDirectory}
                   className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
                 >
-                  Reconnect
+                  Sambungkan ulang
                 </button>
               )}
               {dirName && (
@@ -972,30 +1014,31 @@ function CapturePage() {
                   onClick={forgetDirectory}
                   className="rounded-md border border-input bg-background px-3 py-2 text-sm hover:bg-accent"
                 >
-                  Forget
+                  Lupakan
                 </button>
               )}
               <span className="text-sm text-muted-foreground">
                 {dirName
-                  ? `${dirName}${pendingReconnect ? " (permission needed)" : " · remembered"}`
+                  ? `${dirName}${pendingReconnect ? " (izin diperlukan)" : " · diingat"}`
                   : fsUnsupportedNote
-                    ? "Not supported — will download"
-                    : "No folder selected"}
+                    ? "Tidak didukung — akan diunduh"
+                    : "Belum ada folder dipilih"}
               </span>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              If this app has a network save folder configured, every capture is saved there
-              automatically — no folder needed here. This picker is the fallback for when that isn't
-              set: choose a folder (e.g. a network share like{" "}
-              <span className="font-mono">{"\\\\10.1.1.44\\Data Analythics\\ML\\MTI"}</span>) and
-              images go there instead, in the same Year/Month/Day subfolders (e.g. 2026/07/18).
-              Browsers only expose the folder name, not the full network path. If neither save path
-              is reachable, the capture is downloaded locally instead so nothing is lost.
+              Jika aplikasi ini sudah punya folder simpan jaringan yang dikonfigurasi, setiap
+              capture akan otomatis disimpan ke sana sehingga folder di sini tidak wajib dipilih.
+              Picker ini adalah fallback saat path tersebut belum tersedia: pilih folder, misalnya
+              network share seperti{" "}
+              <span className="font-mono">{"\\\\10.1.1.44\\Data Analythics\\ML\\MTI"}</span>, lalu
+              gambar akan dikirim ke sana dengan subfolder Tahun/Bulan/Hari yang sama, misalnya
+              `2026/07/18`. Browser hanya menampilkan nama folder, bukan path jaringan penuh. Jika
+              semua jalur simpan gagal diakses, hasil capture akan diunduh lokal agar tidak hilang.
             </p>
           </div>
 
           <div>
-            <label className="mb-1 block text-sm font-medium">Location</label>
+            <label className="mb-1 block text-sm font-medium">Lokasi</label>
             <select
               value={location}
               onChange={(e) => setLocation(e.target.value)}
@@ -1008,30 +1051,30 @@ function CapturePage() {
               ))}
             </select>
             <p className="mt-1 text-xs text-muted-foreground">
-              Which plant this capture belongs to.
+              Menentukan capture ini berasal dari plant yang mana.
             </p>
           </div>
 
           <div>
-            <label className="mb-1 block text-sm font-medium">Source</label>
+            <label className="mb-1 block text-sm font-medium">Sumber</label>
             <div className="rounded-md border border-input bg-muted px-3 py-2 text-sm">
               BIN 1 / BIN 2
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              Set by whichever bin's Capture button you use.
+              Ditentukan otomatis dari tombol Capture BIN yang dipakai.
             </p>
           </div>
 
           <div>
-            <label className="mb-1 block text-sm font-medium">File format</label>
+            <label className="mb-1 block text-sm font-medium">Format file</label>
             <div className="rounded-md border border-input bg-muted px-3 py-2 text-sm">JPEG</div>
             <p className="mt-1 text-xs text-muted-foreground">
-              Saved straight from the camera as JPEG (.jpg).
+              Disimpan langsung dari kamera sebagai JPEG (`.jpg`).
             </p>
           </div>
 
           <div className="md:col-span-2">
-            <label className="mb-1 block text-sm font-medium">Filename format</label>
+            <label className="mb-1 block text-sm font-medium">Format nama file</label>
             <input
               value={pattern}
               onChange={(e) => setPattern(e.target.value)}
@@ -1040,18 +1083,18 @@ function CapturePage() {
             <p className="mt-1 text-xs text-muted-foreground">
               Tokens: {"{DD} {MMMM} {MM} {YYYY} {HH} {mm} {ss} {LOCATION} {SOURCE} {INDEX} {TS}"}
               <br />
-              {"{MMMM}"} = full month name (July), {"{LOCATION}"} = plant code (AP / CP)
+              {"{MMMM}"} = nama bulan lengkap (July), {"{LOCATION}"} = kode plant (AP / CP)
               <br />
               {/* nextFilename embeds the current clock, so it must not be
                     rendered until after hydration -- the server's HH.mm and the
                     browser's would differ by the time hydration runs, and React
                     would throw a text-mismatch (#418) on this node. */}
-              Example: <span className="font-mono">{hydrated ? nextFilename : "—"}</span>
+              Contoh: <span className="font-mono">{hydrated ? nextFilename : "—"}</span>
             </p>
           </div>
 
           <div>
-            <label className="mb-1 block text-sm font-medium">Image index</label>
+            <label className="mb-1 block text-sm font-medium">Indeks gambar</label>
             <div className="flex items-center gap-2">
               <input
                 value={String(counter).padStart(3, "0")}
@@ -1060,18 +1103,20 @@ function CapturePage() {
               />
               <button
                 onClick={resetCounter}
-                title="Reset to 001"
+                title="Reset ke 001"
                 className="inline-flex shrink-0 items-center gap-1 rounded-md border border-input bg-background px-3 py-2 text-sm hover:bg-accent"
               >
                 <RotateCcw className="h-3.5 w-3.5" /> Reset
               </button>
             </div>
-            <p className="mt-1 text-xs text-muted-foreground">Auto-increment after each capture.</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Bertambah otomatis setelah setiap capture.
+            </p>
           </div>
         </div>
 
         <div className="mt-4 rounded-md bg-muted px-3 py-2 text-xs font-mono break-all">
-          Next file will be saved as: {hydrated ? nextFilename : "—"}
+          File berikutnya akan disimpan sebagai: {hydrated ? nextFilename : "—"}
         </div>
       </section>
     </div>
