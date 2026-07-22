@@ -276,6 +276,31 @@ function formatDeviceEventPayloadValue(value: unknown): string {
   return JSON.stringify(value);
 }
 
+function matchesDeviceEventSearch(event: DeviceEventView, query: string) {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (normalizedQuery === "") return true;
+
+  const payloadTerms = event.payload
+    ? Object.entries(event.payload).flatMap(([key, value]) => [
+        formatDeviceEventPayloadKey(key),
+        formatDeviceEventPayloadValue(value),
+      ])
+    : [];
+
+  return [
+    formatDeviceEventLabel(event.eventType),
+    event.eventType,
+    event.severity,
+    event.message,
+    event.deviceName ?? "",
+    event.deviceCode,
+    ...payloadTerms,
+  ]
+    .join(" ")
+    .toLowerCase()
+    .includes(normalizedQuery);
+}
+
 function ReadinessCard({
   title,
   status,
@@ -396,6 +421,7 @@ function DevicesPage() {
   const [deviceEventsLoading, setDeviceEventsLoading] = useState(false);
   const [deviceEventsError, setDeviceEventsError] = useState<string | null>(null);
   const [deviceEventFilter, setDeviceEventFilter] = useState<DeviceEventFilter>("all");
+  const [deviceEventSearchQuery, setDeviceEventSearchQuery] = useState("");
   const [selectedDeviceEventId, setSelectedDeviceEventId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
@@ -624,13 +650,16 @@ function DevicesPage() {
     },
   ];
   const latestDeviceEvent = deviceEvents[0] ?? null;
-  const visibleDeviceEvents = deviceEvents.filter((event) =>
-    deviceEventFilter === "all" ? true : event.severity === deviceEventFilter,
+  const visibleDeviceEvents = deviceEvents.filter(
+    (event) =>
+      (deviceEventFilter === "all" ? true : event.severity === deviceEventFilter) &&
+      matchesDeviceEventSearch(event, deviceEventSearchQuery),
   );
   const selectedDeviceEvent =
     visibleDeviceEvents.find((event) => event.id === selectedDeviceEventId) ??
     visibleDeviceEvents[0] ??
     null;
+  const hasDeviceEventSearch = deviceEventSearchQuery.trim() !== "";
   const eventCounts = {
     all: deviceEvents.length,
     info: deviceEvents.filter((event) => event.severity === "info").length,
@@ -1188,6 +1217,22 @@ function DevicesPage() {
                     </button>
                   ))}
                 </div>
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                  <div className="relative min-w-[220px] flex-1">
+                    <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                    <input
+                      value={deviceEventSearchQuery}
+                      onChange={(e) => setDeviceEventSearchQuery(e.target.value)}
+                      placeholder="Cari pesan, event, device, atau payload..."
+                      className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-3 text-xs outline-none ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                    />
+                  </div>
+                  <div className="text-[11px] text-muted-foreground">
+                    Menampilkan {visibleDeviceEvents.length} dari {eventCounts[deviceEventFilter]}{" "}
+                    log
+                    {hasDeviceEventSearch ? ` untuk "${deviceEventSearchQuery.trim()}"` : ""}.
+                  </div>
+                </div>
                 {deviceEventsError ? (
                   <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-700">
                     Log device belum bisa dimuat: {deviceEventsError}
@@ -1198,8 +1243,13 @@ function DevicesPage() {
                   </div>
                 ) : visibleDeviceEvents.length === 0 ? (
                   <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                    Tidak ada log dengan severity {deviceEventFilter.toUpperCase()} untuk device
-                    ini.
+                    Tidak ada log yang cocok dengan filter saat ini
+                    {deviceEventFilter !== "all"
+                      ? ` (severity ${deviceEventFilter.toUpperCase()})`
+                      : ""}
+                    {hasDeviceEventSearch
+                      ? ` dan kata kunci "${deviceEventSearchQuery.trim()}".`
+                      : "."}
                   </div>
                 ) : (
                   <div className="grid gap-3 xl:grid-cols-[1.25fr_0.85fr]">
