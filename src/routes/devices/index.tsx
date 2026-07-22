@@ -251,6 +251,7 @@ function formatDeviceEventLabel(eventType: string): string {
 }
 
 type DeviceEventFilter = "all" | "info" | "warning" | "error";
+type DeviceEventTypeFilter = "all" | "capture" | "autofocus" | "fallback" | "other";
 
 const DEVICE_EVENT_FILTERS: Array<{ id: DeviceEventFilter; label: string }> = [
   { id: "all", label: "Semua" },
@@ -258,6 +259,21 @@ const DEVICE_EVENT_FILTERS: Array<{ id: DeviceEventFilter; label: string }> = [
   { id: "warning", label: "Warning" },
   { id: "info", label: "Info" },
 ];
+
+const DEVICE_EVENT_TYPE_FILTERS: Array<{ id: DeviceEventTypeFilter; label: string }> = [
+  { id: "all", label: "Semua Tipe" },
+  { id: "capture", label: "Capture" },
+  { id: "autofocus", label: "Autofocus" },
+  { id: "fallback", label: "Fallback" },
+  { id: "other", label: "Lainnya" },
+];
+
+function getDeviceEventTypeGroup(eventType: string): DeviceEventTypeFilter {
+  if (eventType.startsWith("capture-")) return "capture";
+  if (eventType.startsWith("autofocus-")) return "autofocus";
+  if (eventType.includes("fallback")) return "fallback";
+  return "other";
+}
 
 function formatDeviceEventPayloadKey(key: string) {
   return key
@@ -433,6 +449,7 @@ function DevicesPage() {
   const [deviceEventsLoading, setDeviceEventsLoading] = useState(false);
   const [deviceEventsError, setDeviceEventsError] = useState<string | null>(null);
   const [deviceEventFilter, setDeviceEventFilter] = useState<DeviceEventFilter>("all");
+  const [deviceEventTypeFilter, setDeviceEventTypeFilter] = useState<DeviceEventTypeFilter>("all");
   const [deviceEventSearchQuery, setDeviceEventSearchQuery] = useState("");
   const [selectedDeviceEventId, setSelectedDeviceEventId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>("overview");
@@ -665,6 +682,9 @@ function DevicesPage() {
   const visibleDeviceEvents = deviceEvents.filter(
     (event) =>
       (deviceEventFilter === "all" ? true : event.severity === deviceEventFilter) &&
+      (deviceEventTypeFilter === "all"
+        ? true
+        : getDeviceEventTypeGroup(event.eventType) === deviceEventTypeFilter) &&
       matchesDeviceEventSearch(event, deviceEventSearchQuery),
   );
   const selectedDeviceEvent =
@@ -672,6 +692,7 @@ function DevicesPage() {
     visibleDeviceEvents[0] ??
     null;
   const hasDeviceEventSearch = deviceEventSearchQuery.trim() !== "";
+  const hasDeviceEventTypeFilter = deviceEventTypeFilter !== "all";
   const groupedVisibleDeviceEvents = visibleDeviceEvents.reduce(
     (groups, event) => {
       const eventDate = new Date(event.createdAt);
@@ -698,6 +719,19 @@ function DevicesPage() {
     warning: deviceEvents.filter((event) => event.severity === "warning").length,
     error: deviceEvents.filter((event) => event.severity === "error").length,
   } satisfies Record<DeviceEventFilter, number>;
+  const eventTypeCounts = {
+    all: deviceEvents.length,
+    capture: deviceEvents.filter((event) => getDeviceEventTypeGroup(event.eventType) === "capture")
+      .length,
+    autofocus: deviceEvents.filter(
+      (event) => getDeviceEventTypeGroup(event.eventType) === "autofocus",
+    ).length,
+    fallback: deviceEvents.filter(
+      (event) => getDeviceEventTypeGroup(event.eventType) === "fallback",
+    ).length,
+    other: deviceEvents.filter((event) => getDeviceEventTypeGroup(event.eventType) === "other")
+      .length,
+  } satisfies Record<DeviceEventTypeFilter, number>;
 
   const visibleDevices = registeredDevices.filter((device) => {
     const query = searchQuery.trim().toLowerCase();
@@ -1267,6 +1301,31 @@ function DevicesPage() {
                     </button>
                   ))}
                 </div>
+                <div className="mb-3 flex flex-wrap items-center gap-2">
+                  {DEVICE_EVENT_TYPE_FILTERS.map((filter) => (
+                    <button
+                      key={filter.id}
+                      type="button"
+                      onClick={() => setDeviceEventTypeFilter(filter.id)}
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium ${
+                        deviceEventTypeFilter === filter.id
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-input bg-background hover:bg-accent"
+                      }`}
+                    >
+                      <span>{filter.label}</span>
+                      <span
+                        className={`rounded-full px-1.5 py-0.5 text-[11px] ${
+                          deviceEventTypeFilter === filter.id
+                            ? "bg-primary-foreground/15 text-primary-foreground"
+                            : "bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        {eventTypeCounts[filter.id]}
+                      </span>
+                    </button>
+                  ))}
+                </div>
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                   <div className="relative min-w-[220px] flex-1">
                     <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -1280,6 +1339,9 @@ function DevicesPage() {
                   <div className="text-[11px] text-muted-foreground">
                     Menampilkan {visibleDeviceEvents.length} dari {eventCounts[deviceEventFilter]}{" "}
                     log
+                    {hasDeviceEventTypeFilter
+                      ? ` tipe ${DEVICE_EVENT_TYPE_FILTERS.find((filter) => filter.id === deviceEventTypeFilter)?.label ?? deviceEventTypeFilter}`
+                      : ""}
                     {hasDeviceEventSearch ? ` untuk "${deviceEventSearchQuery.trim()}"` : ""}.
                   </div>
                 </div>
@@ -1296,6 +1358,9 @@ function DevicesPage() {
                     Tidak ada log yang cocok dengan filter saat ini
                     {deviceEventFilter !== "all"
                       ? ` (severity ${deviceEventFilter.toUpperCase()})`
+                      : ""}
+                    {hasDeviceEventTypeFilter
+                      ? ` (tipe ${DEVICE_EVENT_TYPE_FILTERS.find((filter) => filter.id === deviceEventTypeFilter)?.label ?? deviceEventTypeFilter})`
                       : ""}
                     {hasDeviceEventSearch
                       ? ` dan kata kunci "${deviceEventSearchQuery.trim()}".`
@@ -1979,6 +2044,7 @@ function CameraSettingsTab({
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     const filterSuffix = deviceEventFilter === "all" ? "all" : deviceEventFilter;
+    const eventTypeSuffix = deviceEventTypeFilter === "all" ? "all-types" : deviceEventTypeFilter;
     const searchSuffix = hasDeviceEventSearch ? "-search" : "";
 
     let blob: Blob;
@@ -2000,7 +2066,7 @@ function CameraSettingsTab({
           type: "application/json;charset=utf-8;",
         },
       );
-      fileName = `device-events-${filterSuffix}${searchSuffix}-${timestamp}.json`;
+      fileName = `device-events-${filterSuffix}-${eventTypeSuffix}${searchSuffix}-${timestamp}.json`;
     } else {
       const rows = [
         [
@@ -2028,7 +2094,7 @@ function CameraSettingsTab({
       ];
       const csv = rows.map((row) => row.map(escapeCsvValue).join(",")).join("\r\n");
       blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
-      fileName = `device-events-${filterSuffix}${searchSuffix}-${timestamp}.csv`;
+      fileName = `device-events-${filterSuffix}-${eventTypeSuffix}${searchSuffix}-${timestamp}.csv`;
     }
 
     const url = URL.createObjectURL(blob);
