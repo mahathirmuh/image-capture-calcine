@@ -301,6 +301,14 @@ function matchesDeviceEventSearch(event: DeviceEventView, query: string) {
     .includes(normalizedQuery);
 }
 
+function formatDeviceEventGroupDate(date: Date) {
+  return date.toLocaleDateString("id-ID", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  });
+}
+
 function ReadinessCard({
   title,
   status,
@@ -660,6 +668,26 @@ function DevicesPage() {
     visibleDeviceEvents[0] ??
     null;
   const hasDeviceEventSearch = deviceEventSearchQuery.trim() !== "";
+  const groupedVisibleDeviceEvents = visibleDeviceEvents.reduce(
+    (groups, event) => {
+      const eventDate = new Date(event.createdAt);
+      const dateKey = eventDate.toISOString().slice(0, 10);
+      const currentGroup = groups.at(-1);
+
+      if (!currentGroup || currentGroup.dateKey !== dateKey) {
+        groups.push({
+          dateKey,
+          label: formatDeviceEventGroupDate(eventDate),
+          events: [event],
+        });
+        return groups;
+      }
+
+      currentGroup.events.push(event);
+      return groups;
+    },
+    [] as Array<{ dateKey: string; label: string; events: DeviceEventView[] }>,
+  );
   const eventCounts = {
     all: deviceEvents.length,
     info: deviceEvents.filter((event) => event.severity === "info").length,
@@ -1254,44 +1282,51 @@ function DevicesPage() {
                 ) : (
                   <div className="grid gap-3 xl:grid-cols-[1.25fr_0.85fr]">
                     <div className="space-y-2">
-                      {visibleDeviceEvents.map((event) => (
-                        <button
-                          key={event.id}
-                          type="button"
-                          onClick={() => setSelectedDeviceEventId(event.id)}
-                          className={`block w-full rounded-md border bg-background px-3 py-2 text-left text-xs transition-colors hover:border-primary/40 hover:bg-accent/20 ${
-                            selectedDeviceEvent?.id === event.id
-                              ? "border-primary bg-accent/20"
-                              : ""
-                          }`}
-                        >
-                          <div className="flex flex-wrap items-start justify-between gap-2">
-                            <div className="space-y-1">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="font-medium text-foreground">
-                                  {formatDeviceEventLabel(event.eventType)}
-                                </span>
-                                <StatusChip
-                                  label={event.severity}
-                                  tone={
-                                    event.severity === "error"
-                                      ? "error"
-                                      : event.severity === "warning"
-                                        ? "warning"
-                                        : "muted"
-                                  }
-                                />
-                              </div>
-                              <div className="text-muted-foreground">{event.message}</div>
-                              <div className="text-[11px] text-muted-foreground">
-                                Device: {event.deviceName ?? event.deviceCode}
-                              </div>
-                            </div>
-                            <span className="text-[11px] text-muted-foreground">
-                              {formatDateTime(new Date(event.createdAt))}
-                            </span>
+                      {groupedVisibleDeviceEvents.map((group) => (
+                        <div key={group.dateKey} className="space-y-2">
+                          <div className="sticky top-0 z-10 rounded-md border bg-muted/50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                            {group.label}
                           </div>
-                        </button>
+                          {group.events.map((event) => (
+                            <button
+                              key={event.id}
+                              type="button"
+                              onClick={() => setSelectedDeviceEventId(event.id)}
+                              className={`block w-full rounded-md border bg-background px-3 py-2 text-left text-xs transition-colors hover:border-primary/40 hover:bg-accent/20 ${
+                                selectedDeviceEvent?.id === event.id
+                                  ? "border-primary bg-accent/20"
+                                  : ""
+                              }`}
+                            >
+                              <div className="flex flex-wrap items-start justify-between gap-2">
+                                <div className="space-y-1">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className="font-medium text-foreground">
+                                      {formatDeviceEventLabel(event.eventType)}
+                                    </span>
+                                    <StatusChip
+                                      label={event.severity}
+                                      tone={
+                                        event.severity === "error"
+                                          ? "error"
+                                          : event.severity === "warning"
+                                            ? "warning"
+                                            : "muted"
+                                      }
+                                    />
+                                  </div>
+                                  <div className="text-muted-foreground">{event.message}</div>
+                                  <div className="text-[11px] text-muted-foreground">
+                                    Device: {event.deviceName ?? event.deviceCode}
+                                  </div>
+                                </div>
+                                <span className="text-[11px] text-muted-foreground">
+                                  {formatDateTime(new Date(event.createdAt))}
+                                </span>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
                       ))}
                     </div>
                     <div className="rounded-md border bg-muted/20 p-3">
