@@ -31,6 +31,30 @@ const recordCaptureSchema = z.object({
 
 export type RecordCaptureInput = z.infer<typeof recordCaptureSchema>;
 
+const listCaptureRecordsSchema = z
+  .object({
+    limit: z.number().int().positive().max(500).default(200),
+  })
+  .optional();
+
+export type CaptureRecordView = {
+  id: number;
+  deviceCode: string | null;
+  deviceName: string | null;
+  plant: string | null;
+  captureBin: string | null;
+  station: string | null;
+  fileName: string;
+  filePath: string;
+  capturedAt: string;
+  status: string;
+  fileSizeBytes: number | null;
+  checksumSha256: string | null;
+  saveMethod: CaptureSaveMethod | null;
+  assetId: string | null;
+  createdAt: string;
+};
+
 export function normalizeCaptureBinLabel(value: string): string | null {
   const normalized = value.trim().toUpperCase();
   if (normalized === "BIN 1" || normalized === "BIN1") return "Bin 1";
@@ -53,6 +77,67 @@ export function buildCaptureRecordMetadata(input: RecordCaptureInput) {
     station: input.station ?? null,
     saveMethod: input.saveMethod,
     assetId: input.assetId ?? null,
+  };
+}
+
+function parseCaptureRecordMetadata(raw: unknown): {
+  deviceCode: string | null;
+  deviceName: string | null;
+  plant: string | null;
+  captureBin: string | null;
+  station: string | null;
+  saveMethod: CaptureSaveMethod | null;
+  assetId: string | null;
+} {
+  let parsed: Record<string, unknown> = {};
+  if (typeof raw === "string" && raw.trim() !== "") {
+    try {
+      parsed = JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      parsed = {};
+    }
+  } else if (typeof raw === "object" && raw !== null) {
+    parsed = raw as Record<string, unknown>;
+  }
+
+  const saveMethod = CAPTURE_SAVE_METHODS.includes(parsed.saveMethod as CaptureSaveMethod)
+    ? (parsed.saveMethod as CaptureSaveMethod)
+    : null;
+
+  return {
+    deviceCode: typeof parsed.deviceCode === "string" ? parsed.deviceCode : null,
+    deviceName: typeof parsed.deviceName === "string" ? parsed.deviceName : null,
+    plant: typeof parsed.plant === "string" ? parsed.plant : null,
+    captureBin: typeof parsed.captureBin === "string" ? parsed.captureBin : null,
+    station: typeof parsed.station === "string" ? parsed.station : null,
+    saveMethod,
+    assetId: typeof parsed.assetId === "string" ? parsed.assetId : null,
+  };
+}
+
+function mapCaptureRecordRow(row: Record<string, unknown>): CaptureRecordView {
+  const metadata = parseCaptureRecordMetadata(row.metadata_json);
+  return {
+    id: Number(row.id),
+    deviceCode: metadata.deviceCode,
+    deviceName: metadata.deviceName,
+    plant: metadata.plant ?? (typeof row.plant === "string" ? row.plant : null),
+    captureBin: metadata.captureBin,
+    station: metadata.station ?? (typeof row.station === "string" ? row.station : null),
+    fileName: String(row.file_name ?? ""),
+    filePath: String(row.file_path ?? ""),
+    capturedAt: new Date(
+      String(row.captured_at ?? row.created_at ?? new Date().toISOString()),
+    ).toISOString(),
+    status: String(row.status ?? ""),
+    fileSizeBytes:
+      typeof row.file_size_bytes === "number"
+        ? row.file_size_bytes
+        : Number(row.file_size_bytes ?? 0),
+    checksumSha256: typeof row.checksum_sha256 === "string" ? row.checksum_sha256 : null,
+    saveMethod: metadata.saveMethod,
+    assetId: metadata.assetId,
+    createdAt: new Date(String(row.created_at ?? new Date().toISOString())).toISOString(),
   };
 }
 
@@ -188,6 +273,56 @@ export const recordCaptureResult = createServerFn({ method: "POST" })
           error instanceof Error
             ? error.message
             : "Gagal menyimpan metadata capture ke registry MSSQL.",
+      };
+    }
+  });
+
+export const listCaptureRecords = createServerFn({ method: "GET" })
+  .validator(listCaptureRecordsSchema)
+  .handler(async ({ data }) => {
+    if (!isCardDbConfigured()) {
+      return {
+        ok: false as const,
+        code: "CARDDB_NOT_CONFIGURED",
+        message: "Konfigurasi CARDDB belum lengkap di server aplikasi.",
+      };
+    }
+
+    try {
+      const schema = `[${getCardDbSchema()}]`;
+      const pool = await getCardDbPool();
+      const limit = data?.limit ?? 200;
+      const result = await pool.request().input("limit", sql.Int, limit).query(`
+        SELECT TOP (@limit)
+          cr.id,
+          cr.file_name,
+          cr.file_path,
+          cr.captured_at,
+          cr.status,
+          cr.file_size_bytes,
+          cr.checksum_sha256,
+          cr.metadata_json,
+          cr.created_at,
+          l.plant,
+          l.station
+        FROM ${schema}.capture_records cr
+        LEFT JOIN ${schema}.locations l
+          ON l.id = cr.location_id
+        ORDER BY cr.captured_at DESC, cr.id DESC;
+      `);
+
+      return {
+        ok: true as const,
+        records: result.recordset.map((row) => mapCaptureRecordRow(row as Record<string, unknown>)),
+      };
+    } catch (error) {
+      return {
+        ok: false as const,
+        code: "CAPTURE_RECORD_LIST_FAILED",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Gagal memuat riwayat capture dari registry MSSQL.",
       };
     }
   });

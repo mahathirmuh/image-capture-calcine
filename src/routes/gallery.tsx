@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { type GalleryItem, loadGallery, saveGallery, removeGalleryItem } from "@/lib/gallery-store";
 import { getDeviceStatus, type DeviceStatus } from "@/lib/camera-api";
+import { listCaptureRecords, type CaptureRecordView } from "@/lib/capture-records";
 import {
   DEFAULT_GALLERY_VIEW_STATE,
   GALLERY_PAGE_SIZE_OPTIONS,
@@ -98,9 +99,31 @@ function getFileFormat(name: string): string {
   return ext ? ext.toUpperCase() : "—";
 }
 
-// Stored as the space-free "BIN1"/"BIN2" token; show it as "BIN 1"/"BIN 2".
 function formatBin(bin?: string): string {
-  return bin ? bin.replace(/^BIN/, "BIN ") : "—";
+  if (!bin) return "—";
+  const normalized = bin.trim().toUpperCase();
+  if (normalized === "BIN1" || normalized === "BIN 1") return "BIN 1";
+  if (normalized === "BIN2" || normalized === "BIN 2") return "BIN 2";
+  if (normalized === "BIN 1 / BIN 2" || normalized === "BIN1/BIN2") return "BIN 1 / BIN 2";
+  return bin;
+}
+
+function formatCaptureRecordStatus(status: string): string {
+  return status === "downloaded"
+    ? "Diunduh lokal"
+    : status === "saved"
+      ? "Tersimpan"
+      : status || "—";
+}
+
+function formatSaveMethodLabel(method: CaptureRecordView["saveMethod"]): string {
+  return method === "edge-network"
+    ? "Edge -> network"
+    : method === "browser-folder"
+      ? "Browser -> folder"
+      : method === "browser-download"
+        ? "Browser download"
+        : "—";
 }
 
 function HistogramChart({ histogram }: { histogram: Histogram }) {
@@ -177,6 +200,8 @@ function GalleryPage() {
   const [gallery, setGallery] = useState<GalleryItem[]>([]);
   const [hydrated, setHydrated] = useState(false);
   const [deviceStatus, setDeviceStatus] = useState<DeviceStatus | null>(null);
+  const [captureRecords, setCaptureRecords] = useState<CaptureRecordView[]>([]);
+  const [captureRecordsError, setCaptureRecordsError] = useState<string | null>(null);
 
   const [detailItem, setDetailItem] = useState<GalleryItem | null>(null);
   const [detailDimensions, setDetailDimensions] = useState<{
@@ -221,6 +246,16 @@ function GalleryPage() {
     setGalleryViewLoaded(true);
     loadGallery().then((items) => {
       if (!cancelled) setGallery(items);
+    });
+    listCaptureRecords({ data: { limit: 200 } }).then((result) => {
+      if (cancelled) return;
+      if (!result.ok) {
+        setCaptureRecordsError(result.message);
+        setCaptureRecords([]);
+        return;
+      }
+      setCaptureRecordsError(null);
+      setCaptureRecords(result.records);
     });
     getDeviceStatus().then((result) => {
       if (!cancelled) setDeviceStatus(result);
@@ -401,7 +436,12 @@ function GalleryPage() {
   }
 
   const uniqueLocations = Array.from(
-    new Set(gallery.map((item) => item.folder).filter(Boolean)),
+    new Set(
+      [
+        ...gallery.map((item) => item.folder),
+        ...captureRecords.map((item) => item.plant ?? ""),
+      ].filter(Boolean),
+    ),
   ).sort();
 
   const sortedGallery = [...gallery].sort((a, b) => {
@@ -428,8 +468,17 @@ function GalleryPage() {
     const matchesBin = filterBin === "" || item.bin === filterBin;
     return matchesSearch && matchesDate && matchesLocation && matchesBin;
   });
+  const filteredCaptureRecords = captureRecords.filter((item) => {
+    const matchesSearch =
+      searchQuery.trim() === "" ||
+      item.fileName.toLowerCase().includes(searchQuery.trim().toLowerCase());
+    const matchesDate = filterDate === "" || item.capturedAt.slice(0, 10) === filterDate;
+    const matchesLocation = filterLocation === "" || item.plant === filterLocation;
+    const matchesBin = filterBin === "" || formatBin(item.captureBin) === formatBin(filterBin);
+    return matchesSearch && matchesDate && matchesLocation && matchesBin;
+  });
+  const recentCaptureRecords = filteredCaptureRecords.slice(0, 8);
 
-  const totalPages = Math.max(1, Math.ceil(filteredGallery.length / pageSize));
   const clampedPage = Math.min(page, totalPages);
   const pageStart = (clampedPage - 1) * pageSize;
   const pageItems = filteredGallery.slice(pageStart, pageStart + pageSize);
@@ -474,6 +523,13 @@ function GalleryPage() {
   ].filter(Boolean) as Array<{ key: string; label: string; clear: () => void }>;
   const selectedSavedView = getGallerySavedViewById(savedViewPreference);
   const isCustomView = !galleryViewStateMatchesSavedView(currentViewState, savedViewPreference);
+  const detailRecord =
+    detailItem === null
+      ? null
+      : (captureRecords.find((record) => {
+          if (record.fileName !== detailItem.name) return false;
+          return Math.abs(new Date(record.capturedAt).getTime() - detailItem.createdAt) < 120_000;
+        }) ?? null);
 
   if (!hydrated) {
     return (
@@ -523,7 +579,7 @@ function GalleryPage() {
           </div>
         </header>
 
-        <section className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <section className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
           <OverviewCard
             icon={Search}
             label="Hasil Tersaring"
@@ -552,6 +608,80 @@ function GalleryPage() {
             value={cameraStateLabel}
             hint={deviceStatus?.deviceId ?? "Device status belum tersedia"}
           />
+          <OverviewCard
+            icon={Package}
+            label="Log Registry"
+            value={filteredCaptureRecords.length}
+            hint={`${captureRecords.length} record capture di MSSQL`}
+          />
+        </section>
+
+        <section className="mb-4 rounded-lg border bg-card p-4">
+          <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Riwayat Registry DB
+              </div>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Menampilkan metadata capture yang tercatat di MSSQL. Preview gambar tetap berasal
+                dari browser gallery lokal.
+              </p>
+            </div>
+            <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-medium text-primary">
+              {filteredCaptureRecords.length} record cocok filter
+            </span>
+          </div>
+
+          {captureRecordsError ? (
+            <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-3 text-sm text-amber-700">
+              Gagal memuat capture_records dari MSSQL: {captureRecordsError}
+            </div>
+          ) : recentCaptureRecords.length === 0 ? (
+            <div className="rounded-md border border-dashed py-6 text-center text-sm text-muted-foreground">
+              Belum ada metadata capture di MSSQL yang cocok dengan filter saat ini.
+            </div>
+          ) : (
+            <div className="overflow-hidden rounded-md border">
+              <table className="w-full text-sm">
+                <thead className="bg-muted text-left text-xs text-muted-foreground">
+                  <tr>
+                    <th className="p-2">Nama File</th>
+                    <th className="p-2">Waktu</th>
+                    <th className="p-2">Lokasi</th>
+                    <th className="p-2">Bin</th>
+                    <th className="p-2">Status</th>
+                    <th className="p-2">Metode</th>
+                    <th className="p-2">Device</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentCaptureRecords.map((record) => (
+                    <tr key={record.id} className="border-t">
+                      <td className="max-w-xs truncate p-2 font-medium" title={record.fileName}>
+                        {record.fileName}
+                      </td>
+                      <td className="p-2 text-xs text-muted-foreground">
+                        {formatDateTime(new Date(record.capturedAt).getTime())}
+                      </td>
+                      <td className="p-2 text-xs text-muted-foreground">{record.plant ?? "—"}</td>
+                      <td className="p-2 text-xs text-muted-foreground">
+                        {formatBin(record.captureBin ?? undefined)}
+                      </td>
+                      <td className="p-2 text-xs text-muted-foreground">
+                        {formatCaptureRecordStatus(record.status)}
+                      </td>
+                      <td className="p-2 text-xs text-muted-foreground">
+                        {formatSaveMethodLabel(record.saveMethod)}
+                      </td>
+                      <td className="p-2 text-xs text-muted-foreground">
+                        {record.deviceName ?? record.deviceCode ?? "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </section>
 
         <section className="mb-4 rounded-lg border bg-card p-4">
@@ -1095,12 +1225,29 @@ function GalleryPage() {
               <dd className="text-right font-medium">{formatDateTime(detailItem.createdAt)}</dd>
               <dt className="text-muted-foreground">Operator</dt>
               <dd className="text-right font-medium">—</dd>
+              <dt className="text-muted-foreground">Status DB</dt>
+              <dd className="text-right font-medium">
+                {detailRecord ? formatCaptureRecordStatus(detailRecord.status) : "Belum tercatat"}
+              </dd>
+              <dt className="text-muted-foreground">Metode Simpan</dt>
+              <dd className="text-right font-medium">
+                {detailRecord ? formatSaveMethodLabel(detailRecord.saveMethod) : "—"}
+              </dd>
               <dt className="text-muted-foreground">Kamera</dt>
               <dd className="text-right font-medium">{deviceStatus?.camera?.model ?? "—"}</dd>
               <dt className="text-muted-foreground">Mini PC</dt>
-              <dd className="text-right font-medium">{deviceStatus?.deviceId ?? "—"}</dd>
+              <dd className="text-right font-medium">
+                {detailRecord?.deviceName ??
+                  detailRecord?.deviceCode ??
+                  deviceStatus?.deviceId ??
+                  "—"}
+              </dd>
               <dt className="text-muted-foreground">Ukuran File</dt>
               <dd className="text-right font-medium">{formatBytes(detailItem.blob.size)}</dd>
+              <dt className="text-muted-foreground">Path Simpan</dt>
+              <dd className="truncate text-right font-medium" title={detailRecord?.filePath ?? "—"}>
+                {detailRecord?.filePath ?? "—"}
+              </dd>
               <dt className="text-muted-foreground">Ukuran Gambar</dt>
               <dd className="text-right font-medium">
                 {detailDimensions ? `${detailDimensions.width} x ${detailDimensions.height}` : "—"}

@@ -48,4 +48,9 @@ describe("capture-records helpers", () => {
       assetId: "asset-123",
     });
   });
+
+  it("treats non-download save methods as saved", () => {
+    expect(toCaptureRecordStatus("edge-network")).toBe("saved");
+    expect(toCaptureRecordStatus("browser-folder")).toBe("saved");
+  });
 });
