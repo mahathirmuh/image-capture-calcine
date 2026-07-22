@@ -309,6 +309,10 @@ function formatDeviceEventGroupDate(date: Date) {
   });
 }
 
+function escapeCsvValue(value: string) {
+  return `"${value.replace(/"/g, '""')}"`;
+}
+
 function ReadinessCard({
   title,
   status,
@@ -1207,18 +1211,36 @@ function DevicesPage() {
                   <h3 className="flex items-center gap-1.5 text-sm font-semibold">
                     <FileText className="h-3.5 w-3.5" /> Log Device Terbaru
                   </h3>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      void loadRecentDeviceEvents(
-                        selectedDevice?.deviceCode ?? profile?.deviceCode ?? null,
-                      )
-                    }
-                    disabled={deviceEventsLoading}
-                    className="rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:opacity-60"
-                  >
-                    {deviceEventsLoading ? "Menyegarkan…" : "Refresh Log"}
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => exportDeviceEvents("json")}
+                      disabled={visibleDeviceEvents.length === 0}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:opacity-60"
+                    >
+                      <Download className="h-3.5 w-3.5" /> Export JSON
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => exportDeviceEvents("csv")}
+                      disabled={visibleDeviceEvents.length === 0}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:opacity-60"
+                    >
+                      <Download className="h-3.5 w-3.5" /> Export CSV
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void loadRecentDeviceEvents(
+                          selectedDevice?.deviceCode ?? profile?.deviceCode ?? null,
+                        )
+                      }
+                      disabled={deviceEventsLoading}
+                      className="rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:opacity-60"
+                    >
+                      {deviceEventsLoading ? "Menyegarkan…" : "Refresh Log"}
+                    </button>
+                  </div>
                 </div>
                 <div className="mb-3 flex flex-wrap items-center gap-2">
                   {DEVICE_EVENT_FILTERS.map((filter) => (
@@ -1928,6 +1950,75 @@ function CameraSettingsTab({
     });
   }
 
+  function exportDeviceEvents(format: "json" | "csv") {
+    if (visibleDeviceEvents.length === 0) return;
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const filterSuffix = deviceEventFilter === "all" ? "all" : deviceEventFilter;
+    const searchSuffix = hasDeviceEventSearch ? "-search" : "";
+
+    let blob: Blob;
+    let fileName: string;
+
+    if (format === "json") {
+      blob = new Blob(
+        [
+          JSON.stringify(
+            visibleDeviceEvents.map((event) => ({
+              ...event,
+              eventLabel: formatDeviceEventLabel(event.eventType),
+            })),
+            null,
+            2,
+          ),
+        ],
+        {
+          type: "application/json;charset=utf-8;",
+        },
+      );
+      fileName = `device-events-${filterSuffix}${searchSuffix}-${timestamp}.json`;
+    } else {
+      const rows = [
+        [
+          "id",
+          "created_at",
+          "severity",
+          "event_type",
+          "event_label",
+          "device_code",
+          "device_name",
+          "message",
+          "payload_json",
+        ],
+        ...visibleDeviceEvents.map((event) => [
+          String(event.id),
+          event.createdAt,
+          event.severity,
+          event.eventType,
+          formatDeviceEventLabel(event.eventType),
+          event.deviceCode,
+          event.deviceName ?? "",
+          event.message,
+          event.payload ? JSON.stringify(event.payload) : "",
+        ]),
+      ];
+      const csv = rows.map((row) => row.map(escapeCsvValue).join(",")).join("\r\n");
+      blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+      fileName = `device-events-${filterSuffix}${searchSuffix}-${timestamp}.csv`;
+    }
+
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = fileName;
+    anchor.click();
+    URL.revokeObjectURL(url);
+
+    toast.success(`Log device diekspor ke ${format.toUpperCase()}`, {
+      description: `Mengekspor ${visibleDeviceEvents.length} log sesuai filter aktif.`,
+    });
+  }
+
   function exportApplyHistory(format: "json" | "csv", scope: "filtered" | "all" = "filtered") {
     const entries = scope === "all" ? applyHistory : visibleApplyHistory;
     if (entries.length === 0) return;
@@ -1944,7 +2035,6 @@ function CameraSettingsTab({
       });
       fileName = `apply-history-${suffix}-${timestamp}.json`;
     } else {
-      const escapeCsv = (value: string) => `"${value.replace(/"/g, '""')}"`;
       const rows = [
         [
           "status",
@@ -1969,7 +2059,7 @@ function CameraSettingsTab({
           entry.skippedKeys.join("|"),
         ]),
       ];
-      const csv = rows.map((row) => row.map(escapeCsv).join(",")).join("\r\n");
+      const csv = rows.map((row) => row.map(escapeCsvValue).join(",")).join("\r\n");
       blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
       fileName = `apply-history-${suffix}-${timestamp}.csv`;
     }
