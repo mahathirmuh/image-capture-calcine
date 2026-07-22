@@ -83,6 +83,7 @@ import {
   upsertRegisteredDeviceProfile,
   type RegisteredDevice,
 } from "@/lib/device-registry";
+import { listDeviceEvents, type DeviceEventView } from "@/lib/capture-records";
 
 export const Route = createFileRoute("/devices/")({
   component: DevicesPage,
@@ -223,6 +224,24 @@ function StatusChip({ label, tone }: { label: string; tone: "success" | "warning
   );
 }
 
+function formatDeviceEventLabel(eventType: string): string {
+  const labels: Record<string, string> = {
+    "metadata-finalized": "Metadata difinalisasi",
+    "capture-trigger-failed": "Trigger capture gagal",
+    "capture-job-failed": "Job capture gagal",
+    "capture-missing-asset": "Asset capture tidak tersedia",
+    "capture-exception": "Capture exception",
+    "autofocus-trigger-failed": "Trigger autofocus gagal",
+    "autofocus-job-failed": "Job autofocus gagal",
+    "autofocus-exception": "Autofocus exception",
+    "network-save-fallback": "Fallback network save",
+    "folder-save-fallback": "Fallback folder browser",
+    "browser-download-fallback": "Fallback download lokal",
+    "capture-record-sync-failed": "Sinkron capture DB gagal",
+  };
+  return labels[eventType] ?? eventType;
+}
+
 function ReadinessCard({
   title,
   status,
@@ -339,6 +358,9 @@ function DevicesPage() {
   const [loading, setLoading] = useState(false);
   const [capturesToday, setCapturesToday] = useState<number | null>(null);
   const [lastCaptureAt, setLastCaptureAt] = useState<number | null>(null);
+  const [deviceEvents, setDeviceEvents] = useState<DeviceEventView[]>([]);
+  const [deviceEventsLoading, setDeviceEventsLoading] = useState(false);
+  const [deviceEventsError, setDeviceEventsError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [searchQuery, setSearchQuery] = useState("");
@@ -408,6 +430,26 @@ function DevicesPage() {
     }
   }
 
+  const loadRecentDeviceEvents = useCallback(async (deviceCode?: string | null) => {
+    setDeviceEventsLoading(true);
+    const result = await listDeviceEvents({
+      data: {
+        limit: 8,
+        ...(deviceCode ? { deviceCode } : {}),
+      },
+    });
+    setDeviceEventsLoading(false);
+
+    if (!result.ok) {
+      setDeviceEvents([]);
+      setDeviceEventsError(result.message);
+      return;
+    }
+
+    setDeviceEvents(result.events);
+    setDeviceEventsError(null);
+  }, []);
+
   // Guarded against a stale response clobbering a newer one -- without this,
   // React StrictMode's mount/cleanup/remount in dev fires this effect twice,
   // and whichever of the two overlapping requests resolves last "wins" even
@@ -443,6 +485,11 @@ function DevicesPage() {
       cancelled = true;
     };
   }, [loadRegistry]);
+
+  useEffect(() => {
+    const deviceCode = selectedDevice?.deviceCode ?? profile?.deviceCode ?? null;
+    void loadRecentDeviceEvents(deviceCode);
+  }, [loadRecentDeviceEvents, profile?.deviceCode, selectedDevice?.deviceCode]);
 
   const cameraConnected = !!status?.camera?.connected;
   const cameraLabel = status?.camera
@@ -530,6 +577,7 @@ function DevicesPage() {
       onAction: () => setActiveTab("overview"),
     },
   ];
+  const latestDeviceEvent = deviceEvents[0] ?? null;
 
   const visibleDevices = registeredDevices.filter((device) => {
     const query = searchQuery.trim().toLowerCase();
@@ -1038,9 +1086,63 @@ function DevicesPage() {
             )}
 
             {activeTab === "logs" && (
-              <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                <FileText className="mx-auto mb-2 h-5 w-5" />
-                Belum ada log aktivitas yang tersedia.
+              <div className="rounded-md border p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <h3 className="flex items-center gap-1.5 text-sm font-semibold">
+                    <FileText className="h-3.5 w-3.5" /> Log Device Terbaru
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void loadRecentDeviceEvents(
+                        selectedDevice?.deviceCode ?? profile?.deviceCode ?? null,
+                      )
+                    }
+                    disabled={deviceEventsLoading}
+                    className="rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:opacity-60"
+                  >
+                    {deviceEventsLoading ? "Menyegarkan…" : "Refresh Log"}
+                  </button>
+                </div>
+                {deviceEventsError ? (
+                  <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-700">
+                    Log device belum bisa dimuat: {deviceEventsError}
+                  </div>
+                ) : deviceEvents.length === 0 ? (
+                  <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                    Belum ada log aktivitas untuk device ini.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {deviceEvents.map((event) => (
+                      <div
+                        key={event.id}
+                        className="rounded-md border bg-background px-3 py-2 text-xs"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div className="space-y-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-medium text-foreground">
+                                {formatDeviceEventLabel(event.eventType)}
+                              </span>
+                              <StatusChip
+                                label={event.severity}
+                                tone={event.severity === "info" ? "muted" : "warning"}
+                              />
+                            </div>
+                            <div className="text-muted-foreground">{event.message}</div>
+                            <div className="text-[11px] text-muted-foreground">
+                              Device: {event.deviceName ?? event.deviceCode}
+                            </div>
+                          </div>
+                          <span className="text-[11px] text-muted-foreground">
+                            {formatDateTime(new Date(event.createdAt))}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -1096,9 +1198,23 @@ function DevicesPage() {
 
             <div className="rounded-md border p-3">
               <h3 className="mb-2 text-xs font-semibold text-muted-foreground">Log Terbaru</h3>
-              <p className="text-xs text-muted-foreground">
-                Belum ada aktivitas terbaru yang tercatat.
-              </p>
+              {deviceEventsError ? (
+                <p className="text-xs text-muted-foreground">Log registry belum tersedia.</p>
+              ) : latestDeviceEvent ? (
+                <div className="space-y-1 text-xs">
+                  <div className="font-medium text-foreground">
+                    {formatDeviceEventLabel(latestDeviceEvent.eventType)}
+                  </div>
+                  <div className="text-muted-foreground">{latestDeviceEvent.message}</div>
+                  <div className="text-[11px] text-muted-foreground">
+                    {formatRelativeTime(new Date(latestDeviceEvent.createdAt).getTime())}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Belum ada aktivitas terbaru yang tercatat.
+                </p>
+              )}
             </div>
 
             <div className="text-[11px] text-muted-foreground">

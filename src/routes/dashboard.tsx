@@ -18,7 +18,12 @@ import {
 } from "lucide-react";
 import { type GalleryItem, loadGallery } from "@/lib/gallery-store";
 import { getDeviceStatus, type DeviceStatus } from "@/lib/camera-api";
-import { getCaptureDashboardSummary, type CaptureDashboardSummary } from "@/lib/capture-records";
+import {
+  getCaptureDashboardSummary,
+  listDeviceEvents,
+  type CaptureDashboardSummary,
+  type DeviceEventView,
+} from "@/lib/capture-records";
 import { PLANTS } from "@/lib/locations";
 import { getStorageConfigSummary } from "@/lib/storage-diagnostics";
 
@@ -86,6 +91,24 @@ function formatDashboardBin(bin?: string | null): string {
   if (normalized === "BIN2" || normalized === "BIN 2") return "BIN 2";
   if (normalized === "BIN 1 / BIN 2" || normalized === "BIN1/BIN2") return "BIN 1 / BIN 2";
   return bin;
+}
+
+function formatDeviceEventLabel(eventType: string): string {
+  const labels: Record<string, string> = {
+    "metadata-finalized": "Metadata difinalisasi",
+    "capture-trigger-failed": "Trigger capture gagal",
+    "capture-job-failed": "Job capture gagal",
+    "capture-missing-asset": "Asset capture tidak tersedia",
+    "capture-exception": "Capture exception",
+    "autofocus-trigger-failed": "Trigger autofocus gagal",
+    "autofocus-job-failed": "Job autofocus gagal",
+    "autofocus-exception": "Autofocus exception",
+    "network-save-fallback": "Fallback network save",
+    "folder-save-fallback": "Fallback folder browser",
+    "browser-download-fallback": "Fallback download lokal",
+    "capture-record-sync-failed": "Sinkron capture DB gagal",
+  };
+  return labels[eventType] ?? eventType;
 }
 
 function startOfDay(d: Date) {
@@ -404,6 +427,8 @@ function DashboardPage() {
   const [storageConfig, setStorageConfig] = useState<StorageConfigSummary | null>(null);
   const [captureDbSummary, setCaptureDbSummary] = useState<CaptureDashboardSummary | null>(null);
   const [captureDbError, setCaptureDbError] = useState<string | null>(null);
+  const [deviceEvents, setDeviceEvents] = useState<DeviceEventView[]>([]);
+  const [deviceEventsError, setDeviceEventsError] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const [loading, setLoading] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
@@ -418,19 +443,25 @@ function DashboardPage() {
       dayEnd.setDate(dayEnd.getDate() + 1);
       const weekStart = new Date(dayStart);
       weekStart.setDate(weekStart.getDate() - 6);
-      const [items, deviceStatus, storageSummary, dbSummaryResult] = await Promise.all([
-        loadGallery(),
-        getDeviceStatus(),
-        getStorageConfigSummary(),
-        getCaptureDashboardSummary({
-          data: {
-            dayStart: dayStart.getTime(),
-            dayEnd: dayEnd.getTime(),
-            weekStart: weekStart.getTime(),
-            recentLimit: 6,
-          },
-        }),
-      ]);
+      const [items, deviceStatus, storageSummary, dbSummaryResult, deviceEventsResult] =
+        await Promise.all([
+          loadGallery(),
+          getDeviceStatus(),
+          getStorageConfigSummary(),
+          getCaptureDashboardSummary({
+            data: {
+              dayStart: dayStart.getTime(),
+              dayEnd: dayEnd.getTime(),
+              weekStart: weekStart.getTime(),
+              recentLimit: 6,
+            },
+          }),
+          listDeviceEvents({
+            data: {
+              limit: 5,
+            },
+          }),
+        ]);
       setGallery(items);
       setStatus(deviceStatus);
       setStorageConfig(storageSummary);
@@ -440,6 +471,13 @@ function DashboardPage() {
       } else {
         setCaptureDbSummary(null);
         setCaptureDbError(dbSummaryResult.message);
+      }
+      if (deviceEventsResult.ok) {
+        setDeviceEvents(deviceEventsResult.events);
+        setDeviceEventsError(null);
+      } else {
+        setDeviceEvents([]);
+        setDeviceEventsError(deviceEventsResult.message);
       }
       setLastRefreshed(new Date());
     } finally {
@@ -470,7 +508,12 @@ function DashboardPage() {
           recentLimit: 6,
         },
       }),
-    ]).then(([items, deviceStatus, storageSummary, dbSummaryResult]) => {
+      listDeviceEvents({
+        data: {
+          limit: 5,
+        },
+      }),
+    ]).then(([items, deviceStatus, storageSummary, dbSummaryResult, deviceEventsResult]) => {
       if (cancelled) return;
       setGallery(items);
       setStatus(deviceStatus);
@@ -481,6 +524,13 @@ function DashboardPage() {
       } else {
         setCaptureDbSummary(null);
         setCaptureDbError(dbSummaryResult.message);
+      }
+      if (deviceEventsResult.ok) {
+        setDeviceEvents(deviceEventsResult.events);
+        setDeviceEventsError(null);
+      } else {
+        setDeviceEvents([]);
+        setDeviceEventsError(deviceEventsResult.message);
       }
       setLastRefreshed(new Date());
       setLoading(false);
@@ -534,6 +584,8 @@ function DashboardPage() {
   const latestDbCaptureDate = captureDbSummary?.lastCapturedAt
     ? new Date(captureDbSummary.lastCapturedAt)
     : null;
+  const latestDeviceEvent = deviceEvents[0] ?? null;
+  const latestDeviceEventDate = latestDeviceEvent ? new Date(latestDeviceEvent.createdAt) : null;
   const plantsCoveredToday = new Set(
     today
       ? gallery
@@ -570,6 +622,11 @@ function DashboardPage() {
       : captureDbSummary?.lastCapturedAt
         ? `Registry DB terakhir mencatat capture ${formatRelativeTime(latestDbCaptureDate)}.`
         : "Belum ada metadata capture di registry MSSQL.",
+    deviceEventsError
+      ? `Log device belum bisa dimuat: ${deviceEventsError}`
+      : latestDeviceEvent
+        ? `Event device terbaru ${formatRelativeTime(latestDeviceEventDate)}: ${formatDeviceEventLabel(latestDeviceEvent.eventType)}.`
+        : "Belum ada event device terbaru yang tercatat di MSSQL.",
   ].filter(Boolean) as string[];
   const freshnessCards = [
     {
@@ -965,7 +1022,7 @@ function DashboardPage() {
         )}
       </section>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-4">
         {/* Recent captures */}
         <section className="rounded-lg border bg-card p-4">
           <div className="mb-3 flex items-center justify-between">
@@ -1049,6 +1106,56 @@ function DashboardPage() {
               ? `${captureDbSummary.saveBreakdown.saved} tersimpan • ${captureDbSummary.saveBreakdown.downloaded} diunduh lokal.`
               : "Ringkasan ini membaca capture_records dari MSSQL, bukan hanya gallery lokal browser."}
           </div>
+        </section>
+
+        <section className="rounded-lg border bg-card p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-semibold">Event Device Terbaru</h2>
+            <Link to="/devices" className="text-xs font-medium text-primary hover:underline">
+              Buka Devices
+            </Link>
+          </div>
+          {deviceEventsError ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">{deviceEventsError}</p>
+          ) : deviceEvents.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              Event operasional device akan muncul di sini.
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {deviceEvents.map((event) => (
+                <li key={event.id} className="rounded-lg border bg-background p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs font-medium">
+                          {formatDeviceEventLabel(event.eventType)}
+                        </span>
+                        <StatusPill
+                          tone={
+                            event.severity === "error"
+                              ? "warning"
+                              : event.severity === "warning"
+                                ? "warning"
+                                : "muted"
+                          }
+                        >
+                          {event.severity}
+                        </StatusPill>
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">{event.message}</p>
+                      <div className="mt-1 text-[11px] text-muted-foreground">
+                        {event.deviceName ?? event.deviceCode}
+                      </div>
+                    </div>
+                    <span className="shrink-0 text-[11px] text-muted-foreground">
+                      {formatDateTime(new Date(event.createdAt).getTime())}
+                    </span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
 
         {/* Device health */}

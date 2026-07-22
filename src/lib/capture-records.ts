@@ -65,6 +65,11 @@ const logDeviceEventSchema = z.object({
   payload: z.record(z.string(), z.unknown()).optional(),
 });
 
+const listDeviceEventsSchema = z.object({
+  limit: z.number().int().positive().max(50).default(10),
+  deviceCode: z.string().trim().min(1).optional(),
+});
+
 export type CaptureRecordView = {
   id: number;
   deviceCode: string | null;
@@ -98,6 +103,17 @@ export type CaptureDashboardSummary = {
 };
 
 export type DeviceEventSeverity = "info" | "warning" | "error";
+
+export type DeviceEventView = {
+  id: number;
+  deviceCode: string;
+  deviceName: string | null;
+  eventType: string;
+  severity: DeviceEventSeverity;
+  message: string;
+  payload: Record<string, unknown> | null;
+  createdAt: string;
+};
 
 export function replaceFileNameInPath(
   filePath: string,
@@ -200,6 +216,41 @@ function mapCaptureRecordRow(row: Record<string, unknown>): CaptureRecordView {
     saveMethod: metadata.saveMethod,
     assetId: metadata.assetId,
     createdAt: new Date(String(row.created_at ?? new Date().toISOString())).toISOString(),
+  };
+}
+
+function parseJsonRecord(value: unknown): Record<string, unknown> | null {
+  if (typeof value !== "string" || value.trim() === "") return null;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function mapDeviceEventRow(row: Record<string, unknown>): DeviceEventView {
+  const createdAt =
+    row.created_at instanceof Date
+      ? row.created_at.toISOString()
+      : typeof row.created_at === "string"
+        ? new Date(row.created_at).toISOString()
+        : new Date(0).toISOString();
+
+  return {
+    id: Number(row.id),
+    deviceCode: typeof row.device_code === "string" ? row.device_code : "unknown-device",
+    deviceName: typeof row.device_name === "string" ? row.device_name : null,
+    eventType: typeof row.event_type === "string" ? row.event_type : "unknown-event",
+    severity:
+      row.severity === "warning" || row.severity === "error" || row.severity === "info"
+        ? row.severity
+        : "info",
+    message: typeof row.message === "string" ? row.message : "Tanpa pesan event",
+    payload: parseJsonRecord(row.payload_json),
+    createdAt,
   };
 }
 
@@ -502,6 +553,61 @@ export const getCaptureDashboardSummary = createServerFn({ method: "GET" })
           error instanceof Error
             ? error.message
             : "Gagal memuat ringkasan capture dari registry MSSQL.",
+      };
+    }
+  });
+
+export const listDeviceEvents = createServerFn({ method: "GET" })
+  .validator(listDeviceEventsSchema)
+  .handler(async ({ data }) => {
+    if (!isCardDbConfigured()) {
+      return {
+        ok: false as const,
+        code: "CARDDB_NOT_CONFIGURED",
+        message: "Konfigurasi CARDDB belum lengkap di server aplikasi.",
+      };
+    }
+
+    try {
+      const schema = `[${getCardDbSchema()}]`;
+      const pool = await getCardDbPool();
+      const request = pool.request().input("limit", sql.Int, data.limit);
+      let deviceWhereClause = "";
+
+      if (data.deviceCode) {
+        request.input("deviceCode", sql.NVarChar(50), data.deviceCode);
+        deviceWhereClause = "WHERE d.code = @deviceCode";
+      }
+
+      const result = await request.query(`
+        SELECT TOP (@limit)
+          de.id,
+          d.code AS device_code,
+          d.name AS device_name,
+          de.event_type,
+          de.severity,
+          de.message,
+          de.payload_json,
+          de.created_at
+        FROM ${schema}.device_events de
+        INNER JOIN ${schema}.devices d
+          ON d.id = de.device_id
+        ${deviceWhereClause}
+        ORDER BY de.created_at DESC, de.id DESC;
+      `);
+
+      return {
+        ok: true as const,
+        events: result.recordset.map((row) => mapDeviceEventRow(row as Record<string, unknown>)),
+      };
+    } catch (error) {
+      return {
+        ok: false as const,
+        code: "DEVICE_EVENTS_LOAD_FAILED",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Gagal memuat device events dari registry MSSQL.",
       };
     }
   });
