@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { type GalleryItem, loadGallery } from "@/lib/gallery-store";
 import { getDeviceStatus, type DeviceStatus } from "@/lib/camera-api";
+import { getCaptureDashboardSummary, type CaptureDashboardSummary } from "@/lib/capture-records";
 import { PLANTS } from "@/lib/locations";
 import { getStorageConfigSummary } from "@/lib/storage-diagnostics";
 
@@ -76,6 +77,15 @@ function formatDateTime(ts: number) {
     hour12: false,
   });
   return `${datePart}, ${timePart}`;
+}
+
+function formatDashboardBin(bin?: string | null): string {
+  if (!bin) return "—";
+  const normalized = bin.trim().toUpperCase();
+  if (normalized === "BIN1" || normalized === "BIN 1") return "BIN 1";
+  if (normalized === "BIN2" || normalized === "BIN 2") return "BIN 2";
+  if (normalized === "BIN 1 / BIN 2" || normalized === "BIN1/BIN2") return "BIN 1 / BIN 2";
+  return bin;
 }
 
 function startOfDay(d: Date) {
@@ -392,6 +402,8 @@ function DashboardPage() {
   const [gallery, setGallery] = useState<GalleryItem[]>([]);
   const [status, setStatus] = useState<DeviceStatus | null>(null);
   const [storageConfig, setStorageConfig] = useState<StorageConfigSummary | null>(null);
+  const [captureDbSummary, setCaptureDbSummary] = useState<CaptureDashboardSummary | null>(null);
+  const [captureDbError, setCaptureDbError] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const [loading, setLoading] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
@@ -400,14 +412,35 @@ function DashboardPage() {
   async function refresh() {
     setLoading(true);
     try {
-      const [items, deviceStatus, storageSummary] = await Promise.all([
+      const now = new Date();
+      const dayStart = startOfDay(now);
+      const dayEnd = new Date(dayStart);
+      dayEnd.setDate(dayEnd.getDate() + 1);
+      const weekStart = new Date(dayStart);
+      weekStart.setDate(weekStart.getDate() - 6);
+      const [items, deviceStatus, storageSummary, dbSummaryResult] = await Promise.all([
         loadGallery(),
         getDeviceStatus(),
         getStorageConfigSummary(),
+        getCaptureDashboardSummary({
+          data: {
+            dayStart: dayStart.getTime(),
+            dayEnd: dayEnd.getTime(),
+            weekStart: weekStart.getTime(),
+            recentLimit: 6,
+          },
+        }),
       ]);
       setGallery(items);
       setStatus(deviceStatus);
       setStorageConfig(storageSummary);
+      if (dbSummaryResult.ok) {
+        setCaptureDbSummary(dbSummaryResult.summary);
+        setCaptureDbError(null);
+      } else {
+        setCaptureDbSummary(null);
+        setCaptureDbError(dbSummaryResult.message);
+      }
       setLastRefreshed(new Date());
     } finally {
       setLoading(false);
@@ -417,18 +450,41 @@ function DashboardPage() {
   useEffect(() => {
     let cancelled = false;
     setHydrated(true);
-    setToday(startOfDay(new Date()));
+    const now = new Date();
+    const dayStart = startOfDay(now);
+    const dayEnd = new Date(dayStart);
+    dayEnd.setDate(dayEnd.getDate() + 1);
+    const weekStart = new Date(dayStart);
+    weekStart.setDate(weekStart.getDate() - 6);
+    setToday(dayStart);
     setLoading(true);
-    Promise.all([loadGallery(), getDeviceStatus(), getStorageConfigSummary()]).then(
-      ([items, deviceStatus, storageSummary]) => {
-        if (cancelled) return;
-        setGallery(items);
-        setStatus(deviceStatus);
-        setStorageConfig(storageSummary);
-        setLastRefreshed(new Date());
-        setLoading(false);
-      },
-    );
+    Promise.all([
+      loadGallery(),
+      getDeviceStatus(),
+      getStorageConfigSummary(),
+      getCaptureDashboardSummary({
+        data: {
+          dayStart: dayStart.getTime(),
+          dayEnd: dayEnd.getTime(),
+          weekStart: weekStart.getTime(),
+          recentLimit: 6,
+        },
+      }),
+    ]).then(([items, deviceStatus, storageSummary, dbSummaryResult]) => {
+      if (cancelled) return;
+      setGallery(items);
+      setStatus(deviceStatus);
+      setStorageConfig(storageSummary);
+      if (dbSummaryResult.ok) {
+        setCaptureDbSummary(dbSummaryResult.summary);
+        setCaptureDbError(null);
+      } else {
+        setCaptureDbSummary(null);
+        setCaptureDbError(dbSummaryResult.message);
+      }
+      setLastRefreshed(new Date());
+      setLoading(false);
+    });
     return () => {
       cancelled = true;
     };
@@ -475,6 +531,9 @@ function DashboardPage() {
   const recent = [...gallery].sort((a, b) => b.createdAt - a.createdAt).slice(0, 6);
   const latestCapture = recent[0] ?? null;
   const latestCaptureDate = latestCapture ? new Date(latestCapture.createdAt) : null;
+  const latestDbCaptureDate = captureDbSummary?.lastCapturedAt
+    ? new Date(captureDbSummary.lastCapturedAt)
+    : null;
   const plantsCoveredToday = new Set(
     today
       ? gallery
@@ -506,6 +565,11 @@ function DashboardPage() {
     gallery.length > 0 && latestCapture
       ? `Capture terakhir tersimpan pada ${formatDateTime(latestCapture.createdAt)}.`
       : "Belum ada data capture lokal di browser ini.",
+    captureDbError
+      ? `Registry DB belum bisa dimuat: ${captureDbError}`
+      : captureDbSummary?.lastCapturedAt
+        ? `Registry DB terakhir mencatat capture ${formatRelativeTime(latestDbCaptureDate)}.`
+        : "Belum ada metadata capture di registry MSSQL.",
   ].filter(Boolean) as string[];
   const freshnessCards = [
     {
@@ -535,6 +599,30 @@ function DashboardPage() {
       cta: "Buka Devices",
       icon: Wifi,
       tone: status?.online ? ("success" as const) : ("warning" as const),
+    },
+    {
+      title: "Registry DB",
+      status: captureDbSummary?.lastCapturedAt
+        ? "Tercatat"
+        : captureDbError
+          ? "Perlu cek"
+          : "Belum ada log",
+      description: captureDbSummary?.lastCapturedAt
+        ? `Capture DB terakhir ${formatRelativeTime(latestDbCaptureDate)}.`
+        : captureDbError
+          ? "Dashboard belum bisa memuat metadata capture dari MSSQL."
+          : "Belum ada metadata capture yang tercatat di registry MSSQL.",
+      detail: captureDbSummary
+        ? `${captureDbSummary.todayCount} capture hari ini • ${captureDbSummary.totalCount} total record.`
+        : captureDbError || "Capture akan muncul di sini setelah tersimpan dan tercatat ke DB.",
+      to: "/gallery",
+      cta: "Audit Registry",
+      icon: Database,
+      tone: captureDbSummary?.lastCapturedAt
+        ? ("success" as const)
+        : captureDbError
+          ? ("warning" as const)
+          : ("muted" as const),
     },
     {
       title: "Auto-save target",
@@ -577,6 +665,15 @@ function DashboardPage() {
             "App server belum memuat NETWORK_SAVE_ROOT. Storage page akan membantu verifikasi env dan alur save.",
           to: "/storage",
           cta: "Konfigurasi Storage",
+        }
+      : null,
+    captureDbError
+      ? {
+          title: "Registry capture belum sinkron",
+          detail:
+            "Dashboard gagal memuat ringkasan capture dari MSSQL. Buka Gallery untuk cek riwayat registry atau verifikasi koneksi DB.",
+          to: "/gallery",
+          cta: "Cek Gallery",
         }
       : null,
     capturesToday === 0
@@ -741,14 +838,14 @@ function DashboardPage() {
         </section>
       </section>
 
-      <section className="mb-6 grid gap-4 lg:grid-cols-3">
+      <section className="mb-6 grid gap-4 lg:grid-cols-4">
         {freshnessCards.map((card) => (
           <InsightCard key={card.title} {...card} />
         ))}
       </section>
 
       {/* KPI row */}
-      <section className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <section className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <StatCard
           icon={Images}
           label="Total Capture"
@@ -777,6 +874,19 @@ function DashboardPage() {
           value={status?.online ? (cameraConnected ? "Terhubung" : "Sesi aktif") : "Offline"}
           sub={cameraLabel}
           tone={cameraConnected ? "emerald" : status?.online ? "amber" : "muted"}
+        />
+        <StatCard
+          icon={Database}
+          label="Capture DB Hari Ini"
+          value={captureDbSummary ? captureDbSummary.todayCount : "—"}
+          sub={
+            captureDbSummary
+              ? `Total ${captureDbSummary.totalCount} record di MSSQL`
+              : captureDbError
+                ? "Registry DB belum tersedia"
+                : "Menunggu refresh registry"
+          }
+          tone={captureDbSummary ? "emerald" : captureDbError ? "amber" : "muted"}
         />
         <StatCard
           icon={Database}
@@ -855,7 +965,7 @@ function DashboardPage() {
         )}
       </section>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-3">
         {/* Recent captures */}
         <section className="rounded-lg border bg-card p-4">
           <div className="mb-3 flex items-center justify-between">
@@ -894,6 +1004,51 @@ function DashboardPage() {
               ))}
             </ul>
           )}
+        </section>
+
+        <section className="rounded-lg border bg-card p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-semibold">Registry Capture Terbaru</h2>
+            <Link to="/gallery" className="text-xs font-medium text-primary hover:underline">
+              Audit DB
+            </Link>
+          </div>
+          {captureDbError ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">{captureDbError}</p>
+          ) : !captureDbSummary || captureDbSummary.recentRecords.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              Metadata capture dari MSSQL akan muncul di sini.
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {captureDbSummary.recentRecords.map((record) => (
+                <li key={record.id} className="rounded-lg border bg-background p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-xs font-medium" title={record.fileName}>
+                        {record.fileName}
+                      </div>
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+                        <span>{record.plant ?? "—"}</span>
+                        <span>·</span>
+                        <span>{formatDashboardBin(record.captureBin)}</span>
+                        <span>·</span>
+                        <span>{record.deviceName ?? record.deviceCode ?? "—"}</span>
+                      </div>
+                    </div>
+                    <span className="shrink-0 text-[11px] text-muted-foreground">
+                      {formatDateTime(new Date(record.capturedAt).getTime())}
+                    </span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="mt-4 rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
+            {captureDbSummary
+              ? `${captureDbSummary.saveBreakdown.saved} tersimpan • ${captureDbSummary.saveBreakdown.downloaded} diunduh lokal.`
+              : "Ringkasan ini membaca capture_records dari MSSQL, bukan hanya gallery lokal browser."}
+          </div>
         </section>
 
         {/* Device health */}

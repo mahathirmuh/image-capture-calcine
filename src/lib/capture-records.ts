@@ -50,6 +50,13 @@ const deleteCaptureRecordSchema = z.object({
   capturedAt: z.number().int().positive(),
 });
 
+const captureDashboardSummarySchema = z.object({
+  dayStart: z.number().int().positive(),
+  dayEnd: z.number().int().positive(),
+  weekStart: z.number().int().positive(),
+  recentLimit: z.number().int().positive().max(20).default(6),
+});
+
 export type CaptureRecordView = {
   id: number;
   deviceCode: string | null;
@@ -66,6 +73,20 @@ export type CaptureRecordView = {
   saveMethod: CaptureSaveMethod | null;
   assetId: string | null;
   createdAt: string;
+};
+
+export type CaptureDashboardSummary = {
+  totalCount: number;
+  todayCount: number;
+  weekCount: number;
+  totalBytes: number;
+  lastCapturedAt: string | null;
+  recentRecords: CaptureRecordView[];
+  saveBreakdown: {
+    saved: number;
+    downloaded: number;
+    other: number;
+  };
 };
 
 export function replaceFileNameInPath(
@@ -379,6 +400,98 @@ export const listCaptureRecords = createServerFn({ method: "GET" })
           error instanceof Error
             ? error.message
             : "Gagal memuat riwayat capture dari registry MSSQL.",
+      };
+    }
+  });
+
+export const getCaptureDashboardSummary = createServerFn({ method: "GET" })
+  .validator(captureDashboardSummarySchema)
+  .handler(async ({ data }) => {
+    if (!isCardDbConfigured()) {
+      return {
+        ok: false as const,
+        code: "CARDDB_NOT_CONFIGURED",
+        message: "Konfigurasi CARDDB belum lengkap di server aplikasi.",
+      };
+    }
+
+    try {
+      const schema = `[${getCardDbSchema()}]`;
+      const pool = await getCardDbPool();
+      const aggregateResult = await pool
+        .request()
+        .input("dayStart", sql.DateTime2, new Date(data.dayStart))
+        .input("dayEnd", sql.DateTime2, new Date(data.dayEnd))
+        .input("weekStart", sql.DateTime2, new Date(data.weekStart)).query(`
+          SELECT
+            COUNT(*) AS total_count,
+            SUM(CASE WHEN captured_at >= @dayStart AND captured_at < @dayEnd THEN 1 ELSE 0 END) AS today_count,
+            SUM(CASE WHEN captured_at >= @weekStart AND captured_at < @dayEnd THEN 1 ELSE 0 END) AS week_count,
+            SUM(COALESCE(file_size_bytes, 0)) AS total_bytes,
+            MAX(captured_at) AS last_captured_at,
+            SUM(CASE WHEN status = N'saved' THEN 1 ELSE 0 END) AS saved_count,
+            SUM(CASE WHEN status = N'downloaded' THEN 1 ELSE 0 END) AS downloaded_count
+          FROM ${schema}.capture_records;
+        `);
+
+      const aggregate = (aggregateResult.recordset[0] ?? {}) as Record<string, unknown>;
+      const recentResult = await pool.request().input("limit", sql.Int, data.recentLimit).query(`
+          SELECT TOP (@limit)
+            cr.id,
+            cr.file_name,
+            cr.file_path,
+            cr.captured_at,
+            cr.status,
+            cr.file_size_bytes,
+            cr.checksum_sha256,
+            cr.metadata_json,
+            cr.created_at,
+            l.plant,
+            l.station
+          FROM ${schema}.capture_records cr
+          LEFT JOIN ${schema}.locations l
+            ON l.id = cr.location_id
+          ORDER BY cr.captured_at DESC, cr.id DESC;
+        `);
+
+      const totalCount = Number(aggregate.total_count ?? 0);
+      const todayCount = Number(aggregate.today_count ?? 0);
+      const weekCount = Number(aggregate.week_count ?? 0);
+      const totalBytes = Number(aggregate.total_bytes ?? 0);
+      const savedCount = Number(aggregate.saved_count ?? 0);
+      const downloadedCount = Number(aggregate.downloaded_count ?? 0);
+
+      return {
+        ok: true as const,
+        summary: {
+          totalCount,
+          todayCount,
+          weekCount,
+          totalBytes,
+          lastCapturedAt:
+            aggregate.last_captured_at instanceof Date
+              ? aggregate.last_captured_at.toISOString()
+              : typeof aggregate.last_captured_at === "string"
+                ? new Date(aggregate.last_captured_at).toISOString()
+                : null,
+          recentRecords: recentResult.recordset.map((row) =>
+            mapCaptureRecordRow(row as Record<string, unknown>),
+          ),
+          saveBreakdown: {
+            saved: savedCount,
+            downloaded: downloadedCount,
+            other: Math.max(0, totalCount - savedCount - downloadedCount),
+          },
+        } satisfies CaptureDashboardSummary,
+      };
+    } catch (error) {
+      return {
+        ok: false as const,
+        code: "CAPTURE_DASHBOARD_SUMMARY_FAILED",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Gagal memuat ringkasan capture dari registry MSSQL.",
       };
     }
   });
