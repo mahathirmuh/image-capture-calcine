@@ -212,13 +212,21 @@ function formatRelativeTime(timestamp: number | null) {
   return `${diffDays} hari lalu`;
 }
 
-function StatusChip({ label, tone }: { label: string; tone: "success" | "warning" | "muted" }) {
+function StatusChip({
+  label,
+  tone,
+}: {
+  label: string;
+  tone: "success" | "warning" | "muted" | "error";
+}) {
   const toneClass =
     tone === "success"
       ? "bg-emerald-500/10 text-emerald-700"
-      : tone === "warning"
-        ? "bg-amber-500/10 text-amber-700"
-        : "bg-muted text-muted-foreground";
+      : tone === "error"
+        ? "bg-destructive/10 text-destructive"
+        : tone === "warning"
+          ? "bg-amber-500/10 text-amber-700"
+          : "bg-muted text-muted-foreground";
   return (
     <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${toneClass}`}>{label}</span>
   );
@@ -240,6 +248,32 @@ function formatDeviceEventLabel(eventType: string): string {
     "capture-record-sync-failed": "Sinkron capture DB gagal",
   };
   return labels[eventType] ?? eventType;
+}
+
+type DeviceEventFilter = "all" | "info" | "warning" | "error";
+
+const DEVICE_EVENT_FILTERS: Array<{ id: DeviceEventFilter; label: string }> = [
+  { id: "all", label: "Semua" },
+  { id: "error", label: "Error" },
+  { id: "warning", label: "Warning" },
+  { id: "info", label: "Info" },
+];
+
+function formatDeviceEventPayloadKey(key: string) {
+  return key
+    .replace(/([A-Z])/g, " $1")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^./, (char) => char.toUpperCase());
+}
+
+function formatDeviceEventPayloadValue(value: unknown): string {
+  if (value === null || value === undefined) return "—";
+  if (typeof value === "boolean") return value ? "Ya" : "Tidak";
+  if (typeof value === "string") return value.trim() === "" ? "—" : value;
+  if (typeof value === "number") return String(value);
+  return JSON.stringify(value);
 }
 
 function ReadinessCard({
@@ -361,6 +395,8 @@ function DevicesPage() {
   const [deviceEvents, setDeviceEvents] = useState<DeviceEventView[]>([]);
   const [deviceEventsLoading, setDeviceEventsLoading] = useState(false);
   const [deviceEventsError, setDeviceEventsError] = useState<string | null>(null);
+  const [deviceEventFilter, setDeviceEventFilter] = useState<DeviceEventFilter>("all");
+  const [selectedDeviceEventId, setSelectedDeviceEventId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [searchQuery, setSearchQuery] = useState("");
@@ -491,6 +527,16 @@ function DevicesPage() {
     void loadRecentDeviceEvents(deviceCode);
   }, [loadRecentDeviceEvents, profile?.deviceCode, selectedDevice?.deviceCode]);
 
+  useEffect(() => {
+    if (deviceEvents.length === 0) {
+      setSelectedDeviceEventId(null);
+      return;
+    }
+    setSelectedDeviceEventId((current) =>
+      current && deviceEvents.some((event) => event.id === current) ? current : deviceEvents[0].id,
+    );
+  }, [deviceEvents]);
+
   const cameraConnected = !!status?.camera?.connected;
   const cameraLabel = status?.camera
     ? [status.camera.manufacturer, status.camera.model].filter(Boolean).join(" ") ||
@@ -578,6 +624,19 @@ function DevicesPage() {
     },
   ];
   const latestDeviceEvent = deviceEvents[0] ?? null;
+  const visibleDeviceEvents = deviceEvents.filter((event) =>
+    deviceEventFilter === "all" ? true : event.severity === deviceEventFilter,
+  );
+  const selectedDeviceEvent =
+    visibleDeviceEvents.find((event) => event.id === selectedDeviceEventId) ??
+    visibleDeviceEvents[0] ??
+    null;
+  const eventCounts = {
+    all: deviceEvents.length,
+    info: deviceEvents.filter((event) => event.severity === "info").length,
+    warning: deviceEvents.filter((event) => event.severity === "warning").length,
+    error: deviceEvents.filter((event) => event.severity === "error").length,
+  } satisfies Record<DeviceEventFilter, number>;
 
   const visibleDevices = registeredDevices.filter((device) => {
     const query = searchQuery.trim().toLowerCase();
@@ -1104,6 +1163,31 @@ function DevicesPage() {
                     {deviceEventsLoading ? "Menyegarkan…" : "Refresh Log"}
                   </button>
                 </div>
+                <div className="mb-3 flex flex-wrap items-center gap-2">
+                  {DEVICE_EVENT_FILTERS.map((filter) => (
+                    <button
+                      key={filter.id}
+                      type="button"
+                      onClick={() => setDeviceEventFilter(filter.id)}
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium ${
+                        deviceEventFilter === filter.id
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-input bg-background hover:bg-accent"
+                      }`}
+                    >
+                      <span>{filter.label}</span>
+                      <span
+                        className={`rounded-full px-1.5 py-0.5 text-[11px] ${
+                          deviceEventFilter === filter.id
+                            ? "bg-primary-foreground/15 text-primary-foreground"
+                            : "bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        {eventCounts[filter.id]}
+                      </span>
+                    </button>
+                  ))}
+                </div>
                 {deviceEventsError ? (
                   <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-700">
                     Log device belum bisa dimuat: {deviceEventsError}
@@ -1112,35 +1196,125 @@ function DevicesPage() {
                   <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
                     Belum ada log aktivitas untuk device ini.
                   </div>
+                ) : visibleDeviceEvents.length === 0 ? (
+                  <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                    Tidak ada log dengan severity {deviceEventFilter.toUpperCase()} untuk device
+                    ini.
+                  </div>
                 ) : (
-                  <div className="space-y-2">
-                    {deviceEvents.map((event) => (
-                      <div
-                        key={event.id}
-                        className="rounded-md border bg-background px-3 py-2 text-xs"
-                      >
-                        <div className="flex flex-wrap items-start justify-between gap-2">
-                          <div className="space-y-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="font-medium text-foreground">
-                                {formatDeviceEventLabel(event.eventType)}
-                              </span>
-                              <StatusChip
-                                label={event.severity}
-                                tone={event.severity === "info" ? "muted" : "warning"}
-                              />
+                  <div className="grid gap-3 xl:grid-cols-[1.25fr_0.85fr]">
+                    <div className="space-y-2">
+                      {visibleDeviceEvents.map((event) => (
+                        <button
+                          key={event.id}
+                          type="button"
+                          onClick={() => setSelectedDeviceEventId(event.id)}
+                          className={`block w-full rounded-md border bg-background px-3 py-2 text-left text-xs transition-colors hover:border-primary/40 hover:bg-accent/20 ${
+                            selectedDeviceEvent?.id === event.id
+                              ? "border-primary bg-accent/20"
+                              : ""
+                          }`}
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div className="space-y-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="font-medium text-foreground">
+                                  {formatDeviceEventLabel(event.eventType)}
+                                </span>
+                                <StatusChip
+                                  label={event.severity}
+                                  tone={
+                                    event.severity === "error"
+                                      ? "error"
+                                      : event.severity === "warning"
+                                        ? "warning"
+                                        : "muted"
+                                  }
+                                />
+                              </div>
+                              <div className="text-muted-foreground">{event.message}</div>
+                              <div className="text-[11px] text-muted-foreground">
+                                Device: {event.deviceName ?? event.deviceCode}
+                              </div>
                             </div>
-                            <div className="text-muted-foreground">{event.message}</div>
-                            <div className="text-[11px] text-muted-foreground">
-                              Device: {event.deviceName ?? event.deviceCode}
+                            <span className="text-[11px] text-muted-foreground">
+                              {formatDateTime(new Date(event.createdAt))}
+                            </span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="rounded-md border bg-muted/20 p-3">
+                      <h4 className="mb-2 text-xs font-semibold text-muted-foreground">
+                        Detail Event
+                      </h4>
+                      {selectedDeviceEvent ? (
+                        <div className="space-y-3 text-xs">
+                          <div>
+                            <div className="font-medium text-foreground">
+                              {formatDeviceEventLabel(selectedDeviceEvent.eventType)}
+                            </div>
+                            <div className="mt-1 text-muted-foreground">
+                              {selectedDeviceEvent.message}
                             </div>
                           </div>
-                          <span className="text-[11px] text-muted-foreground">
-                            {formatDateTime(new Date(event.createdAt))}
-                          </span>
+                          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2">
+                            <dt className="text-muted-foreground">Severity</dt>
+                            <dd className="text-right">
+                              <StatusChip
+                                label={selectedDeviceEvent.severity}
+                                tone={
+                                  selectedDeviceEvent.severity === "error"
+                                    ? "error"
+                                    : selectedDeviceEvent.severity === "warning"
+                                      ? "warning"
+                                      : "muted"
+                                }
+                              />
+                            </dd>
+                            <dt className="text-muted-foreground">Device</dt>
+                            <dd className="text-right font-medium">
+                              {selectedDeviceEvent.deviceName ?? selectedDeviceEvent.deviceCode}
+                            </dd>
+                            <dt className="text-muted-foreground">Waktu</dt>
+                            <dd className="text-right font-medium">
+                              {formatDateTime(new Date(selectedDeviceEvent.createdAt))}
+                            </dd>
+                          </dl>
+                          <div>
+                            <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                              Payload
+                            </div>
+                            {selectedDeviceEvent.payload &&
+                            Object.keys(selectedDeviceEvent.payload).length > 0 ? (
+                              <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 rounded-md border bg-background px-3 py-2">
+                                {Object.entries(selectedDeviceEvent.payload).map(([key, value]) => (
+                                  <div
+                                    key={`${selectedDeviceEvent.id}-${key}`}
+                                    className="contents"
+                                  >
+                                    <dt className="text-muted-foreground">
+                                      {formatDeviceEventPayloadKey(key)}
+                                    </dt>
+                                    <dd className="break-all text-right font-medium">
+                                      {formatDeviceEventPayloadValue(value)}
+                                    </dd>
+                                  </div>
+                                ))}
+                              </dl>
+                            ) : (
+                              <div className="rounded-md border border-dashed bg-background px-3 py-2 text-muted-foreground">
+                                Event ini tidak membawa payload tambahan.
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      ) : (
+                        <div className="rounded-md border border-dashed bg-background px-3 py-8 text-center text-muted-foreground">
+                          Pilih salah satu log untuk melihat detail payload.
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
