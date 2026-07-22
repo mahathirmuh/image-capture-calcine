@@ -48,6 +48,7 @@ import {
   type CameraSettings,
   type PresetFilter,
 } from "@/lib/device-config";
+import { upsertRegisteredDeviceProfile } from "@/lib/device-registry";
 
 export const Route = createFileRoute("/devices/register")({
   component: RegisterDevicePage,
@@ -58,12 +59,6 @@ export const Route = createFileRoute("/devices/register")({
     ],
   }),
 });
-
-// This page is a UI/UX preview of a future multi-device registration flow.
-// There is no device registry, pairing protocol, or Capture Agent behind it
-// yet -- this app only ever talks to one edge device (CAMERA_API_URL).
-// Nothing here writes to a real backend; "Daftarkan Device" just shows a
-// mock confirmation.
 
 function formatNow() {
   const date = new Date();
@@ -124,6 +119,7 @@ function RegisterDevicePage() {
   const [howItWorksOpen, setHowItWorksOpen] = useState(true);
   const [showReview, setShowReview] = useState(false);
   const [registered, setRegistered] = useState(false);
+  const [registering, setRegistering] = useState(false);
   const [lastSeen] = useState(formatNow());
 
   useEffect(() => {
@@ -163,7 +159,7 @@ function RegisterDevicePage() {
     setShowReview(true);
   }
 
-  function handleRegister() {
+  async function handleRegister() {
     const existing = loadDeviceProfile();
     const profile = createProfileFromInput({
       deviceCode: deviceCode.trim(),
@@ -178,8 +174,36 @@ function RegisterDevicePage() {
       cameraSettings,
       registeredAt: existing?.registeredAt ?? createDefaultDeviceProfile().registeredAt,
     });
-    saveDeviceProfile(profile);
+
+    setRegistering(true);
+    const result = await upsertRegisteredDeviceProfile({
+      data: {
+        deviceCode: profile.deviceCode,
+        deviceName: profile.deviceName,
+        plant: profile.plant,
+        bin: profile.bin,
+        station: profile.station,
+        description: profile.description,
+        templateId: profile.templateId,
+        schedule: profile.schedule,
+        timezone: profile.timezone,
+        cameraSettings: profile.cameraSettings,
+      },
+    });
+    setRegistering(false);
+
+    if (!result.ok) {
+      toast.error("Gagal mendaftarkan device", {
+        description: result.message,
+      });
+      return;
+    }
+
+    saveDeviceProfile(result.profile);
     setRegistered(true);
+    toast.success("Device berhasil didaftarkan", {
+      description: "Registry MSSQL dan profil lokal sudah sinkron.",
+    });
   }
 
   function updateCameraSetting<K extends keyof CameraSettings>(key: K, value: CameraSettings[K]) {
@@ -278,8 +302,7 @@ function RegisterDevicePage() {
       {registered && (
         <div className="mb-6 flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700">
           <CheckCircle2 className="h-4 w-4 shrink-0" />
-          Profil device sudah disimpan lokal. Konfigurasinya sudah terlihat di halaman Devices,
-          tetapi sinkronisasi ke camera agent belum tersedia.
+          Device sudah tersimpan ke registry MSSQL dan profil aktif lokal sudah diperbarui.
         </div>
       )}
 
@@ -532,7 +555,7 @@ function RegisterDevicePage() {
                   </h3>
                   <p className="text-xs text-muted-foreground">
                     Pengaturan ini disimpan sebagai baseline profil device. Proses apply atau sync
-                    ke hardware akan disambungkan pada fase backend berikutnya.
+                    ke hardware tetap mengikuti alur edge API pada halaman Devices.
                   </p>
                 </div>
                 <button
@@ -689,9 +712,9 @@ function RegisterDevicePage() {
             <div className="mt-4 flex items-start gap-2 rounded-md border border-primary/30 bg-primary/5 p-3 text-xs">
               <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
               <span>
-                Tahap ini menyimpan profil device di dalam aplikasi agar `/devices` bisa menjadi
-                pusat kontrol default kamera. Mengirim nilai tersebut ke kamera fisik masih
-                memerlukan endpoint sinkronisasi backend pada fase berikutnya.
+                Tahap ini menyimpan profil device ke registry MSSQL dan profil lokal operator agar
+                `/devices` bisa menjadi pusat kontrol default kamera. Mengirim nilai tersebut ke
+                kamera fisik tetap mengikuti endpoint edge API.
               </span>
             </div>
           </section>
@@ -788,11 +811,16 @@ function RegisterDevicePage() {
               </button>
             ) : (
               <button
-                onClick={handleRegister}
-                disabled={registered}
+                onClick={() => void handleRegister()}
+                disabled={registered || registering}
                 className="inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
               >
-                <Cpu className="h-4 w-4" /> {registered ? "Sudah didaftarkan" : "Daftarkan Device"}
+                <Cpu className="h-4 w-4" />{" "}
+                {registered
+                  ? "Sudah didaftarkan"
+                  : registering
+                    ? "Mendaftarkan..."
+                    : "Daftarkan Device"}
               </button>
             )}
           </div>

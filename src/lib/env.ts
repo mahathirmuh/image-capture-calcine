@@ -13,6 +13,12 @@ const serverEnvSchema = z.object({
   ),
   CAMERA_API_TOKEN: z.preprocess(emptyStringToUndefined, z.string().optional()),
   NETWORK_SAVE_ROOT: z.preprocess(emptyStringToUndefined, z.string().optional()),
+  CARDDB_USER: z.preprocess(emptyStringToUndefined, z.string().optional()),
+  CARDDB_PASSWORD: z.preprocess(emptyStringToUndefined, z.string().optional()),
+  CARDDB_SERVER: z.preprocess(emptyStringToUndefined, z.string().optional()),
+  CARDDB_NAME: z.preprocess(emptyStringToUndefined, z.string().optional()),
+  CARDDB_PORT: z.preprocess(emptyStringToUndefined, z.coerce.number().int().positive().optional()),
+  CARDDB_SCHEMA: z.preprocess(emptyStringToUndefined, z.string().optional()),
   NITRO_PRESET: z.preprocess(emptyStringToUndefined, z.string().optional()),
 });
 

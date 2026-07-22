@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -76,6 +76,13 @@ import {
   type DeviceProfile,
   type PresetFilter,
 } from "@/lib/device-config";
+import {
+  buildDeviceProfileFromRegisteredDevice,
+  listRegisteredDevices,
+  toUpsertRegisteredDeviceInput,
+  upsertRegisteredDeviceProfile,
+  type RegisteredDevice,
+} from "@/lib/device-registry";
 
 export const Route = createFileRoute("/devices/")({
   component: DevicesPage,
@@ -324,6 +331,10 @@ function NotAvailable() {
 function DevicesPage() {
   const [status, setStatus] = useState<DeviceStatus | null>(null);
   const [profile, setProfile] = useState<DeviceProfile | null>(null);
+  const [registeredDevices, setRegisteredDevices] = useState<RegisteredDevice[]>([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<number | null>(null);
+  const [registryLoading, setRegistryLoading] = useState(false);
+  const [registryError, setRegistryError] = useState<string | null>(null);
   const [lastSync, setLastSync] = useState<Date | null>(null);
   const [loading, setLoading] = useState(false);
   const [capturesToday, setCapturesToday] = useState<number | null>(null);
@@ -332,10 +343,64 @@ function DevicesPage() {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [searchQuery, setSearchQuery] = useState("");
 
+  const selectedDevice =
+    registeredDevices.find((device) => device.id === selectedDeviceId) ??
+    registeredDevices[0] ??
+    null;
+
+  const syncProfileFromRegistryDevice = useCallback(
+    (device: RegisteredDevice, existingProfile?: DeviceProfile | null) => {
+      const nextProfile = buildDeviceProfileFromRegisteredDevice(device, existingProfile);
+      saveDeviceProfile(nextProfile);
+      setProfile(nextProfile);
+      return nextProfile;
+    },
+    [],
+  );
+
+  const loadRegistry = useCallback(
+    async (existingProfile?: DeviceProfile | null, preferredDeviceId?: number | null) => {
+      setRegistryLoading(true);
+      const result = await listRegisteredDevices();
+      setRegistryLoading(false);
+
+      if (!result.ok) {
+        setRegistryError(result.message);
+        setRegisteredDevices([]);
+        setSelectedDeviceId(null);
+        return;
+      }
+
+      setRegistryError(null);
+      setRegisteredDevices(result.devices);
+
+      if (result.devices.length === 0) {
+        setSelectedDeviceId(null);
+        return;
+      }
+
+      const nextSelected =
+        (preferredDeviceId
+          ? result.devices.find((device) => device.id === preferredDeviceId)
+          : null) ??
+        (existingProfile
+          ? result.devices.find((device) => device.deviceCode === existingProfile.deviceCode)
+          : null) ??
+        result.devices[0];
+
+      setSelectedDeviceId(nextSelected.id);
+      syncProfileFromRegistryDevice(nextSelected, existingProfile);
+    },
+    [syncProfileFromRegistryDevice],
+  );
+
   async function refresh() {
     setLoading(true);
     try {
-      const result = await getDeviceStatus();
+      const [result] = await Promise.all([
+        getDeviceStatus(),
+        loadRegistry(profile, selectedDeviceId),
+      ]);
       setStatus(result);
       setLastSync(new Date());
     } finally {
@@ -349,6 +414,9 @@ function DevicesPage() {
   // if it was the earlier, now-irrelevant one.
   useEffect(() => {
     let cancelled = false;
+    const storedProfile = loadDeviceProfile();
+
+    setProfile(storedProfile);
     setLoading(true);
     getDeviceStatus()
       .then((result) => {
@@ -369,12 +437,12 @@ function DevicesPage() {
       setLastCaptureAt(items.length > 0 ? Math.max(...items.map((item) => item.createdAt)) : null);
     });
 
-    setProfile(loadDeviceProfile());
+    void loadRegistry(storedProfile);
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadRegistry]);
 
   const cameraConnected = !!status?.camera?.connected;
   const cameraLabel = status?.camera
@@ -405,11 +473,11 @@ function DevicesPage() {
           action: () => setActiveTab("camera-settings"),
         }
       : null,
-    !profile
+    registeredDevices.length === 0 && !registryLoading
       ? {
           title: "Profil device belum lengkap",
           detail:
-            "Registrasi device diperlukan agar preset, plant, dan bin punya konteks operasional yang jelas.",
+            "Registrasi device di database diperlukan agar preset, plant, dan bin punya konteks operasional yang jelas.",
           actionLabel: "Daftarkan Device",
           action: () => {},
         }
@@ -463,16 +531,42 @@ function DevicesPage() {
     },
   ];
 
-  const matchesSearch =
-    searchQuery.trim() === "" ||
-    (status?.deviceId ?? "").toLowerCase().includes(searchQuery.trim().toLowerCase()) ||
-    cameraLabel.toLowerCase().includes(searchQuery.trim().toLowerCase()) ||
-    (profile?.deviceName ?? "").toLowerCase().includes(searchQuery.trim().toLowerCase()) ||
-    (profile?.plant ?? "").toLowerCase().includes(searchQuery.trim().toLowerCase());
+  const visibleDevices = registeredDevices.filter((device) => {
+    const query = searchQuery.trim().toLowerCase();
+    if (query === "") return true;
+    return [
+      device.deviceCode,
+      device.deviceName,
+      device.plant,
+      device.bin,
+      device.station,
+      device.serialNumber ?? "",
+      device.cameraModel ?? "",
+    ]
+      .join(" ")
+      .toLowerCase()
+      .includes(query);
+  });
+
+  async function persistProfileToRegistry(nextProfile: DeviceProfile) {
+    const result = await upsertRegisteredDeviceProfile({
+      data: toUpsertRegisteredDeviceInput(nextProfile),
+    });
+
+    if (!result.ok) {
+      toast.error("Profil device tersimpan lokal, tetapi gagal sinkron ke database", {
+        description: result.message,
+      });
+      return;
+    }
+
+    await loadRegistry(result.profile, result.device.id);
+  }
 
   function handleProfileSave(nextProfile: DeviceProfile) {
     saveDeviceProfile(nextProfile);
     setProfile(nextProfile);
+    void persistProfileToRegistry(nextProfile);
   }
 
   return (
@@ -633,86 +727,137 @@ function DevicesPage() {
         </div>
       </section>
 
-      {/* Device card(s) -- always exactly one, since there's no registry yet */}
-      {matchesSearch ? (
+      {registryError && (
+        <div className="mb-4 rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-700">
+          Registry database belum bisa dimuat: {registryError}
+        </div>
+      )}
+
+      <div className="mb-3 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+        <span>
+          Registry device berasal dari MSSQL. Status runtime live di bawah mengikuti device yang
+          sedang dipilih sebagai profil aktif.
+        </span>
+        <span>
+          {registryLoading ? "Memuat registry..." : `${registeredDevices.length} device terdaftar`}
+        </span>
+      </div>
+
+      {visibleDevices.length > 0 ? (
         <div
           className={
             viewMode === "grid" ? "mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3" : "mb-6 space-y-2"
           }
         >
-          <div className="rounded-lg border-2 border-primary bg-card p-4">
-            <div className="mb-3 flex items-start justify-between">
-              <div className="flex items-center gap-2">
-                <span className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-primary">
-                  <Cpu className="h-4 w-4" />
-                </span>
-                <div>
-                  <div className="font-semibold">
-                    {profile?.deviceName || status?.deviceId || "Device tidak dikenal"}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    {profile?.plant ? `${profile.plant} • ${profile.bin}` : cameraLabel}
-                  </div>
-                </div>
-              </div>
-              <span
-                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
-                  status?.online
-                    ? "bg-emerald-500/10 text-emerald-600"
-                    : "bg-muted text-muted-foreground"
+          {visibleDevices.map((device) => {
+            const isSelected = selectedDevice?.id === device.id;
+            const isActiveRuntime = profile?.deviceCode === device.deviceCode;
+            const cardStatus = isActiveRuntime
+              ? status?.online
+                ? "Terjangkau"
+                : "Offline"
+              : "Terdaftar";
+            const cardTone = isActiveRuntime
+              ? status?.online
+                ? "bg-emerald-500/10 text-emerald-600"
+                : "bg-muted text-muted-foreground"
+              : "bg-sky-500/10 text-sky-700";
+
+            return (
+              <button
+                key={device.id}
+                type="button"
+                onClick={() => {
+                  setSelectedDeviceId(device.id);
+                  syncProfileFromRegistryDevice(device, profile);
+                }}
+                className={`rounded-lg border bg-card p-4 text-left transition-colors hover:border-primary/40 hover:bg-accent/20 ${
+                  isSelected ? "border-2 border-primary" : ""
                 }`}
               >
-                <span
-                  className={`h-1.5 w-1.5 rounded-full ${status?.online ? "bg-emerald-500" : "bg-muted-foreground/40"}`}
-                />
-                {status?.online ? "Terjangkau" : "Offline"}
-              </span>
-            </div>
+                <div className="mb-3 flex items-start justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-primary">
+                      <Cpu className="h-4 w-4" />
+                    </span>
+                    <div>
+                      <div className="font-semibold">
+                        {device.deviceName || "Device tidak dikenal"}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {device.plant} • {device.bin}
+                      </div>
+                    </div>
+                  </div>
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${cardTone}`}
+                  >
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${
+                        isActiveRuntime && status?.online ? "bg-emerald-500" : "bg-current/60"
+                      }`}
+                    />
+                    {cardStatus}
+                  </span>
+                </div>
 
-            <div className="mb-3 space-y-1 text-xs text-muted-foreground">
-              <div className="flex items-center gap-1.5">
-                <Wifi className="h-3 w-3" /> {cameraConnected ? "USB terhubung" : "Belum terhubung"}
-              </div>
-              <div>
-                Template:{" "}
-                <span className="font-medium text-foreground">{profileTemplate?.label ?? "—"}</span>
-              </div>
-              <div>
-                Capture terakhir:{" "}
-                <span className="font-medium text-foreground">
-                  {lastCaptureAt ? formatDateTime(new Date(lastCaptureAt)) : "—"}
-                </span>
-              </div>
-            </div>
+                <div className="mb-3 space-y-1 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-1.5">
+                    <Wifi className="h-3 w-3" />{" "}
+                    {isActiveRuntime
+                      ? cameraConnected
+                        ? "USB terhubung"
+                        : "Belum terhubung"
+                      : "Status runtime mengikuti device aktif"}
+                  </div>
+                  <div>
+                    Template:{" "}
+                    <span className="font-medium text-foreground">
+                      {getTemplateById(device.templateId).label}
+                    </span>
+                  </div>
+                  <div>
+                    Device Code:{" "}
+                    <span className="font-medium text-foreground">{device.deviceCode}</span>
+                  </div>
+                </div>
 
-            <div className="grid grid-cols-3 gap-2 border-t pt-3 text-center text-xs">
-              <div>
-                <div className="text-muted-foreground">Uptime</div>
-                <div className="font-semibold">—</div>
-              </div>
-              <div>
-                <div className="text-muted-foreground">Capture Hari Ini</div>
-                <div className="font-semibold">{capturesToday ?? "—"}</div>
-              </div>
-              <div>
-                <div className="text-muted-foreground">Kesehatan</div>
-                <div className="font-semibold">—</div>
-              </div>
-            </div>
-          </div>
+                <div className="grid grid-cols-3 gap-2 border-t pt-3 text-center text-xs">
+                  <div>
+                    <div className="text-muted-foreground">Station</div>
+                    <div className="font-semibold">{device.station || "—"}</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Capture Hari Ini</div>
+                    <div className="font-semibold">
+                      {isActiveRuntime ? (capturesToday ?? "—") : "—"}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Kamera</div>
+                    <div className="font-semibold">{device.cameraModel ?? "—"}</div>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
         </div>
       ) : (
         <div className="mb-6 rounded-md border border-dashed py-10 text-center text-sm text-muted-foreground">
-          Tidak ada device yang cocok dengan "{searchQuery}".
+          {registeredDevices.length === 0
+            ? "Belum ada device yang terdaftar di registry database."
+            : `Tidak ada device yang cocok dengan "${searchQuery}".`}
         </div>
       )}
 
-      {/* Detail panel for the (one) device */}
       <section className="rounded-lg border bg-card">
         <div className="flex items-center gap-2 border-b px-4 py-3">
           <Cpu className="h-4 w-4 text-muted-foreground" />
           <span className="font-semibold">
-            {profile?.deviceName || status?.deviceId || "Device tidak dikenal"}
+            {selectedDevice?.deviceName ||
+              profile?.deviceName ||
+              status?.deviceId ||
+              "Device tidak dikenal"}
           </span>
           <span
             className={`ml-1 h-2 w-2 rounded-full ${status?.online ? "bg-emerald-500" : "bg-muted-foreground/40"}`}
@@ -746,6 +891,10 @@ function DevicesPage() {
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
                     <dt className="text-muted-foreground">Nama Device</dt>
                     <dd className="text-right font-medium">{profile?.deviceName ?? "—"}</dd>
+                    <dt className="text-muted-foreground">Kode Device</dt>
+                    <dd className="text-right font-medium">
+                      {selectedDevice?.deviceCode ?? profile?.deviceCode ?? "—"}
+                    </dd>
                     <dt className="text-muted-foreground">Hostname</dt>
                     <dd className="text-right font-medium">{status?.deviceId ?? "—"}</dd>
                     <dt className="text-muted-foreground">Agent Version</dt>
@@ -758,7 +907,7 @@ function DevicesPage() {
                     <dd className="text-right font-medium">{profile?.schedule ?? "—"}</dd>
                     <dt className="text-muted-foreground">IP Address</dt>
                     <dd className="text-right font-medium">
-                      <NotAvailable />
+                      {selectedDevice?.ipAddress ?? <NotAvailable />}
                     </dd>
                     <dt className="text-muted-foreground">OS</dt>
                     <dd className="text-right font-medium">
@@ -773,10 +922,12 @@ function DevicesPage() {
                   </h3>
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
                     <dt className="text-muted-foreground">Model Kamera</dt>
-                    <dd className="text-right font-medium">{cameraLabel}</dd>
+                    <dd className="text-right font-medium">
+                      {selectedDevice?.cameraModel ?? cameraLabel}
+                    </dd>
                     <dt className="text-muted-foreground">Nomor Serial</dt>
                     <dd className="text-right font-medium">
-                      {status?.camera?.serialNumber ?? "—"}
+                      {status?.camera?.serialNumber ?? selectedDevice?.serialNumber ?? "—"}
                     </dd>
                     <dt className="text-muted-foreground">Versi Firmware</dt>
                     <dd className="text-right font-medium">
