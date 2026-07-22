@@ -553,19 +553,6 @@ function CapturePage() {
         persistedPath = `browser-download/${filename}`;
       }
 
-      const item = {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        name: filename,
-        url: URL.createObjectURL(previewItem.blob),
-        blob: previewItem.blob,
-        folder: location,
-        bin: source,
-        fileHandle,
-        parentDir,
-        createdAt: previewItem.capturedAt,
-      };
-      await addGalleryItem(item);
-
       const profile = loadDeviceProfile();
       const checksumSha256 = await sha256Hex(previewItem.blob);
       const captureRecord = await recordCaptureResult({
@@ -591,6 +578,22 @@ function CapturePage() {
             : `Metadata capture belum tercatat ke DB (${captureRecord.message}).`,
         );
       }
+
+      const item = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        name: filename,
+        url: URL.createObjectURL(previewItem.blob),
+        blob: previewItem.blob,
+        folder: location,
+        bin: source,
+        fileHandle,
+        parentDir,
+        createdAt: previewItem.capturedAt,
+        captureRecordId: captureRecord.ok ? captureRecord.recordId : null,
+        persistedPath: persistedPath ?? savedNetworkPath ?? `browser-download/${filename}`,
+        saveMethod,
+      };
+      await addGalleryItem(item);
 
       setCounter((c) => c + 1);
       // Only clear the frozen still when we know the save really completed.

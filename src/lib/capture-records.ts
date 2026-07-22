@@ -37,6 +37,19 @@ const listCaptureRecordsSchema = z
   })
   .optional();
 
+const renameCaptureRecordSchema = z.object({
+  recordId: z.number().int().positive().nullable().optional(),
+  currentFileName: z.string().trim().min(1, "Nama file saat ini wajib diisi"),
+  nextFileName: z.string().trim().min(1, "Nama file baru wajib diisi"),
+  capturedAt: z.number().int().positive(),
+});
+
+const deleteCaptureRecordSchema = z.object({
+  recordId: z.number().int().positive().nullable().optional(),
+  fileName: z.string().trim().min(1, "Nama file wajib diisi"),
+  capturedAt: z.number().int().positive(),
+});
+
 export type CaptureRecordView = {
   id: number;
   deviceCode: string | null;
@@ -54,6 +67,24 @@ export type CaptureRecordView = {
   assetId: string | null;
   createdAt: string;
 };
+
+export function replaceFileNameInPath(
+  filePath: string,
+  currentFileName: string,
+  nextFileName: string,
+) {
+  if (!filePath) return filePath;
+  if (filePath.endsWith(`/${currentFileName}`)) {
+    return `${filePath.slice(0, -currentFileName.length)}${nextFileName}`;
+  }
+  if (filePath.endsWith(`\\${currentFileName}`)) {
+    return `${filePath.slice(0, -currentFileName.length)}${nextFileName}`;
+  }
+  if (filePath === currentFileName) {
+    return nextFileName;
+  }
+  return filePath;
+}
 
 export function normalizeCaptureBinLabel(value: string): string | null {
   const normalized = value.trim().toUpperCase();
@@ -139,6 +170,31 @@ function mapCaptureRecordRow(row: Record<string, unknown>): CaptureRecordView {
     assetId: metadata.assetId,
     createdAt: new Date(String(row.created_at ?? new Date().toISOString())).toISOString(),
   };
+}
+
+async function resolveCaptureRecordId(
+  pool: sql.ConnectionPool,
+  schema: string,
+  input: {
+    recordId?: number | null;
+    fileName: string;
+    capturedAt: number;
+  },
+): Promise<number | null> {
+  if (input.recordId) return input.recordId;
+
+  const result = await pool
+    .request()
+    .input("fileName", sql.NVarChar(255), input.fileName)
+    .input("capturedAt", sql.DateTime2, new Date(input.capturedAt)).query(`
+      SELECT TOP 1 id
+      FROM ${schema}.capture_records
+      WHERE file_name = @fileName
+        AND ABS(DATEDIFF(second, captured_at, @capturedAt)) <= 120
+      ORDER BY ABS(DATEDIFF(second, captured_at, @capturedAt)), id DESC;
+    `);
+
+  return result.recordset[0] ? Number(result.recordset[0].id) : null;
 }
 
 async function resolveDeviceId(
@@ -323,6 +379,121 @@ export const listCaptureRecords = createServerFn({ method: "GET" })
           error instanceof Error
             ? error.message
             : "Gagal memuat riwayat capture dari registry MSSQL.",
+      };
+    }
+  });
+
+export const renameCaptureRecord = createServerFn({ method: "POST" })
+  .validator(renameCaptureRecordSchema)
+  .handler(async ({ data }) => {
+    if (!isCardDbConfigured()) {
+      return {
+        ok: false as const,
+        code: "CARDDB_NOT_CONFIGURED",
+        message: "Konfigurasi CARDDB belum lengkap di server aplikasi.",
+      };
+    }
+
+    try {
+      const schema = `[${getCardDbSchema()}]`;
+      const pool = await getCardDbPool();
+      const recordId = await resolveCaptureRecordId(pool, schema, {
+        recordId: data.recordId ?? null,
+        fileName: data.currentFileName,
+        capturedAt: data.capturedAt,
+      });
+
+      if (!recordId) {
+        return {
+          ok: false as const,
+          code: "CAPTURE_RECORD_NOT_FOUND",
+          message: "Record capture yang cocok tidak ditemukan di MSSQL.",
+        };
+      }
+
+      const current = await pool.request().input("recordId", sql.BigInt, recordId).query(`
+        SELECT TOP 1 file_path
+        FROM ${schema}.capture_records
+        WHERE id = @recordId;
+      `);
+      const currentFilePath =
+        typeof current.recordset[0]?.file_path === "string" ? current.recordset[0].file_path : "";
+      const nextFilePath = replaceFileNameInPath(
+        currentFilePath,
+        data.currentFileName,
+        data.nextFileName,
+      );
+
+      await pool
+        .request()
+        .input("recordId", sql.BigInt, recordId)
+        .input("nextFileName", sql.NVarChar(255), data.nextFileName)
+        .input("nextFilePath", sql.NVarChar(500), nextFilePath).query(`
+          UPDATE ${schema}.capture_records
+          SET
+            file_name = @nextFileName,
+            file_path = @nextFilePath
+          WHERE id = @recordId;
+        `);
+
+      return {
+        ok: true as const,
+        recordId,
+        nextFilePath,
+      };
+    } catch (error) {
+      return {
+        ok: false as const,
+        code: "CAPTURE_RECORD_RENAME_FAILED",
+        message:
+          error instanceof Error ? error.message : "Gagal menyinkronkan rename capture ke MSSQL.",
+      };
+    }
+  });
+
+export const deleteCaptureRecord = createServerFn({ method: "POST" })
+  .validator(deleteCaptureRecordSchema)
+  .handler(async ({ data }) => {
+    if (!isCardDbConfigured()) {
+      return {
+        ok: false as const,
+        code: "CARDDB_NOT_CONFIGURED",
+        message: "Konfigurasi CARDDB belum lengkap di server aplikasi.",
+      };
+    }
+
+    try {
+      const schema = `[${getCardDbSchema()}]`;
+      const pool = await getCardDbPool();
+      const recordId = await resolveCaptureRecordId(pool, schema, {
+        recordId: data.recordId ?? null,
+        fileName: data.fileName,
+        capturedAt: data.capturedAt,
+      });
+
+      if (!recordId) {
+        return {
+          ok: false as const,
+          code: "CAPTURE_RECORD_NOT_FOUND",
+          message: "Record capture yang cocok tidak ditemukan di MSSQL.",
+        };
+      }
+
+      await pool.request().input("recordId", sql.BigInt, recordId).query(`
+        DELETE FROM ${schema}.capture_records
+        WHERE id = @recordId;
+      `);
+
+      return {
+        ok: true as const,
+        recordId,
+      };
+    } catch (error) {
+      return {
+        ok: false as const,
+        code: "CAPTURE_RECORD_DELETE_FAILED",
+        message:
+          error instanceof Error ? error.message : "Gagal menyinkronkan hapus capture ke MSSQL.",
       };
     }
   });

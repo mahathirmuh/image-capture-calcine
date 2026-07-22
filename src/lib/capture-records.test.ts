@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildCaptureRecordMetadata,
   normalizeCaptureBinLabel,
+  replaceFileNameInPath,
   toCaptureRecordStatus,
   type RecordCaptureInput,
 } from "./capture-records";
@@ -52,5 +53,22 @@ describe("capture-records helpers", () => {
   it("treats non-download save methods as saved", () => {
     expect(toCaptureRecordStatus("edge-network")).toBe("saved");
     expect(toCaptureRecordStatus("browser-folder")).toBe("saved");
+  });
+
+  it("replaces file names inside known save paths", () => {
+    expect(
+      replaceFileNameInPath(
+        "\\\\server\\capture\\2026\\07\\22\\capture-old.jpg",
+        "capture-old.jpg",
+        "capture-new.jpg",
+      ),
+    ).toBe("\\\\server\\capture\\2026\\07\\22\\capture-new.jpg");
+    expect(
+      replaceFileNameInPath(
+        "browser-download/capture-old.jpg",
+        "capture-old.jpg",
+        "capture-new.jpg",
+      ),
+    ).toBe("browser-download/capture-new.jpg");
   });
 });

@@ -22,7 +22,12 @@ import {
 } from "lucide-react";
 import { type GalleryItem, loadGallery, saveGallery, removeGalleryItem } from "@/lib/gallery-store";
 import { getDeviceStatus, type DeviceStatus } from "@/lib/camera-api";
-import { listCaptureRecords, type CaptureRecordView } from "@/lib/capture-records";
+import {
+  deleteCaptureRecord,
+  listCaptureRecords,
+  renameCaptureRecord,
+  type CaptureRecordView,
+} from "@/lib/capture-records";
 import {
   DEFAULT_GALLERY_VIEW_STATE,
   GALLERY_PAGE_SIZE_OPTIONS,
@@ -321,10 +326,20 @@ function GalleryPage() {
       if (item.parentDir && item.fileHandle) {
         await item.parentDir.removeEntry(item.name);
       }
+      const captureDelete = await deleteCaptureRecord({
+        data: {
+          recordId: item.captureRecordId ?? null,
+          fileName: item.name,
+          capturedAt: item.createdAt,
+        },
+      });
       URL.revokeObjectURL(item.url);
       const next = gallery.filter((x) => x.id !== item.id);
       await persist(next);
       await removeGalleryItem(item.id);
+      if (captureDelete.ok) {
+        setCaptureRecords((prev) => prev.filter((record) => record.id !== captureDelete.recordId));
+      }
       if (detailItem?.id === item.id) setDetailItem(null);
       setSelectedIds((prev) => {
         if (!prev.has(item.id)) return prev;
@@ -332,6 +347,9 @@ function GalleryPage() {
         next.delete(item.id);
         return next;
       });
+      if (!captureDelete.ok && captureDelete.code !== "CAPTURE_RECORD_NOT_FOUND") {
+        alert(`Item lokal terhapus, tetapi sinkron DB gagal: ${captureDelete.message}`);
+      }
     } catch (error: unknown) {
       alert(getErrorMessage(error, "Gagal menghapus item"));
     }
@@ -351,9 +369,40 @@ function GalleryPage() {
         await item.parentDir.removeEntry(item.name);
         updated = { ...updated, fileHandle: newHandle };
       }
+      const captureRename = await renameCaptureRecord({
+        data: {
+          recordId: item.captureRecordId ?? null,
+          currentFileName: item.name,
+          nextFileName: nextName,
+          capturedAt: item.createdAt,
+        },
+      });
+      if (captureRename.ok) {
+        updated = {
+          ...updated,
+          captureRecordId: captureRename.recordId,
+          persistedPath: captureRename.nextFilePath,
+        };
+      }
       const next = gallery.map((x) => (x.id === item.id ? updated : x));
       await persist(next);
+      if (captureRename.ok) {
+        setCaptureRecords((prev) =>
+          prev.map((record) =>
+            record.id === captureRename.recordId
+              ? {
+                  ...record,
+                  fileName: nextName,
+                  filePath: captureRename.nextFilePath,
+                }
+              : record,
+          ),
+        );
+      }
       if (detailItem?.id === item.id) setDetailItem(updated);
+      if (!captureRename.ok && captureRename.code !== "CAPTURE_RECORD_NOT_FOUND") {
+        alert(`Nama file lokal berubah, tetapi sinkron DB gagal: ${captureRename.message}`);
+      }
     } catch (error: unknown) {
       alert(getErrorMessage(error, "Gagal mengubah nama file"));
     }
@@ -527,6 +576,7 @@ function GalleryPage() {
     detailItem === null
       ? null
       : (captureRecords.find((record) => {
+          if (detailItem.captureRecordId && record.id === detailItem.captureRecordId) return true;
           if (record.fileName !== detailItem.name) return false;
           return Math.abs(new Date(record.capturedAt).getTime() - detailItem.createdAt) < 120_000;
         }) ?? null);

@@ -18,6 +18,9 @@ export type GalleryItem = {
   fileHandle: FileHandle | null;
   parentDir: DirHandle | null;
   createdAt: number;
+  captureRecordId?: number | null;
+  persistedPath?: string | null;
+  saveMethod?: "edge-network" | "browser-folder" | "browser-download" | null;
 };
 
 type StoredGalleryItem = {
@@ -27,6 +30,9 @@ type StoredGalleryItem = {
   bin?: string;
   createdAt: number;
   hasFileHandle: boolean;
+  captureRecordId?: number | null;
+  persistedPath?: string | null;
+  saveMethod?: "edge-network" | "browser-folder" | "browser-download" | null;
 };
 
 function openDB(): Promise<IDBDatabase> {
@@ -80,6 +86,9 @@ export async function loadGallery(): Promise<GalleryItem[]> {
         fileHandle: null,
         parentDir: null,
         createdAt: meta.createdAt,
+        captureRecordId: meta.captureRecordId ?? null,
+        persistedPath: meta.persistedPath ?? null,
+        saveMethod: meta.saveMethod ?? null,
       });
     }
     db.close();
@@ -107,6 +116,9 @@ export async function saveGallery(items: GalleryItem[]): Promise<void> {
           bin: item.bin,
           createdAt: item.createdAt,
           hasFileHandle: !!item.fileHandle,
+          captureRecordId: item.captureRecordId ?? null,
+          persistedPath: item.persistedPath ?? null,
+          saveMethod: item.saveMethod ?? null,
         };
         store.put(meta, item.id);
         blobStore.put(item.blob, item.id);
@@ -133,6 +145,9 @@ export async function addGalleryItem(item: GalleryItem): Promise<void> {
         bin: item.bin,
         createdAt: item.createdAt,
         hasFileHandle: !!item.fileHandle,
+        captureRecordId: item.captureRecordId ?? null,
+        persistedPath: item.persistedPath ?? null,
+        saveMethod: item.saveMethod ?? null,
       };
       tx.objectStore(IDB_STORE).put(meta, item.id);
       tx.objectStore(IDB_BLOB_STORE).put(item.blob, item.id);
