@@ -725,6 +725,11 @@ function DevicesPage() {
   const hasDeviceEventSearch = deviceEventSearchQuery.trim() !== "";
   const hasDeviceEventTypeFilter = deviceEventTypeFilter !== "all";
   const hasDeviceEventTimeRangeFilter = deviceEventTimeRange !== "all";
+  const hasPinnedErrorView =
+    deviceEventFilter === "error" &&
+    deviceEventTypeFilter === "all" &&
+    deviceEventTimeRange === "7d" &&
+    !hasDeviceEventSearch;
   const groupedVisibleDeviceEvents = visibleDeviceEvents.reduce(
     (groups, event) => {
       const eventDate = new Date(event.createdAt);
@@ -771,6 +776,9 @@ function DevicesPage() {
     "7d": deviceEvents.filter((event) => matchesDeviceEventTimeRange(event, "7d", nowMs)).length,
     "30d": deviceEvents.filter((event) => matchesDeviceEventTimeRange(event, "30d", nowMs)).length,
   } satisfies Record<DeviceEventTimeRange, number>;
+  const pinnedErrorViewCount = deviceEvents.filter(
+    (event) => event.severity === "error" && matchesDeviceEventTimeRange(event, "7d", nowMs),
+  ).length;
 
   const visibleDevices = registeredDevices.filter((device) => {
     const query = searchQuery.trim().toLowerCase();
@@ -1314,6 +1322,48 @@ function DevicesPage() {
                       {deviceEventsLoading ? "Menyegarkan…" : "Refresh Log"}
                     </button>
                   </div>
+                </div>
+                <div className="mb-3 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDeviceEventFilter("error");
+                      setDeviceEventTypeFilter("all");
+                      setDeviceEventTimeRange("7d");
+                      setDeviceEventSearchQuery("");
+                    }}
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium ${
+                      hasPinnedErrorView
+                        ? "border-destructive bg-destructive text-destructive-foreground"
+                        : "border-input bg-background hover:bg-accent"
+                    }`}
+                  >
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    <span>Error Terbaru</span>
+                    <span
+                      className={`rounded-full px-1.5 py-0.5 text-[11px] ${
+                        hasPinnedErrorView
+                          ? "bg-destructive-foreground/15 text-destructive-foreground"
+                          : "bg-muted text-muted-foreground"
+                      }`}
+                    >
+                      {pinnedErrorViewCount}
+                    </span>
+                  </button>
+                  {hasPinnedErrorView ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDeviceEventFilter("all");
+                        setDeviceEventTypeFilter("all");
+                        setDeviceEventTimeRange("all");
+                        setDeviceEventSearchQuery("");
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-input bg-background px-3 py-1 text-xs font-medium hover:bg-accent"
+                    >
+                      Reset Filter
+                    </button>
+                  ) : null}
                 </div>
                 <div className="mb-3 flex flex-wrap items-center gap-2">
                   {DEVICE_EVENT_FILTERS.map((filter) => (
