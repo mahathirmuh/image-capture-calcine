@@ -1324,7 +1324,10 @@ function DevicesPage() {
                                 <div className="space-y-1">
                                   <div className="flex flex-wrap items-center gap-2">
                                     <span className="font-medium text-foreground">
-                                      {formatDeviceEventLabel(event.eventType)}
+                                      {highlightHistoryText(
+                                        formatDeviceEventLabel(event.eventType),
+                                        deviceEventSearchQuery,
+                                      )}
                                     </span>
                                     <StatusChip
                                       label={event.severity}
@@ -1337,9 +1340,15 @@ function DevicesPage() {
                                       }
                                     />
                                   </div>
-                                  <div className="text-muted-foreground">{event.message}</div>
+                                  <div className="text-muted-foreground">
+                                    {highlightHistoryText(event.message, deviceEventSearchQuery)}
+                                  </div>
                                   <div className="text-[11px] text-muted-foreground">
-                                    Device: {event.deviceName ?? event.deviceCode}
+                                    Device:{" "}
+                                    {highlightHistoryText(
+                                      event.deviceName ?? event.deviceCode,
+                                      deviceEventSearchQuery,
+                                    )}
                                   </div>
                                 </div>
                                 <span className="text-[11px] text-muted-foreground">
@@ -1359,10 +1368,16 @@ function DevicesPage() {
                         <div className="space-y-3 text-xs">
                           <div>
                             <div className="font-medium text-foreground">
-                              {formatDeviceEventLabel(selectedDeviceEvent.eventType)}
+                              {highlightHistoryText(
+                                formatDeviceEventLabel(selectedDeviceEvent.eventType),
+                                deviceEventSearchQuery,
+                              )}
                             </div>
                             <div className="mt-1 text-muted-foreground">
-                              {selectedDeviceEvent.message}
+                              {highlightHistoryText(
+                                selectedDeviceEvent.message,
+                                deviceEventSearchQuery,
+                              )}
                             </div>
                           </div>
                           <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2">
@@ -1381,7 +1396,10 @@ function DevicesPage() {
                             </dd>
                             <dt className="text-muted-foreground">Device</dt>
                             <dd className="text-right font-medium">
-                              {selectedDeviceEvent.deviceName ?? selectedDeviceEvent.deviceCode}
+                              {highlightHistoryText(
+                                selectedDeviceEvent.deviceName ?? selectedDeviceEvent.deviceCode,
+                                deviceEventSearchQuery,
+                              )}
                             </dd>
                             <dt className="text-muted-foreground">Waktu</dt>
                             <dd className="text-right font-medium">
@@ -1401,10 +1419,16 @@ function DevicesPage() {
                                     className="contents"
                                   >
                                     <dt className="text-muted-foreground">
-                                      {formatDeviceEventPayloadKey(key)}
+                                      {highlightHistoryText(
+                                        formatDeviceEventPayloadKey(key),
+                                        deviceEventSearchQuery,
+                                      )}
                                     </dt>
                                     <dd className="break-all text-right font-medium">
-                                      {formatDeviceEventPayloadValue(value)}
+                                      {highlightHistoryText(
+                                        formatDeviceEventPayloadValue(value),
+                                        deviceEventSearchQuery,
+                                      )}
                                     </dd>
                                   </div>
                                 ))}
