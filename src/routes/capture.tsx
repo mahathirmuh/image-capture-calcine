@@ -28,6 +28,8 @@ import {
   getMediaContent,
   exportMediaToNetwork,
 } from "@/lib/camera-api";
+import { recordCaptureResult, type CaptureSaveMethod } from "@/lib/capture-records";
+import { loadDeviceProfile } from "@/lib/device-config";
 import {
   describeCameraRuntimeIssue,
   getCaptureActionHint,
@@ -63,7 +65,7 @@ type Bin = "BIN 1" | "BIN 2";
 // assetId is kept around so Save can later ask the edge device to export the
 // already-captured asset straight to its network share, without the browser
 // re-uploading the bytes it already downloaded once for the preview.
-type BinPreview = { blob: Blob; url: string; assetId: string };
+type BinPreview = { blob: Blob; url: string; assetId: string; capturedAt: number };
 
 function binToken(bin: Bin) {
   return bin.replace(" ", "");
@@ -71,6 +73,18 @@ function binToken(bin: Bin) {
 
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
+}
+
+async function sha256Hex(blob: Blob): Promise<string | null> {
+  if (typeof window === "undefined" || !window.crypto?.subtle) return null;
+  try {
+    const hash = await window.crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
+    return Array.from(new Uint8Array(hash))
+      .map((value) => value.toString(16).padStart(2, "0"))
+      .join("");
+  } catch {
+    return null;
+  }
 }
 
 // Fixed English month names so {MMMM} always renders "July", never a localized
@@ -335,13 +349,14 @@ function CapturePage() {
         setError("Capture berhasil, tetapi tidak ada gambar yang dikembalikan");
         return;
       }
+      const capturedAt = Date.now();
       const res = await getMediaContent({ data: { assetId } });
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const setBin = bin === "BIN 1" ? setBin1 : setBin2;
       setBin((prev) => {
         if (prev) URL.revokeObjectURL(prev.url);
-        return { blob, url, assetId };
+        return { blob, url, assetId, capturedAt };
       });
       setLastSource(bin);
       setStatus(null);
@@ -452,6 +467,8 @@ function CapturePage() {
 
     try {
       let savedNetworkPath: string | null = null;
+      let persistedPath: string | null = null;
+      let saveMethod: CaptureSaveMethod = "browser-download";
       let saveConfirmed = false;
       let permissionAlreadyReported = false;
 
@@ -471,6 +488,8 @@ function CapturePage() {
         if (exported.ok) {
           filename = exported.filename;
           savedNetworkPath = exported.savedTo;
+          persistedPath = exported.savedTo;
+          saveMethod = "edge-network";
           saveConfirmed = true;
         } else if (exported.code !== "NETWORK_SAVE_NOT_CONFIGURED") {
           // NOT_CONFIGURED is the expected/common case (not every edge device
@@ -502,6 +521,8 @@ function CapturePage() {
           await writable.close();
           parentDir = dayDir;
           savedNetworkPath = `${dirName}/${datedPath}/${filename}`;
+          persistedPath = `${dirName}/${datedPath}/${filename}`;
+          saveMethod = "browser-folder";
           saveConfirmed = true;
         } catch (error: unknown) {
           // Network share unreachable, permission lost, or write failed --
@@ -529,6 +550,7 @@ function CapturePage() {
         const downloadStatus =
           dirHandle && supportsFS ? `${filename} diunduh lokal` : `${filename} berhasil diunduh`;
         setStatus(downloadStatus);
+        persistedPath = `browser-download/${filename}`;
       }
 
       const item = {
@@ -540,9 +562,36 @@ function CapturePage() {
         bin: source,
         fileHandle,
         parentDir,
-        createdAt: Date.now(),
+        createdAt: previewItem.capturedAt,
       };
       await addGalleryItem(item);
+
+      const profile = loadDeviceProfile();
+      const checksumSha256 = await sha256Hex(previewItem.blob);
+      const captureRecord = await recordCaptureResult({
+        data: {
+          deviceCode: profile?.deviceCode || deviceStatus?.deviceId || "edge-camera-01",
+          deviceName: profile?.deviceName || deviceStatus?.deviceId || null,
+          plant: location,
+          captureBin: bin,
+          station: profile?.station ?? null,
+          fileName: filename,
+          filePath: persistedPath ?? savedNetworkPath ?? `browser-download/${filename}`,
+          saveMethod,
+          capturedAt: previewItem.capturedAt,
+          fileSizeBytes: previewItem.blob.size,
+          checksumSha256,
+          assetId: previewItem.assetId,
+        },
+      });
+      if (!captureRecord.ok) {
+        setStatus((prev) =>
+          prev
+            ? `${prev}. Metadata capture belum tercatat ke DB (${captureRecord.message}).`
+            : `Metadata capture belum tercatat ke DB (${captureRecord.message}).`,
+        );
+      }
+
       setCounter((c) => c + 1);
       // Only clear the frozen still when we know the save really completed.
       // A browser download triggered via <a download> gives no signal for
