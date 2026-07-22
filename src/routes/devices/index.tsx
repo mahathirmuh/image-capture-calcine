@@ -252,6 +252,7 @@ function formatDeviceEventLabel(eventType: string): string {
 
 type DeviceEventFilter = "all" | "info" | "warning" | "error";
 type DeviceEventTypeFilter = "all" | "capture" | "autofocus" | "fallback" | "other";
+type DeviceEventTimeRange = "all" | "today" | "7d" | "30d";
 
 const DEVICE_EVENT_FILTERS: Array<{ id: DeviceEventFilter; label: string }> = [
   { id: "all", label: "Semua" },
@@ -268,11 +269,38 @@ const DEVICE_EVENT_TYPE_FILTERS: Array<{ id: DeviceEventTypeFilter; label: strin
   { id: "other", label: "Lainnya" },
 ];
 
+const DEVICE_EVENT_TIME_FILTERS: Array<{ id: DeviceEventTimeRange; label: string }> = [
+  { id: "all", label: "Semua Waktu" },
+  { id: "today", label: "Hari Ini" },
+  { id: "7d", label: "7 Hari" },
+  { id: "30d", label: "30 Hari" },
+];
+
 function getDeviceEventTypeGroup(eventType: string): DeviceEventTypeFilter {
   if (eventType.startsWith("capture-")) return "capture";
   if (eventType.startsWith("autofocus-")) return "autofocus";
   if (eventType.includes("fallback")) return "fallback";
   return "other";
+}
+
+function matchesDeviceEventTimeRange(
+  event: DeviceEventView,
+  range: DeviceEventTimeRange,
+  nowMs: number,
+) {
+  if (range === "all") return true;
+
+  const eventTime = new Date(event.createdAt).getTime();
+  if (Number.isNaN(eventTime)) return false;
+
+  if (range === "today") {
+    const startOfToday = new Date(nowMs);
+    startOfToday.setHours(0, 0, 0, 0);
+    return eventTime >= startOfToday.getTime();
+  }
+
+  const rangeMs = range === "7d" ? 7 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000;
+  return eventTime >= nowMs - rangeMs;
 }
 
 function formatDeviceEventPayloadKey(key: string) {
@@ -451,6 +479,7 @@ function DevicesPage() {
   const [deviceEventFilter, setDeviceEventFilter] = useState<DeviceEventFilter>("all");
   const [deviceEventTypeFilter, setDeviceEventTypeFilter] = useState<DeviceEventTypeFilter>("all");
   const [deviceEventSearchQuery, setDeviceEventSearchQuery] = useState("");
+  const [deviceEventTimeRange, setDeviceEventTimeRange] = useState<DeviceEventTimeRange>("all");
   const [selectedDeviceEventId, setSelectedDeviceEventId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
@@ -679,12 +708,14 @@ function DevicesPage() {
     },
   ];
   const latestDeviceEvent = deviceEvents[0] ?? null;
+  const nowMs = Date.now();
   const visibleDeviceEvents = deviceEvents.filter(
     (event) =>
       (deviceEventFilter === "all" ? true : event.severity === deviceEventFilter) &&
       (deviceEventTypeFilter === "all"
         ? true
         : getDeviceEventTypeGroup(event.eventType) === deviceEventTypeFilter) &&
+      matchesDeviceEventTimeRange(event, deviceEventTimeRange, nowMs) &&
       matchesDeviceEventSearch(event, deviceEventSearchQuery),
   );
   const selectedDeviceEvent =
@@ -693,6 +724,7 @@ function DevicesPage() {
     null;
   const hasDeviceEventSearch = deviceEventSearchQuery.trim() !== "";
   const hasDeviceEventTypeFilter = deviceEventTypeFilter !== "all";
+  const hasDeviceEventTimeRangeFilter = deviceEventTimeRange !== "all";
   const groupedVisibleDeviceEvents = visibleDeviceEvents.reduce(
     (groups, event) => {
       const eventDate = new Date(event.createdAt);
@@ -732,6 +764,13 @@ function DevicesPage() {
     other: deviceEvents.filter((event) => getDeviceEventTypeGroup(event.eventType) === "other")
       .length,
   } satisfies Record<DeviceEventTypeFilter, number>;
+  const eventTimeCounts = {
+    all: deviceEvents.length,
+    today: deviceEvents.filter((event) => matchesDeviceEventTimeRange(event, "today", nowMs))
+      .length,
+    "7d": deviceEvents.filter((event) => matchesDeviceEventTimeRange(event, "7d", nowMs)).length,
+    "30d": deviceEvents.filter((event) => matchesDeviceEventTimeRange(event, "30d", nowMs)).length,
+  } satisfies Record<DeviceEventTimeRange, number>;
 
   const visibleDevices = registeredDevices.filter((device) => {
     const query = searchQuery.trim().toLowerCase();
@@ -1326,6 +1365,31 @@ function DevicesPage() {
                     </button>
                   ))}
                 </div>
+                <div className="mb-3 flex flex-wrap items-center gap-2">
+                  {DEVICE_EVENT_TIME_FILTERS.map((filter) => (
+                    <button
+                      key={filter.id}
+                      type="button"
+                      onClick={() => setDeviceEventTimeRange(filter.id)}
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium ${
+                        deviceEventTimeRange === filter.id
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-input bg-background hover:bg-accent"
+                      }`}
+                    >
+                      <span>{filter.label}</span>
+                      <span
+                        className={`rounded-full px-1.5 py-0.5 text-[11px] ${
+                          deviceEventTimeRange === filter.id
+                            ? "bg-primary-foreground/15 text-primary-foreground"
+                            : "bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        {eventTimeCounts[filter.id]}
+                      </span>
+                    </button>
+                  ))}
+                </div>
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                   <div className="relative min-w-[220px] flex-1">
                     <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -1341,6 +1405,9 @@ function DevicesPage() {
                     log
                     {hasDeviceEventTypeFilter
                       ? ` tipe ${DEVICE_EVENT_TYPE_FILTERS.find((filter) => filter.id === deviceEventTypeFilter)?.label ?? deviceEventTypeFilter}`
+                      : ""}
+                    {hasDeviceEventTimeRangeFilter
+                      ? ` dalam ${DEVICE_EVENT_TIME_FILTERS.find((filter) => filter.id === deviceEventTimeRange)?.label ?? deviceEventTimeRange}`
                       : ""}
                     {hasDeviceEventSearch ? ` untuk "${deviceEventSearchQuery.trim()}"` : ""}.
                   </div>
@@ -1361,6 +1428,9 @@ function DevicesPage() {
                       : ""}
                     {hasDeviceEventTypeFilter
                       ? ` (tipe ${DEVICE_EVENT_TYPE_FILTERS.find((filter) => filter.id === deviceEventTypeFilter)?.label ?? deviceEventTypeFilter})`
+                      : ""}
+                    {hasDeviceEventTimeRangeFilter
+                      ? ` (rentang ${DEVICE_EVENT_TIME_FILTERS.find((filter) => filter.id === deviceEventTimeRange)?.label ?? deviceEventTimeRange})`
                       : ""}
                     {hasDeviceEventSearch
                       ? ` dan kata kunci "${deviceEventSearchQuery.trim()}".`
@@ -2045,6 +2115,7 @@ function CameraSettingsTab({
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     const filterSuffix = deviceEventFilter === "all" ? "all" : deviceEventFilter;
     const eventTypeSuffix = deviceEventTypeFilter === "all" ? "all-types" : deviceEventTypeFilter;
+    const timeRangeSuffix = deviceEventTimeRange === "all" ? "all-time" : deviceEventTimeRange;
     const searchSuffix = hasDeviceEventSearch ? "-search" : "";
 
     let blob: Blob;
@@ -2066,7 +2137,7 @@ function CameraSettingsTab({
           type: "application/json;charset=utf-8;",
         },
       );
-      fileName = `device-events-${filterSuffix}-${eventTypeSuffix}${searchSuffix}-${timestamp}.json`;
+      fileName = `device-events-${filterSuffix}-${eventTypeSuffix}-${timeRangeSuffix}${searchSuffix}-${timestamp}.json`;
     } else {
       const rows = [
         [
@@ -2094,7 +2165,7 @@ function CameraSettingsTab({
       ];
       const csv = rows.map((row) => row.map(escapeCsvValue).join(",")).join("\r\n");
       blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
-      fileName = `device-events-${filterSuffix}-${eventTypeSuffix}${searchSuffix}-${timestamp}.csv`;
+      fileName = `device-events-${filterSuffix}-${eventTypeSuffix}-${timeRangeSuffix}${searchSuffix}-${timestamp}.csv`;
     }
 
     const url = URL.createObjectURL(blob);
