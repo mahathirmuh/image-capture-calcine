@@ -28,7 +28,12 @@ import {
   getMediaContent,
   exportMediaToNetwork,
 } from "@/lib/camera-api";
-import { recordCaptureResult, type CaptureSaveMethod } from "@/lib/capture-records";
+import {
+  logDeviceEvent,
+  recordCaptureResult,
+  type CaptureSaveMethod,
+  type DeviceEventSeverity,
+} from "@/lib/capture-records";
 import { loadDeviceProfile } from "@/lib/device-config";
 import {
   describeCameraRuntimeIssue,
@@ -270,6 +275,43 @@ function CapturePage() {
     waitingForCamera,
   } = useCaptureCameraSession({ setError, setStatus });
 
+  function getActiveDeviceContext() {
+    const profile = loadDeviceProfile();
+    return {
+      deviceCode: profile?.deviceCode || deviceStatus?.deviceId || "edge-camera-01",
+      deviceName: profile?.deviceName || deviceStatus?.deviceId || null,
+      station: profile?.station ?? null,
+    };
+  }
+
+  async function logOperationalEvent(
+    eventType: string,
+    severity: DeviceEventSeverity,
+    message: string,
+    payload?: Record<string, unknown>,
+  ) {
+    const context = getActiveDeviceContext();
+    await logDeviceEvent({
+      data: {
+        deviceCode: context.deviceCode,
+        eventType,
+        severity,
+        message,
+        payload: {
+          source: "capture-page",
+          deviceName: context.deviceName,
+          station: context.station,
+          plant: location,
+          sessionId: sessionId ?? null,
+          hasLeaseToken: !!leaseToken,
+          connectionState: deviceStatus?.connectionState ?? null,
+          cameraConnected: !!deviceStatus?.camera?.connected,
+          ...payload,
+        },
+      },
+    });
+  }
+
   // Load persisted preferences + directory handle after hydration.
   useEffect(() => {
     setHydrated(true);
@@ -336,16 +378,37 @@ function CapturePage() {
     try {
       const triggered = await triggerCapture({ data: { sessionId, leaseToken } });
       if (!triggered.ok) {
+        void logOperationalEvent("capture-trigger-failed", "warning", triggered.message, {
+          bin,
+        });
         setError(triggered.message);
         return;
       }
       const job = await pollJob(triggered.job.jobId);
       if (job.status === "failed") {
+        void logOperationalEvent(
+          "capture-job-failed",
+          "error",
+          job.error?.message ?? "Capture gagal",
+          {
+            bin,
+            jobId: triggered.job.jobId,
+          },
+        );
         setError(job.error?.message ?? "Capture gagal");
         return;
       }
       const assetId = job.result?.asset.assetId;
       if (!assetId) {
+        void logOperationalEvent(
+          "capture-missing-asset",
+          "error",
+          "Capture berhasil, tetapi asset tidak tersedia.",
+          {
+            bin,
+            jobId: triggered.job.jobId,
+          },
+        );
         setError("Capture berhasil, tetapi tidak ada gambar yang dikembalikan");
         return;
       }
@@ -363,6 +426,10 @@ function CapturePage() {
     } catch (error: unknown) {
       const message = getErrorMessage(error, "Capture gagal");
       const issue = describeCameraRuntimeIssue(getRuntimeErrorCode(error), message);
+      void logOperationalEvent("capture-exception", "error", message, {
+        bin,
+        runtimeCode: getRuntimeErrorCode(error) ?? null,
+      });
       setError(issue.detail);
     } finally {
       setCapturingBin(null);
@@ -379,11 +446,20 @@ function CapturePage() {
     try {
       const triggered = await triggerAutofocus({ data: { sessionId, leaseToken } });
       if (!triggered.ok) {
+        void logOperationalEvent("autofocus-trigger-failed", "warning", triggered.message);
         setError(triggered.message);
         return;
       }
       const job = await pollJob(triggered.job.jobId);
       if (job.status === "failed") {
+        void logOperationalEvent(
+          "autofocus-job-failed",
+          "error",
+          job.error?.message ?? "Autofocus gagal",
+          {
+            jobId: triggered.job.jobId,
+          },
+        );
         setError(job.error?.message ?? "Autofocus gagal");
         return;
       }
@@ -391,6 +467,9 @@ function CapturePage() {
     } catch (error: unknown) {
       const message = getErrorMessage(error, "Autofocus gagal");
       const issue = describeCameraRuntimeIssue(getRuntimeErrorCode(error), message);
+      void logOperationalEvent("autofocus-exception", "error", message, {
+        runtimeCode: getRuntimeErrorCode(error) ?? null,
+      });
       setError(issue.detail);
     } finally {
       setAutofocusing(false);
@@ -471,6 +550,7 @@ function CapturePage() {
       let saveMethod: CaptureSaveMethod = "browser-download";
       let saveConfirmed = false;
       let permissionAlreadyReported = false;
+      const fallbackReasons: string[] = [];
 
       // Tier 1: ask the edge device to export the asset it already has to the
       // network share configured here (NETWORK_SAVE_ROOT, this app's own
@@ -501,6 +581,18 @@ function CapturePage() {
           setError(
             `Network save dari edge device gagal (${exported.message}) — mencoba jalur simpan fallback.`,
           );
+          fallbackReasons.push(`edge-network:${exported.code}`);
+          void logOperationalEvent(
+            "network-save-fallback",
+            "warning",
+            `Network save dari edge device gagal: ${exported.message}`,
+            {
+              bin,
+              assetId: previewItem.assetId,
+              fallbackTo: "browser-folder-or-download",
+              edgeErrorCode: exported.code,
+            },
+          );
         }
       }
 
@@ -511,6 +603,7 @@ function CapturePage() {
             // error and flipped pendingReconnect -- don't clobber that with
             // the generic message below, just fall through to the download.
             permissionAlreadyReported = true;
+            fallbackReasons.push("browser-folder:permission-not-granted");
             throw new Error("Folder permission not granted");
           }
           const { dir: dayDir, path: datedPath } = await getDatedDirHandle(dirHandle);
@@ -535,6 +628,17 @@ function CapturePage() {
               `Folder jaringan tidak tersedia (${getErrorMessage(error, "error tidak diketahui")}) — hasil capture diunduh lokal sebagai gantinya. Pindahkan manual ke shared folder bila diperlukan.`,
             );
           }
+          fallbackReasons.push("browser-folder:write-failed");
+          void logOperationalEvent(
+            "folder-save-fallback",
+            "warning",
+            `Folder fallback browser gagal dipakai: ${getErrorMessage(error, "error tidak diketahui")}`,
+            {
+              bin,
+              fallbackTo: "browser-download",
+              permissionAlreadyReported,
+            },
+          );
         }
       }
 
@@ -551,6 +655,19 @@ function CapturePage() {
           dirHandle && supportsFS ? `${filename} diunduh lokal` : `${filename} berhasil diunduh`;
         setStatus(downloadStatus);
         persistedPath = `browser-download/${filename}`;
+        if (fallbackReasons.length > 0 || dirHandle || !supportsFS) {
+          void logOperationalEvent(
+            "browser-download-fallback",
+            fallbackReasons.length > 0 ? "warning" : "info",
+            `${filename} berakhir diunduh lokal sebagai jalur simpan akhir.`,
+            {
+              bin,
+              fallbackReasons,
+              supportsFS,
+              hasDirHandle: !!dirHandle,
+            },
+          );
+        }
       }
 
       const profile = loadDeviceProfile();
@@ -572,6 +689,17 @@ function CapturePage() {
         },
       });
       if (!captureRecord.ok) {
+        void logOperationalEvent(
+          "capture-record-sync-failed",
+          "warning",
+          `Metadata capture gagal dicatat ke DB: ${captureRecord.message}`,
+          {
+            bin,
+            fileName: filename,
+            filePath: persistedPath ?? savedNetworkPath ?? `browser-download/${filename}`,
+            saveMethod,
+          },
+        );
         setStatus((prev) =>
           prev
             ? `${prev}. Metadata capture belum tercatat ke DB (${captureRecord.message}).`

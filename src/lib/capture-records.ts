@@ -57,6 +57,14 @@ const captureDashboardSummarySchema = z.object({
   recentLimit: z.number().int().positive().max(20).default(6),
 });
 
+const logDeviceEventSchema = z.object({
+  deviceCode: z.string().trim().min(1, "Device code wajib diisi"),
+  eventType: z.string().trim().min(1, "Event type wajib diisi"),
+  severity: z.enum(["info", "warning", "error"]),
+  message: z.string().trim().min(1, "Message wajib diisi"),
+  payload: z.record(z.string(), z.unknown()).optional(),
+});
+
 export type CaptureRecordView = {
   id: number;
   deviceCode: string | null;
@@ -88,6 +96,8 @@ export type CaptureDashboardSummary = {
     other: number;
   };
 };
+
+export type DeviceEventSeverity = "info" | "warning" | "error";
 
 export function replaceFileNameInPath(
   filePath: string,
@@ -492,6 +502,69 @@ export const getCaptureDashboardSummary = createServerFn({ method: "GET" })
           error instanceof Error
             ? error.message
             : "Gagal memuat ringkasan capture dari registry MSSQL.",
+      };
+    }
+  });
+
+export const logDeviceEvent = createServerFn({ method: "POST" })
+  .validator(logDeviceEventSchema)
+  .handler(async ({ data }) => {
+    if (!isCardDbConfigured()) {
+      return {
+        ok: false as const,
+        code: "CARDDB_NOT_CONFIGURED",
+        message: "Konfigurasi CARDDB belum lengkap di server aplikasi.",
+      };
+    }
+
+    try {
+      const schema = `[${getCardDbSchema()}]`;
+      const pool = await getCardDbPool();
+      const deviceId = await resolveDeviceId(pool.request(), schema, data.deviceCode);
+
+      if (!deviceId) {
+        return {
+          ok: false as const,
+          code: "DEVICE_NOT_FOUND",
+          message: `Device ${data.deviceCode} belum terdaftar di registry MSSQL.`,
+        };
+      }
+
+      const payloadJson = data.payload ? JSON.stringify(data.payload) : null;
+      const result = await pool
+        .request()
+        .input("deviceId", sql.BigInt, deviceId)
+        .input("eventType", sql.NVarChar(100), data.eventType)
+        .input("severity", sql.NVarChar(20), data.severity)
+        .input("message", sql.NVarChar(500), data.message)
+        .input("payloadJson", sql.NVarChar(sql.MAX), payloadJson).query(`
+          INSERT INTO ${schema}.device_events (
+            device_id,
+            event_type,
+            severity,
+            message,
+            payload_json
+          )
+          OUTPUT INSERTED.id
+          VALUES (
+            @deviceId,
+            @eventType,
+            @severity,
+            @message,
+            @payloadJson
+          );
+        `);
+
+      return {
+        ok: true as const,
+        eventId: Number(result.recordset[0].id),
+      };
+    } catch (error) {
+      return {
+        ok: false as const,
+        code: "DEVICE_EVENT_LOG_FAILED",
+        message:
+          error instanceof Error ? error.message : "Gagal mencatat event device ke registry MSSQL.",
       };
     }
   });
