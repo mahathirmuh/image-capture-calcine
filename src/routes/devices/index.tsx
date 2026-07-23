@@ -83,7 +83,11 @@ import {
   upsertRegisteredDeviceProfile,
   type RegisteredDevice,
 } from "@/lib/device-registry";
-import { listDeviceEvents, type DeviceEventView } from "@/lib/capture-records";
+import {
+  listDeviceEvents,
+  type DeviceEventCursor,
+  type DeviceEventView,
+} from "@/lib/capture-records";
 
 export const Route = createFileRoute("/devices/")({
   component: DevicesPage,
@@ -283,7 +287,6 @@ const DEVICE_EVENT_TIME_FILTERS: Array<{ id: DeviceEventTimeRange; label: string
 ];
 const DEFAULT_DEVICE_EVENT_FETCH_LIMIT = 8;
 const DEVICE_EVENT_FETCH_STEP = 8;
-const MAX_DEVICE_EVENT_FETCH_LIMIT = 50;
 
 const DEVICE_EVENT_PRESETS: Array<{
   id: DeviceEventPresetId;
@@ -533,8 +536,9 @@ function DevicesPage() {
   const [deviceEventTypeFilter, setDeviceEventTypeFilter] = useState<DeviceEventTypeFilter>("all");
   const [deviceEventSearchQuery, setDeviceEventSearchQuery] = useState("");
   const [deviceEventTimeRange, setDeviceEventTimeRange] = useState<DeviceEventTimeRange>("all");
-  const [deviceEventFetchLimit, setDeviceEventFetchLimit] = useState(
-    DEFAULT_DEVICE_EVENT_FETCH_LIMIT,
+  const [deviceEventsHasMore, setDeviceEventsHasMore] = useState(false);
+  const [deviceEventsNextCursor, setDeviceEventsNextCursor] = useState<DeviceEventCursor | null>(
+    null,
   );
   const [selectedDeviceEventId, setSelectedDeviceEventId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>("overview");
@@ -607,23 +611,45 @@ function DevicesPage() {
   }
 
   const loadRecentDeviceEvents = useCallback(
-    async (deviceCode?: string | null, limit = DEFAULT_DEVICE_EVENT_FETCH_LIMIT) => {
+    async ({
+      deviceCode,
+      limit = DEFAULT_DEVICE_EVENT_FETCH_LIMIT,
+      beforeCursor,
+      append = false,
+    }: {
+      deviceCode?: string | null;
+      limit?: number;
+      beforeCursor?: DeviceEventCursor | null;
+      append?: boolean;
+    }) => {
       setDeviceEventsLoading(true);
       const result = await listDeviceEvents({
         data: {
           limit,
           ...(deviceCode ? { deviceCode } : {}),
+          ...(beforeCursor
+            ? {
+                beforeId: beforeCursor.id,
+                beforeCreatedAt: beforeCursor.createdAt,
+              }
+            : {}),
         },
       });
       setDeviceEventsLoading(false);
 
       if (!result.ok) {
-        setDeviceEvents([]);
+        if (!append) {
+          setDeviceEvents([]);
+          setDeviceEventsHasMore(false);
+          setDeviceEventsNextCursor(null);
+        }
         setDeviceEventsError(result.message);
         return;
       }
 
-      setDeviceEvents(result.events);
+      setDeviceEvents((current) => (append ? [...current, ...result.events] : result.events));
+      setDeviceEventsHasMore(result.hasMore);
+      setDeviceEventsNextCursor(result.nextCursor);
       setDeviceEventsError(null);
     },
     [],
@@ -667,8 +693,12 @@ function DevicesPage() {
 
   useEffect(() => {
     const deviceCode = selectedDevice?.deviceCode ?? profile?.deviceCode ?? null;
-    setDeviceEventFetchLimit(DEFAULT_DEVICE_EVENT_FETCH_LIMIT);
-    void loadRecentDeviceEvents(deviceCode, DEFAULT_DEVICE_EVENT_FETCH_LIMIT);
+    setDeviceEventsHasMore(false);
+    setDeviceEventsNextCursor(null);
+    void loadRecentDeviceEvents({
+      deviceCode,
+      limit: DEFAULT_DEVICE_EVENT_FETCH_LIMIT,
+    });
   }, [loadRecentDeviceEvents, profile?.deviceCode, selectedDevice?.deviceCode]);
 
   useEffect(() => {
@@ -865,9 +895,7 @@ function DevicesPage() {
     warning: visibleDeviceEvents.filter((event) => event.severity === "warning").length,
     error: visibleDeviceEvents.filter((event) => event.severity === "error").length,
   } as const;
-  const canLoadMoreDeviceEvents =
-    deviceEvents.length >= deviceEventFetchLimit &&
-    deviceEventFetchLimit < MAX_DEVICE_EVENT_FETCH_LIMIT;
+  const canLoadMoreDeviceEvents = deviceEventsHasMore && deviceEventsNextCursor !== null;
   const activeDeviceLogFilters = [
     hasPinnedErrorView ? "Preset error terbaru" : null,
     deviceEventFilter !== "all"
@@ -939,13 +967,13 @@ function DevicesPage() {
 
   async function handleLoadMoreDeviceEvents() {
     const deviceCode = selectedDevice?.deviceCode ?? profile?.deviceCode ?? null;
-    const nextLimit = Math.min(
-      deviceEventFetchLimit + DEVICE_EVENT_FETCH_STEP,
-      MAX_DEVICE_EVENT_FETCH_LIMIT,
-    );
-
-    setDeviceEventFetchLimit(nextLimit);
-    await loadRecentDeviceEvents(deviceCode, nextLimit);
+    if (!deviceEventsNextCursor) return;
+    await loadRecentDeviceEvents({
+      deviceCode,
+      limit: DEVICE_EVENT_FETCH_STEP,
+      beforeCursor: deviceEventsNextCursor,
+      append: true,
+    });
   }
 
   return (
@@ -1441,12 +1469,14 @@ function DevicesPage() {
                     </button>
                     <button
                       type="button"
-                      onClick={() =>
-                        void loadRecentDeviceEvents(
-                          selectedDevice?.deviceCode ?? profile?.deviceCode ?? null,
-                          deviceEventFetchLimit,
-                        )
-                      }
+                      onClick={() => {
+                        setDeviceEventsHasMore(false);
+                        setDeviceEventsNextCursor(null);
+                        void loadRecentDeviceEvents({
+                          deviceCode: selectedDevice?.deviceCode ?? profile?.deviceCode ?? null,
+                          limit: DEFAULT_DEVICE_EVENT_FETCH_LIMIT,
+                        });
+                      }}
                       disabled={deviceEventsLoading}
                       className="rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:opacity-60"
                     >
@@ -1640,10 +1670,11 @@ function DevicesPage() {
                               total
                             </div>
                             <div className="mt-1 text-[11px] text-muted-foreground">
-                              Batch dimuat: {deviceEvents.length} dari limit {deviceEventFetchLimit}
+                              Total termuat saat ini: {deviceEvents.length} log, batch berikutnya{" "}
+                              {DEVICE_EVENT_FETCH_STEP} log.
                               {canLoadMoreDeviceEvents
-                                ? `, masih bisa tambah hingga ${MAX_DEVICE_EVENT_FETCH_LIMIT}.`
-                                : "."}
+                                ? " Masih ada halaman berikutnya."
+                                : " Sudah mencapai akhir data saat ini."}
                             </div>
                           </div>
                           <div className="flex flex-wrap gap-2 text-[11px]">
@@ -1733,8 +1764,8 @@ function DevicesPage() {
                       <div className="flex items-center justify-between gap-3 rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">
                         <span>
                           {canLoadMoreDeviceEvents
-                            ? "Perlu audit lebih panjang? Muat batch log berikutnya."
-                            : `Semua log yang tersedia untuk limit ${deviceEventFetchLimit} sudah dimuat.`}
+                            ? "Perlu audit lebih panjang? Muat batch log berikutnya dari server."
+                            : "Semua log yang tersedia untuk query saat ini sudah dimuat."}
                         </span>
                         <button
                           type="button"

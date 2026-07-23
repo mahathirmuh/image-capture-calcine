@@ -68,6 +68,8 @@ const logDeviceEventSchema = z.object({
 const listDeviceEventsSchema = z.object({
   limit: z.number().int().positive().max(50).default(10),
   deviceCode: z.string().trim().min(1).optional(),
+  beforeId: z.number().int().positive().optional(),
+  beforeCreatedAt: z.string().datetime().optional(),
 });
 
 export type CaptureRecordView = {
@@ -112,6 +114,11 @@ export type DeviceEventView = {
   severity: DeviceEventSeverity;
   message: string;
   payload: Record<string, unknown> | null;
+  createdAt: string;
+};
+
+export type DeviceEventCursor = {
+  id: number;
   createdAt: string;
 };
 
@@ -571,16 +578,25 @@ export const listDeviceEvents = createServerFn({ method: "GET" })
     try {
       const schema = `[${getCardDbSchema()}]`;
       const pool = await getCardDbPool();
-      const request = pool.request().input("limit", sql.Int, data.limit);
-      let deviceWhereClause = "";
+      const request = pool.request().input("fetchLimit", sql.Int, data.limit + 1);
+      const whereClauses: string[] = [];
 
       if (data.deviceCode) {
         request.input("deviceCode", sql.NVarChar(50), data.deviceCode);
-        deviceWhereClause = "WHERE d.code = @deviceCode";
+        whereClauses.push("d.code = @deviceCode");
+      }
+
+      if (data.beforeId && data.beforeCreatedAt) {
+        request
+          .input("beforeId", sql.BigInt, data.beforeId)
+          .input("beforeCreatedAt", sql.DateTime2, new Date(data.beforeCreatedAt));
+        whereClauses.push(
+          "(de.created_at < @beforeCreatedAt OR (de.created_at = @beforeCreatedAt AND de.id < @beforeId))",
+        );
       }
 
       const result = await request.query(`
-        SELECT TOP (@limit)
+        SELECT TOP (@fetchLimit)
           de.id,
           d.code AS device_code,
           d.name AS device_name,
@@ -592,13 +608,25 @@ export const listDeviceEvents = createServerFn({ method: "GET" })
         FROM ${schema}.device_events de
         INNER JOIN ${schema}.devices d
           ON d.id = de.device_id
-        ${deviceWhereClause}
+        ${whereClauses.length > 0 ? `WHERE ${whereClauses.join("\n        AND ")}` : ""}
         ORDER BY de.created_at DESC, de.id DESC;
       `);
 
+      const hasMore = result.recordset.length > data.limit;
+      const eventRows = hasMore ? result.recordset.slice(0, data.limit) : result.recordset;
+      const events = eventRows.map((row) => mapDeviceEventRow(row as Record<string, unknown>));
+      const lastEvent = events.at(-1) ?? null;
+
       return {
         ok: true as const,
-        events: result.recordset.map((row) => mapDeviceEventRow(row as Record<string, unknown>)),
+        events,
+        hasMore,
+        nextCursor: lastEvent
+          ? ({
+              id: lastEvent.id,
+              createdAt: lastEvent.createdAt,
+            } satisfies DeviceEventCursor)
+          : null,
       };
     } catch (error) {
       return {
