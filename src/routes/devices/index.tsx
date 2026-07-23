@@ -1288,6 +1288,56 @@ function DevicesPage() {
     });
   }
 
+  function duplicateDeviceEventSavedView(sourceViewId: DeviceEventSavedViewId) {
+    if (typeof window === "undefined") return;
+
+    const sourceView = deviceEventSavedViews.find((view) => view.id === sourceViewId);
+    if (!sourceView?.state) {
+      toast.message("Saved view sumber masih kosong", {
+        description: "Simpan filter dulu sebelum menduplikasi ke slot lain.",
+      });
+      return;
+    }
+
+    const targetOptions = deviceEventSavedViews
+      .filter((view) => view.id !== sourceViewId)
+      .map((view, index) => `${index + 1}. ${view.label}`)
+      .join("\n");
+    const selectedTarget = window.prompt(
+      `Duplikat "${sourceView.label}" ke slot mana?\n${targetOptions}`,
+      "1",
+    );
+
+    if (selectedTarget === null) return;
+
+    const targetIndex = Number(selectedTarget) - 1;
+    const targetCandidates = deviceEventSavedViews.filter((view) => view.id !== sourceViewId);
+    const targetView = targetCandidates[targetIndex];
+
+    if (!targetView) {
+      toast.error("Pilihan slot tujuan tidak valid", {
+        description: "Gunakan nomor slot tujuan yang tersedia di daftar.",
+      });
+      return;
+    }
+
+    const nextViews = deviceEventSavedViews.map((view) =>
+      view.id === targetView.id
+        ? {
+            ...view,
+            state: sourceView.state,
+            updatedAt: Date.now(),
+          }
+        : view,
+    );
+
+    setDeviceEventSavedViews(nextViews);
+    saveDeviceEventSavedViews(nextViews);
+    toast.success(`Saved view "${sourceView.label}" diduplikasi`, {
+      description: `Isi filter berhasil disalin ke slot "${targetView.label}".`,
+    });
+  }
+
   async function handleLoadMoreDeviceEvents() {
     const deviceCode = selectedDevice?.deviceCode ?? profile?.deviceCode ?? null;
     if (!deviceEventsNextCursor) return;
@@ -1907,6 +1957,14 @@ function DevicesPage() {
                             className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-2.5 py-1 text-[11px] font-medium hover:bg-accent"
                           >
                             Ganti Nama
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => duplicateDeviceEventSavedView(view.id)}
+                            disabled={!view.state}
+                            className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-2.5 py-1 text-[11px] font-medium hover:bg-accent disabled:opacity-50"
+                          >
+                            Duplikat ke...
                           </button>
                           <button
                             type="button"
