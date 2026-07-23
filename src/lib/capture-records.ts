@@ -79,6 +79,12 @@ const listDeviceEventsSchema = z.object({
   rangeStart: z.string().datetime().optional(),
   rangeEnd: z.string().datetime().optional(),
 });
+const deviceEventAggregateSchema = z.object({
+  deviceCode: z.string().trim().min(1).optional(),
+  searchQuery: z.string().trim().max(200).default(""),
+  rangeStart: z.string().datetime().optional(),
+  rangeEnd: z.string().datetime().optional(),
+});
 
 export type CaptureRecordView = {
   id: number;
@@ -129,6 +135,21 @@ export type DeviceEventView = {
 export type DeviceEventCursor = {
   id: number;
   createdAt: string;
+};
+
+export type DeviceEventAggregates = {
+  total: number;
+  severity: Record<"all" | "info" | "warning" | "error", number>;
+  eventType: Record<"all" | "capture" | "autofocus" | "fallback" | "other", number>;
+  preset: Record<
+    | "error-latest"
+    | "audit-failures"
+    | "fallback-events"
+    | "capture-failures"
+    | "autofocus-failures",
+    number
+  >;
+  timeRange: Record<"all" | "today" | "7d" | "30d", number>;
 };
 
 export function replaceFileNameInPath(
@@ -272,6 +293,67 @@ function mapDeviceEventRow(row: Record<string, unknown>): DeviceEventView {
 
 function escapeSqlLikePattern(value: string): string {
   return value.replace(/[[\]%_]/g, "[$&]");
+}
+
+function applyDeviceEventBaseFilters({
+  request,
+  whereClauses,
+  data,
+}: {
+  request: sql.Request;
+  whereClauses: string[];
+  data: {
+    deviceCode?: string;
+    searchQuery: string;
+    rangeStart?: string;
+    rangeEnd?: string;
+  };
+}) {
+  if (data.deviceCode) {
+    request.input("deviceCode", sql.NVarChar(50), data.deviceCode);
+    whereClauses.push("d.code = @deviceCode");
+  }
+
+  if (data.rangeStart) {
+    request.input("rangeStart", sql.DateTime2, new Date(data.rangeStart));
+    whereClauses.push("de.created_at >= @rangeStart");
+  }
+
+  if (data.rangeEnd) {
+    request.input("rangeEnd", sql.DateTime2, new Date(data.rangeEnd));
+    whereClauses.push("de.created_at <= @rangeEnd");
+  }
+
+  if (data.searchQuery !== "") {
+    request.input("searchQuery", sql.NVarChar(260), `%${escapeSqlLikePattern(data.searchQuery)}%`);
+    whereClauses.push(`
+      (
+        d.code LIKE @searchQuery
+        OR d.name LIKE @searchQuery
+        OR de.event_type LIKE @searchQuery
+        OR de.severity LIKE @searchQuery
+        OR de.message LIKE @searchQuery
+        OR ISNULL(de.payload_json, N'') LIKE @searchQuery
+        OR (
+          CASE de.event_type
+            WHEN N'metadata-finalized' THEN N'Metadata difinalisasi'
+            WHEN N'capture-trigger-failed' THEN N'Trigger capture gagal'
+            WHEN N'capture-job-failed' THEN N'Job capture gagal'
+            WHEN N'capture-missing-asset' THEN N'Asset capture tidak tersedia'
+            WHEN N'capture-exception' THEN N'Capture exception'
+            WHEN N'autofocus-trigger-failed' THEN N'Trigger autofocus gagal'
+            WHEN N'autofocus-job-failed' THEN N'Job autofocus gagal'
+            WHEN N'autofocus-exception' THEN N'Autofocus exception'
+            WHEN N'network-save-fallback' THEN N'Fallback network save'
+            WHEN N'folder-save-fallback' THEN N'Fallback folder browser'
+            WHEN N'browser-download-fallback' THEN N'Fallback download lokal'
+            WHEN N'capture-record-sync-failed' THEN N'Sinkron capture DB gagal'
+            ELSE de.event_type
+          END
+        ) LIKE @searchQuery
+      )
+    `);
+  }
 }
 
 async function resolveCaptureRecordId(
@@ -594,10 +676,11 @@ export const listDeviceEvents = createServerFn({ method: "GET" })
       const request = pool.request().input("fetchLimit", sql.Int, data.limit + 1);
       const whereClauses: string[] = [];
 
-      if (data.deviceCode) {
-        request.input("deviceCode", sql.NVarChar(50), data.deviceCode);
-        whereClauses.push("d.code = @deviceCode");
-      }
+      applyDeviceEventBaseFilters({
+        request,
+        whereClauses,
+        data,
+      });
 
       if (data.beforeId && data.beforeCreatedAt) {
         request
@@ -623,51 +706,6 @@ export const listDeviceEvents = createServerFn({ method: "GET" })
         whereClauses.push(
           "de.event_type NOT LIKE N'capture-%' AND de.event_type NOT LIKE N'autofocus-%' AND de.event_type NOT LIKE N'%fallback%'",
         );
-      }
-
-      if (data.rangeStart) {
-        request.input("rangeStart", sql.DateTime2, new Date(data.rangeStart));
-        whereClauses.push("de.created_at >= @rangeStart");
-      }
-
-      if (data.rangeEnd) {
-        request.input("rangeEnd", sql.DateTime2, new Date(data.rangeEnd));
-        whereClauses.push("de.created_at <= @rangeEnd");
-      }
-
-      if (data.searchQuery !== "") {
-        request.input(
-          "searchQuery",
-          sql.NVarChar(260),
-          `%${escapeSqlLikePattern(data.searchQuery)}%`,
-        );
-        whereClauses.push(`
-          (
-            d.code LIKE @searchQuery
-            OR d.name LIKE @searchQuery
-            OR de.event_type LIKE @searchQuery
-            OR de.severity LIKE @searchQuery
-            OR de.message LIKE @searchQuery
-            OR ISNULL(de.payload_json, N'') LIKE @searchQuery
-            OR (
-              CASE de.event_type
-                WHEN N'metadata-finalized' THEN N'Metadata difinalisasi'
-                WHEN N'capture-trigger-failed' THEN N'Trigger capture gagal'
-                WHEN N'capture-job-failed' THEN N'Job capture gagal'
-                WHEN N'capture-missing-asset' THEN N'Asset capture tidak tersedia'
-                WHEN N'capture-exception' THEN N'Capture exception'
-                WHEN N'autofocus-trigger-failed' THEN N'Trigger autofocus gagal'
-                WHEN N'autofocus-job-failed' THEN N'Job autofocus gagal'
-                WHEN N'autofocus-exception' THEN N'Autofocus exception'
-                WHEN N'network-save-fallback' THEN N'Fallback network save'
-                WHEN N'folder-save-fallback' THEN N'Fallback folder browser'
-                WHEN N'browser-download-fallback' THEN N'Fallback download lokal'
-                WHEN N'capture-record-sync-failed' THEN N'Sinkron capture DB gagal'
-                ELSE de.event_type
-              END
-            ) LIKE @searchQuery
-          )
-        `);
       }
 
       const result = await request.query(`
@@ -711,6 +749,122 @@ export const listDeviceEvents = createServerFn({ method: "GET" })
           error instanceof Error
             ? error.message
             : "Gagal memuat device events dari registry MSSQL.",
+      };
+    }
+  });
+
+export const getDeviceEventAggregates = createServerFn({ method: "GET" })
+  .validator(deviceEventAggregateSchema)
+  .handler(async ({ data }) => {
+    if (!isCardDbConfigured()) {
+      return {
+        ok: false as const,
+        code: "CARDDB_NOT_CONFIGURED",
+        message: "Konfigurasi CARDDB belum lengkap di server aplikasi.",
+      };
+    }
+
+    try {
+      const schema = `[${getCardDbSchema()}]`;
+      const pool = await getCardDbPool();
+      const request = pool.request();
+      const whereClauses: string[] = [];
+
+      applyDeviceEventBaseFilters({
+        request,
+        whereClauses,
+        data,
+      });
+
+      const whereClause =
+        whereClauses.length > 0 ? `WHERE ${whereClauses.join("\n        AND ")}` : "";
+      const result = await request.query(`
+        WITH filtered_events AS (
+          SELECT
+            de.id,
+            de.event_type,
+            de.severity,
+            de.created_at
+          FROM ${schema}.device_events de
+          INNER JOIN ${schema}.devices d
+            ON d.id = de.device_id
+          ${whereClause}
+        )
+        SELECT
+          COUNT(*) AS total_count,
+          SUM(CASE WHEN severity = N'info' THEN 1 ELSE 0 END) AS info_count,
+          SUM(CASE WHEN severity = N'warning' THEN 1 ELSE 0 END) AS warning_count,
+          SUM(CASE WHEN severity = N'error' THEN 1 ELSE 0 END) AS error_count,
+          SUM(CASE WHEN event_type LIKE N'capture-%' THEN 1 ELSE 0 END) AS capture_count,
+          SUM(CASE WHEN event_type LIKE N'autofocus-%' THEN 1 ELSE 0 END) AS autofocus_count,
+          SUM(CASE WHEN event_type LIKE N'%fallback%' THEN 1 ELSE 0 END) AS fallback_count,
+          SUM(
+            CASE
+              WHEN event_type NOT LIKE N'capture-%'
+                AND event_type NOT LIKE N'autofocus-%'
+                AND event_type NOT LIKE N'%fallback%'
+              THEN 1
+              ELSE 0
+            END
+          ) AS other_count,
+          SUM(CASE WHEN created_at >= DATEADD(day, DATEDIFF(day, 0, GETDATE()), 0) THEN 1 ELSE 0 END) AS today_count,
+          SUM(CASE WHEN created_at >= DATEADD(day, -7, GETDATE()) THEN 1 ELSE 0 END) AS seven_day_count,
+          SUM(CASE WHEN created_at >= DATEADD(day, -30, GETDATE()) THEN 1 ELSE 0 END) AS thirty_day_count,
+          SUM(CASE WHEN severity = N'error' AND created_at >= DATEADD(day, -7, GETDATE()) THEN 1 ELSE 0 END) AS error_latest_count,
+          SUM(CASE WHEN severity = N'error' AND created_at >= DATEADD(day, -30, GETDATE()) THEN 1 ELSE 0 END) AS audit_failures_count,
+          SUM(CASE WHEN event_type LIKE N'%fallback%' AND created_at >= DATEADD(day, -30, GETDATE()) THEN 1 ELSE 0 END) AS fallback_events_count,
+          SUM(CASE WHEN severity = N'error' AND event_type LIKE N'capture-%' AND created_at >= DATEADD(day, -30, GETDATE()) THEN 1 ELSE 0 END) AS capture_failures_count,
+          SUM(CASE WHEN severity = N'error' AND event_type LIKE N'autofocus-%' AND created_at >= DATEADD(day, -30, GETDATE()) THEN 1 ELSE 0 END) AS autofocus_failures_count
+        FROM filtered_events;
+      `);
+
+      const aggregate = (result.recordset[0] ?? {}) as Record<string, unknown>;
+      const total = Number(aggregate.total_count ?? 0);
+      const captureCount = Number(aggregate.capture_count ?? 0);
+      const autofocusCount = Number(aggregate.autofocus_count ?? 0);
+      const fallbackCount = Number(aggregate.fallback_count ?? 0);
+      const otherCount = Number(aggregate.other_count ?? 0);
+
+      return {
+        ok: true as const,
+        aggregates: {
+          total,
+          severity: {
+            all: total,
+            info: Number(aggregate.info_count ?? 0),
+            warning: Number(aggregate.warning_count ?? 0),
+            error: Number(aggregate.error_count ?? 0),
+          },
+          eventType: {
+            all: total,
+            capture: captureCount,
+            autofocus: autofocusCount,
+            fallback: fallbackCount,
+            other: otherCount,
+          },
+          preset: {
+            "error-latest": Number(aggregate.error_latest_count ?? 0),
+            "audit-failures": Number(aggregate.audit_failures_count ?? 0),
+            "fallback-events": Number(aggregate.fallback_events_count ?? 0),
+            "capture-failures": Number(aggregate.capture_failures_count ?? 0),
+            "autofocus-failures": Number(aggregate.autofocus_failures_count ?? 0),
+          },
+          timeRange: {
+            all: total,
+            today: Number(aggregate.today_count ?? 0),
+            "7d": Number(aggregate.seven_day_count ?? 0),
+            "30d": Number(aggregate.thirty_day_count ?? 0),
+          },
+        } satisfies DeviceEventAggregates,
+      };
+    } catch (error) {
+      return {
+        ok: false as const,
+        code: "DEVICE_EVENT_AGGREGATES_FAILED",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Gagal memuat ringkasan aggregate device events dari registry MSSQL.",
       };
     }
   });

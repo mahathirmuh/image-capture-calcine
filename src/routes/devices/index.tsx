@@ -89,7 +89,9 @@ import {
   type RegisteredDevice,
 } from "@/lib/device-registry";
 import {
+  getDeviceEventAggregates,
   listDeviceEvents,
+  type DeviceEventAggregates,
   type DeviceEventCursor,
   type DeviceEventView,
 } from "@/lib/capture-records";
@@ -651,6 +653,9 @@ function DevicesPage() {
   const [deviceEventSavedViews, setDeviceEventSavedViews] = useState<DeviceEventSavedViewEntry[]>(
     [],
   );
+  const [deviceEventAggregates, setDeviceEventAggregates] = useState<DeviceEventAggregates | null>(
+    null,
+  );
   const [deviceEventsHasMore, setDeviceEventsHasMore] = useState(false);
   const [deviceEventsNextCursor, setDeviceEventsNextCursor] = useState<DeviceEventCursor | null>(
     null,
@@ -789,6 +794,29 @@ function DevicesPage() {
     ],
   );
 
+  const loadDeviceEventAggregates = useCallback(
+    async (deviceCode?: string | null) => {
+      setDeviceEventAggregates(null);
+      const rangeBounds = getDeviceEventTimeRangeBounds("all", Date.now(), null, null);
+
+      const result = await getDeviceEventAggregates({
+        data: {
+          ...(deviceCode ? { deviceCode } : {}),
+          searchQuery: deviceEventSearchQuery.trim(),
+          ...rangeBounds,
+        },
+      });
+
+      if (!result.ok) {
+        setDeviceEventAggregates(null);
+        return;
+      }
+
+      setDeviceEventAggregates(result.aggregates);
+    },
+    [deviceEventSearchQuery],
+  );
+
   // Guarded against a stale response clobbering a newer one -- without this,
   // React StrictMode's mount/cleanup/remount in dev fires this effect twice,
   // and whichever of the two overlapping requests resolves last "wins" even
@@ -837,7 +865,13 @@ function DevicesPage() {
       deviceCode,
       limit: DEFAULT_DEVICE_EVENT_FETCH_LIMIT,
     });
-  }, [loadRecentDeviceEvents, profile?.deviceCode, selectedDevice?.deviceCode]);
+    void loadDeviceEventAggregates(deviceCode);
+  }, [
+    loadDeviceEventAggregates,
+    loadRecentDeviceEvents,
+    profile?.deviceCode,
+    selectedDevice?.deviceCode,
+  ]);
 
   useEffect(() => {
     if (deviceEvents.length === 0) {
@@ -1000,38 +1034,50 @@ function DevicesPage() {
     },
     [] as Array<{ dateKey: string; label: string; events: DeviceEventView[] }>,
   );
-  const eventCounts = {
-    all: deviceEvents.length,
-    info: deviceEvents.filter((event) => event.severity === "info").length,
-    warning: deviceEvents.filter((event) => event.severity === "warning").length,
-    error: deviceEvents.filter((event) => event.severity === "error").length,
-  } satisfies Record<DeviceEventFilter, number>;
-  const eventTypeCounts = {
-    all: deviceEvents.length,
-    capture: deviceEvents.filter((event) => getDeviceEventTypeGroup(event.eventType) === "capture")
-      .length,
-    autofocus: deviceEvents.filter(
-      (event) => getDeviceEventTypeGroup(event.eventType) === "autofocus",
-    ).length,
-    fallback: deviceEvents.filter(
-      (event) => getDeviceEventTypeGroup(event.eventType) === "fallback",
-    ).length,
-    other: deviceEvents.filter((event) => getDeviceEventTypeGroup(event.eventType) === "other")
-      .length,
-  } satisfies Record<DeviceEventTypeFilter, number>;
+  const eventCounts =
+    deviceEventAggregates?.severity ??
+    ({
+      all: deviceEvents.length,
+      info: deviceEvents.filter((event) => event.severity === "info").length,
+      warning: deviceEvents.filter((event) => event.severity === "warning").length,
+      error: deviceEvents.filter((event) => event.severity === "error").length,
+    } satisfies Record<DeviceEventFilter, number>);
+  const eventTypeCounts =
+    deviceEventAggregates?.eventType ??
+    ({
+      all: deviceEvents.length,
+      capture: deviceEvents.filter(
+        (event) => getDeviceEventTypeGroup(event.eventType) === "capture",
+      ).length,
+      autofocus: deviceEvents.filter(
+        (event) => getDeviceEventTypeGroup(event.eventType) === "autofocus",
+      ).length,
+      fallback: deviceEvents.filter(
+        (event) => getDeviceEventTypeGroup(event.eventType) === "fallback",
+      ).length,
+      other: deviceEvents.filter((event) => getDeviceEventTypeGroup(event.eventType) === "other")
+        .length,
+    } satisfies Record<DeviceEventTypeFilter, number>);
   const eventTimeCounts = {
-    all: deviceEvents.length,
-    today: deviceEvents.filter((event) => matchesDeviceEventTimeRange(event, "today", nowMs))
-      .length,
-    "7d": deviceEvents.filter((event) => matchesDeviceEventTimeRange(event, "7d", nowMs)).length,
-    "30d": deviceEvents.filter((event) => matchesDeviceEventTimeRange(event, "30d", nowMs)).length,
+    ...(deviceEventAggregates?.timeRange ??
+      ({
+        all: deviceEvents.length,
+        today: deviceEvents.filter((event) => matchesDeviceEventTimeRange(event, "today", nowMs))
+          .length,
+        "7d": deviceEvents.filter((event) => matchesDeviceEventTimeRange(event, "7d", nowMs))
+          .length,
+        "30d": deviceEvents.filter((event) => matchesDeviceEventTimeRange(event, "30d", nowMs))
+          .length,
+      } satisfies Record<Exclude<DeviceEventTimeRange, "custom">, number>)),
     custom: deviceEvents.filter((event) =>
       matchesDeviceEventTimeRange(event, "custom", nowMs, customStartMs, customEndMs),
     ).length,
   } satisfies Record<DeviceEventTimeRange, number>;
-  const pinnedErrorViewCount = deviceEvents.filter(
-    (event) => event.severity === "error" && matchesDeviceEventTimeRange(event, "7d", nowMs),
-  ).length;
+  const pinnedErrorViewCount =
+    deviceEventAggregates?.preset["error-latest"] ??
+    deviceEvents.filter(
+      (event) => event.severity === "error" && matchesDeviceEventTimeRange(event, "7d", nowMs),
+    ).length;
   const deviceEventSavedViewCounts = Object.fromEntries(
     deviceEventSavedViews.map((view) => [
       view.id,
@@ -1054,19 +1100,21 @@ function DevicesPage() {
         : 0,
     ]),
   ) as Record<DeviceEventSavedViewId, number>;
-  const presetCounts = Object.fromEntries(
-    DEVICE_EVENT_PRESETS.map((preset) => [
-      preset.id,
-      deviceEvents.filter(
-        (event) =>
-          (preset.severity === "all" ? true : event.severity === preset.severity) &&
-          (preset.eventType === "all"
-            ? true
-            : getDeviceEventTypeGroup(event.eventType) === preset.eventType) &&
-          matchesDeviceEventTimeRange(event, preset.timeRange, nowMs),
-      ).length,
-    ]),
-  ) as Record<DeviceEventPresetId, number>;
+  const presetCounts =
+    deviceEventAggregates?.preset ??
+    (Object.fromEntries(
+      DEVICE_EVENT_PRESETS.map((preset) => [
+        preset.id,
+        deviceEvents.filter(
+          (event) =>
+            (preset.severity === "all" ? true : event.severity === preset.severity) &&
+            (preset.eventType === "all"
+              ? true
+              : getDeviceEventTypeGroup(event.eventType) === preset.eventType) &&
+            matchesDeviceEventTimeRange(event, preset.timeRange, nowMs),
+        ).length,
+      ]),
+    ) as Record<DeviceEventPresetId, number>);
   const visibleEventSeverityCounts = {
     info: visibleDeviceEvents.filter((event) => event.severity === "info").length,
     warning: visibleDeviceEvents.filter((event) => event.severity === "warning").length,
