@@ -256,7 +256,7 @@ function formatDeviceEventLabel(eventType: string): string {
 
 type DeviceEventFilter = "all" | "info" | "warning" | "error";
 type DeviceEventTypeFilter = "all" | "capture" | "autofocus" | "fallback" | "other";
-type DeviceEventTimeRange = "all" | "today" | "7d" | "30d";
+type DeviceEventTimeRange = "all" | "today" | "7d" | "30d" | "custom";
 type DeviceEventPresetId =
   | "error-latest"
   | "audit-failures"
@@ -284,6 +284,7 @@ const DEVICE_EVENT_TIME_FILTERS: Array<{ id: DeviceEventTimeRange; label: string
   { id: "today", label: "Hari Ini" },
   { id: "7d", label: "7 Hari" },
   { id: "30d", label: "30 Hari" },
+  { id: "custom", label: "Rentang Kustom" },
 ];
 const DEFAULT_DEVICE_EVENT_FETCH_LIMIT = 8;
 const DEVICE_EVENT_FETCH_STEP = 8;
@@ -343,6 +344,8 @@ function matchesDeviceEventTimeRange(
   event: DeviceEventView,
   range: DeviceEventTimeRange,
   nowMs: number,
+  customStartMs?: number | null,
+  customEndMs?: number | null,
 ) {
   if (range === "all") return true;
 
@@ -355,8 +358,30 @@ function matchesDeviceEventTimeRange(
     return eventTime >= startOfToday.getTime();
   }
 
+  if (range === "custom") {
+    if (!customStartMs && !customEndMs) return true;
+    if (customStartMs && eventTime < customStartMs) return false;
+    if (customEndMs && eventTime > customEndMs) return false;
+    return true;
+  }
+
   const rangeMs = range === "7d" ? 7 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000;
   return eventTime >= nowMs - rangeMs;
+}
+
+function formatDateTimeLocalValue(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+function parseDateTimeLocalValue(value: string): number | null {
+  if (!value) return null;
+  const parsed = new Date(value).getTime();
+  return Number.isNaN(parsed) ? null : parsed;
 }
 
 function formatDeviceEventPayloadKey(key: string) {
@@ -536,6 +561,8 @@ function DevicesPage() {
   const [deviceEventTypeFilter, setDeviceEventTypeFilter] = useState<DeviceEventTypeFilter>("all");
   const [deviceEventSearchQuery, setDeviceEventSearchQuery] = useState("");
   const [deviceEventTimeRange, setDeviceEventTimeRange] = useState<DeviceEventTimeRange>("all");
+  const [deviceEventCustomStart, setDeviceEventCustomStart] = useState("");
+  const [deviceEventCustomEnd, setDeviceEventCustomEnd] = useState("");
   const [deviceEventsHasMore, setDeviceEventsHasMore] = useState(false);
   const [deviceEventsNextCursor, setDeviceEventsNextCursor] = useState<DeviceEventCursor | null>(
     null,
@@ -799,13 +826,19 @@ function DevicesPage() {
   ];
   const latestDeviceEvent = deviceEvents[0] ?? null;
   const nowMs = Date.now();
+  const customStartMs = parseDateTimeLocalValue(deviceEventCustomStart);
+  const customEndMs = parseDateTimeLocalValue(deviceEventCustomEnd);
+  const customRangeLabel =
+    customStartMs || customEndMs
+      ? `${deviceEventCustomStart ? new Date(customStartMs ?? 0).toLocaleString("id-ID") : "Awal"} - ${deviceEventCustomEnd ? new Date(customEndMs ?? 0).toLocaleString("id-ID") : "Sekarang"}`
+      : "Rentang belum diisi";
   const visibleDeviceEvents = deviceEvents.filter(
     (event) =>
       (deviceEventFilter === "all" ? true : event.severity === deviceEventFilter) &&
       (deviceEventTypeFilter === "all"
         ? true
         : getDeviceEventTypeGroup(event.eventType) === deviceEventTypeFilter) &&
-      matchesDeviceEventTimeRange(event, deviceEventTimeRange, nowMs) &&
+      matchesDeviceEventTimeRange(event, deviceEventTimeRange, nowMs, customStartMs, customEndMs) &&
       matchesDeviceEventSearch(event, deviceEventSearchQuery),
   );
   const selectedDeviceEvent =
@@ -873,6 +906,9 @@ function DevicesPage() {
       .length,
     "7d": deviceEvents.filter((event) => matchesDeviceEventTimeRange(event, "7d", nowMs)).length,
     "30d": deviceEvents.filter((event) => matchesDeviceEventTimeRange(event, "30d", nowMs)).length,
+    custom: deviceEvents.filter((event) =>
+      matchesDeviceEventTimeRange(event, "custom", nowMs, customStartMs, customEndMs),
+    ).length,
   } satisfies Record<DeviceEventTimeRange, number>;
   const pinnedErrorViewCount = deviceEvents.filter(
     (event) => event.severity === "error" && matchesDeviceEventTimeRange(event, "7d", nowMs),
@@ -912,8 +948,10 @@ function DevicesPage() {
       : null,
     hasDeviceEventTimeRangeFilter
       ? `Waktu ${
-          DEVICE_EVENT_TIME_FILTERS.find((filter) => filter.id === deviceEventTimeRange)?.label ??
-          deviceEventTimeRange
+          deviceEventTimeRange === "custom"
+            ? customRangeLabel
+            : (DEVICE_EVENT_TIME_FILTERS.find((filter) => filter.id === deviceEventTimeRange)
+                ?.label ?? deviceEventTimeRange)
         }`
       : null,
     activeDeviceEventPreset ? `Preset ${activeDeviceEventPreset.label}` : null,
@@ -1590,7 +1628,19 @@ function DevicesPage() {
                     <button
                       key={filter.id}
                       type="button"
-                      onClick={() => setDeviceEventTimeRange(filter.id)}
+                      onClick={() => {
+                        setDeviceEventTimeRange(filter.id);
+                        if (
+                          filter.id === "custom" &&
+                          !deviceEventCustomStart &&
+                          !deviceEventCustomEnd
+                        ) {
+                          const end = new Date();
+                          const start = new Date(end.getTime() - 24 * 60 * 60 * 1000);
+                          setDeviceEventCustomStart(formatDateTimeLocalValue(start));
+                          setDeviceEventCustomEnd(formatDateTimeLocalValue(end));
+                        }
+                      }}
                       className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium ${
                         deviceEventTimeRange === filter.id
                           ? "border-primary bg-primary text-primary-foreground"
@@ -1610,6 +1660,31 @@ function DevicesPage() {
                     </button>
                   ))}
                 </div>
+                {deviceEventTimeRange === "custom" ? (
+                  <div className="mb-3 grid gap-2 rounded-md border border-dashed bg-muted/20 p-3 md:grid-cols-2">
+                    <label className="space-y-1">
+                      <span className="text-[11px] font-medium text-muted-foreground">Mulai</span>
+                      <input
+                        type="datetime-local"
+                        value={deviceEventCustomStart}
+                        onChange={(e) => setDeviceEventCustomStart(e.target.value)}
+                        className="h-9 w-full rounded-md border border-input bg-background px-3 text-xs outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
+                      />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-[11px] font-medium text-muted-foreground">Sampai</span>
+                      <input
+                        type="datetime-local"
+                        value={deviceEventCustomEnd}
+                        onChange={(e) => setDeviceEventCustomEnd(e.target.value)}
+                        className="h-9 w-full rounded-md border border-input bg-background px-3 text-xs outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
+                      />
+                    </label>
+                    <div className="md:col-span-2 text-[11px] text-muted-foreground">
+                      Audit aktif: {customRangeLabel}
+                    </div>
+                  </div>
+                ) : null}
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                   <div className="relative min-w-[220px] flex-1">
                     <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -1627,7 +1702,13 @@ function DevicesPage() {
                       ? ` tipe ${DEVICE_EVENT_TYPE_FILTERS.find((filter) => filter.id === deviceEventTypeFilter)?.label ?? deviceEventTypeFilter}`
                       : ""}
                     {hasDeviceEventTimeRangeFilter
-                      ? ` dalam ${DEVICE_EVENT_TIME_FILTERS.find((filter) => filter.id === deviceEventTimeRange)?.label ?? deviceEventTimeRange}`
+                      ? ` dalam ${
+                          deviceEventTimeRange === "custom"
+                            ? customRangeLabel
+                            : (DEVICE_EVENT_TIME_FILTERS.find(
+                                (filter) => filter.id === deviceEventTimeRange,
+                              )?.label ?? deviceEventTimeRange)
+                        }`
                       : ""}
                     {hasDeviceEventSearch ? ` untuk "${deviceEventSearchQuery.trim()}"` : ""}.
                   </div>
@@ -1650,7 +1731,13 @@ function DevicesPage() {
                       ? ` (tipe ${DEVICE_EVENT_TYPE_FILTERS.find((filter) => filter.id === deviceEventTypeFilter)?.label ?? deviceEventTypeFilter})`
                       : ""}
                     {hasDeviceEventTimeRangeFilter
-                      ? ` (rentang ${DEVICE_EVENT_TIME_FILTERS.find((filter) => filter.id === deviceEventTimeRange)?.label ?? deviceEventTimeRange})`
+                      ? ` (rentang ${
+                          deviceEventTimeRange === "custom"
+                            ? customRangeLabel
+                            : (DEVICE_EVENT_TIME_FILTERS.find(
+                                (filter) => filter.id === deviceEventTimeRange,
+                              )?.label ?? deviceEventTimeRange)
+                        })`
                       : ""}
                     {hasDeviceEventSearch
                       ? ` dan kata kunci "${deviceEventSearchQuery.trim()}".`
