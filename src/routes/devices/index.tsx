@@ -253,6 +253,12 @@ function formatDeviceEventLabel(eventType: string): string {
 type DeviceEventFilter = "all" | "info" | "warning" | "error";
 type DeviceEventTypeFilter = "all" | "capture" | "autofocus" | "fallback" | "other";
 type DeviceEventTimeRange = "all" | "today" | "7d" | "30d";
+type DeviceEventPresetId =
+  | "error-latest"
+  | "audit-failures"
+  | "fallback-events"
+  | "capture-failures"
+  | "autofocus-failures";
 
 const DEVICE_EVENT_FILTERS: Array<{ id: DeviceEventFilter; label: string }> = [
   { id: "all", label: "Semua" },
@@ -274,6 +280,50 @@ const DEVICE_EVENT_TIME_FILTERS: Array<{ id: DeviceEventTimeRange; label: string
   { id: "today", label: "Hari Ini" },
   { id: "7d", label: "7 Hari" },
   { id: "30d", label: "30 Hari" },
+];
+
+const DEVICE_EVENT_PRESETS: Array<{
+  id: DeviceEventPresetId;
+  label: string;
+  severity: DeviceEventFilter;
+  eventType: DeviceEventTypeFilter;
+  timeRange: DeviceEventTimeRange;
+}> = [
+  {
+    id: "error-latest",
+    label: "Error Terbaru",
+    severity: "error",
+    eventType: "all",
+    timeRange: "7d",
+  },
+  {
+    id: "audit-failures",
+    label: "Audit Gagal",
+    severity: "error",
+    eventType: "all",
+    timeRange: "30d",
+  },
+  {
+    id: "fallback-events",
+    label: "Fallback",
+    severity: "all",
+    eventType: "fallback",
+    timeRange: "30d",
+  },
+  {
+    id: "capture-failures",
+    label: "Capture Gagal",
+    severity: "error",
+    eventType: "capture",
+    timeRange: "30d",
+  },
+  {
+    id: "autofocus-failures",
+    label: "Autofocus Gagal",
+    severity: "error",
+    eventType: "autofocus",
+    timeRange: "30d",
+  },
 ];
 
 function getDeviceEventTypeGroup(eventType: string): DeviceEventTypeFilter {
@@ -730,6 +780,14 @@ function DevicesPage() {
     deviceEventTypeFilter === "all" &&
     deviceEventTimeRange === "7d" &&
     !hasDeviceEventSearch;
+  const activeDeviceEventPreset = !hasDeviceEventSearch
+    ? (DEVICE_EVENT_PRESETS.find(
+        (preset) =>
+          preset.severity === deviceEventFilter &&
+          preset.eventType === deviceEventTypeFilter &&
+          preset.timeRange === deviceEventTimeRange,
+      ) ?? null)
+    : null;
   const groupedVisibleDeviceEvents = visibleDeviceEvents.reduce(
     (groups, event) => {
       const eventDate = new Date(event.createdAt);
@@ -779,6 +837,19 @@ function DevicesPage() {
   const pinnedErrorViewCount = deviceEvents.filter(
     (event) => event.severity === "error" && matchesDeviceEventTimeRange(event, "7d", nowMs),
   ).length;
+  const presetCounts = Object.fromEntries(
+    DEVICE_EVENT_PRESETS.map((preset) => [
+      preset.id,
+      deviceEvents.filter(
+        (event) =>
+          (preset.severity === "all" ? true : event.severity === preset.severity) &&
+          (preset.eventType === "all"
+            ? true
+            : getDeviceEventTypeGroup(event.eventType) === preset.eventType) &&
+          matchesDeviceEventTimeRange(event, preset.timeRange, nowMs),
+      ).length,
+    ]),
+  ) as Record<DeviceEventPresetId, number>;
   const visibleEventSeverityCounts = {
     info: visibleDeviceEvents.filter((event) => event.severity === "info").length,
     warning: visibleDeviceEvents.filter((event) => event.severity === "warning").length,
@@ -804,6 +875,7 @@ function DevicesPage() {
           deviceEventTimeRange
         }`
       : null,
+    activeDeviceEventPreset ? `Preset ${activeDeviceEventPreset.label}` : null,
     hasDeviceEventSearch ? `Cari "${deviceEventSearchQuery.trim()}"` : null,
   ].filter(Boolean) as string[];
 
@@ -843,6 +915,13 @@ function DevicesPage() {
     saveDeviceProfile(nextProfile);
     setProfile(nextProfile);
     void persistProfileToRegistry(nextProfile);
+  }
+
+  function applyDeviceEventPreset(preset: (typeof DEVICE_EVENT_PRESETS)[number]) {
+    setDeviceEventFilter(preset.severity);
+    setDeviceEventTypeFilter(preset.eventType);
+    setDeviceEventTimeRange(preset.timeRange);
+    setDeviceEventSearchQuery("");
   }
 
   return (
@@ -1351,33 +1430,42 @@ function DevicesPage() {
                   </div>
                 </div>
                 <div className="mb-3 flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDeviceEventFilter("error");
-                      setDeviceEventTypeFilter("all");
-                      setDeviceEventTimeRange("7d");
-                      setDeviceEventSearchQuery("");
-                    }}
-                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium ${
-                      hasPinnedErrorView
-                        ? "border-destructive bg-destructive text-destructive-foreground"
-                        : "border-input bg-background hover:bg-accent"
-                    }`}
-                  >
-                    <AlertTriangle className="h-3.5 w-3.5" />
-                    <span>Error Terbaru</span>
-                    <span
-                      className={`rounded-full px-1.5 py-0.5 text-[11px] ${
-                        hasPinnedErrorView
-                          ? "bg-destructive-foreground/15 text-destructive-foreground"
-                          : "bg-muted text-muted-foreground"
-                      }`}
-                    >
-                      {pinnedErrorViewCount}
-                    </span>
-                  </button>
-                  {hasPinnedErrorView ? (
+                  {DEVICE_EVENT_PRESETS.map((preset) => {
+                    const isActive = activeDeviceEventPreset?.id === preset.id;
+                    const isErrorPreset = preset.severity === "error";
+
+                    return (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        onClick={() => applyDeviceEventPreset(preset)}
+                        className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium ${
+                          isActive
+                            ? isErrorPreset
+                              ? "border-destructive bg-destructive text-destructive-foreground"
+                              : "border-primary bg-primary text-primary-foreground"
+                            : "border-input bg-background hover:bg-accent"
+                        }`}
+                      >
+                        {isErrorPreset ? <AlertTriangle className="h-3.5 w-3.5" /> : null}
+                        <span>{preset.label}</span>
+                        <span
+                          className={`rounded-full px-1.5 py-0.5 text-[11px] ${
+                            isActive
+                              ? isErrorPreset
+                                ? "bg-destructive-foreground/15 text-destructive-foreground"
+                                : "bg-primary-foreground/15 text-primary-foreground"
+                              : "bg-muted text-muted-foreground"
+                          }`}
+                        >
+                          {preset.id === "error-latest"
+                            ? pinnedErrorViewCount
+                            : presetCounts[preset.id]}
+                        </span>
+                      </button>
+                    );
+                  })}
+                  {activeDeviceEventPreset ? (
                     <button
                       type="button"
                       onClick={() => {
