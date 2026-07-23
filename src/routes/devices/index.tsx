@@ -281,6 +281,9 @@ const DEVICE_EVENT_TIME_FILTERS: Array<{ id: DeviceEventTimeRange; label: string
   { id: "7d", label: "7 Hari" },
   { id: "30d", label: "30 Hari" },
 ];
+const DEFAULT_DEVICE_EVENT_FETCH_LIMIT = 8;
+const DEVICE_EVENT_FETCH_STEP = 8;
+const MAX_DEVICE_EVENT_FETCH_LIMIT = 50;
 
 const DEVICE_EVENT_PRESETS: Array<{
   id: DeviceEventPresetId;
@@ -530,6 +533,9 @@ function DevicesPage() {
   const [deviceEventTypeFilter, setDeviceEventTypeFilter] = useState<DeviceEventTypeFilter>("all");
   const [deviceEventSearchQuery, setDeviceEventSearchQuery] = useState("");
   const [deviceEventTimeRange, setDeviceEventTimeRange] = useState<DeviceEventTimeRange>("all");
+  const [deviceEventFetchLimit, setDeviceEventFetchLimit] = useState(
+    DEFAULT_DEVICE_EVENT_FETCH_LIMIT,
+  );
   const [selectedDeviceEventId, setSelectedDeviceEventId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
@@ -600,25 +606,28 @@ function DevicesPage() {
     }
   }
 
-  const loadRecentDeviceEvents = useCallback(async (deviceCode?: string | null) => {
-    setDeviceEventsLoading(true);
-    const result = await listDeviceEvents({
-      data: {
-        limit: 8,
-        ...(deviceCode ? { deviceCode } : {}),
-      },
-    });
-    setDeviceEventsLoading(false);
+  const loadRecentDeviceEvents = useCallback(
+    async (deviceCode?: string | null, limit = DEFAULT_DEVICE_EVENT_FETCH_LIMIT) => {
+      setDeviceEventsLoading(true);
+      const result = await listDeviceEvents({
+        data: {
+          limit,
+          ...(deviceCode ? { deviceCode } : {}),
+        },
+      });
+      setDeviceEventsLoading(false);
 
-    if (!result.ok) {
-      setDeviceEvents([]);
-      setDeviceEventsError(result.message);
-      return;
-    }
+      if (!result.ok) {
+        setDeviceEvents([]);
+        setDeviceEventsError(result.message);
+        return;
+      }
 
-    setDeviceEvents(result.events);
-    setDeviceEventsError(null);
-  }, []);
+      setDeviceEvents(result.events);
+      setDeviceEventsError(null);
+    },
+    [],
+  );
 
   // Guarded against a stale response clobbering a newer one -- without this,
   // React StrictMode's mount/cleanup/remount in dev fires this effect twice,
@@ -658,7 +667,8 @@ function DevicesPage() {
 
   useEffect(() => {
     const deviceCode = selectedDevice?.deviceCode ?? profile?.deviceCode ?? null;
-    void loadRecentDeviceEvents(deviceCode);
+    setDeviceEventFetchLimit(DEFAULT_DEVICE_EVENT_FETCH_LIMIT);
+    void loadRecentDeviceEvents(deviceCode, DEFAULT_DEVICE_EVENT_FETCH_LIMIT);
   }, [loadRecentDeviceEvents, profile?.deviceCode, selectedDevice?.deviceCode]);
 
   useEffect(() => {
@@ -855,6 +865,9 @@ function DevicesPage() {
     warning: visibleDeviceEvents.filter((event) => event.severity === "warning").length,
     error: visibleDeviceEvents.filter((event) => event.severity === "error").length,
   } as const;
+  const canLoadMoreDeviceEvents =
+    deviceEvents.length >= deviceEventFetchLimit &&
+    deviceEventFetchLimit < MAX_DEVICE_EVENT_FETCH_LIMIT;
   const activeDeviceLogFilters = [
     hasPinnedErrorView ? "Preset error terbaru" : null,
     deviceEventFilter !== "all"
@@ -922,6 +935,17 @@ function DevicesPage() {
     setDeviceEventTypeFilter(preset.eventType);
     setDeviceEventTimeRange(preset.timeRange);
     setDeviceEventSearchQuery("");
+  }
+
+  async function handleLoadMoreDeviceEvents() {
+    const deviceCode = selectedDevice?.deviceCode ?? profile?.deviceCode ?? null;
+    const nextLimit = Math.min(
+      deviceEventFetchLimit + DEVICE_EVENT_FETCH_STEP,
+      MAX_DEVICE_EVENT_FETCH_LIMIT,
+    );
+
+    setDeviceEventFetchLimit(nextLimit);
+    await loadRecentDeviceEvents(deviceCode, nextLimit);
   }
 
   return (
@@ -1420,6 +1444,7 @@ function DevicesPage() {
                       onClick={() =>
                         void loadRecentDeviceEvents(
                           selectedDevice?.deviceCode ?? profile?.deviceCode ?? null,
+                          deviceEventFetchLimit,
                         )
                       }
                       disabled={deviceEventsLoading}
@@ -1614,6 +1639,12 @@ function DevicesPage() {
                               {visibleDeviceEvents.length} log tampil dari {deviceEvents.length}{" "}
                               total
                             </div>
+                            <div className="mt-1 text-[11px] text-muted-foreground">
+                              Batch dimuat: {deviceEvents.length} dari limit {deviceEventFetchLimit}
+                              {canLoadMoreDeviceEvents
+                                ? `, masih bisa tambah hingga ${MAX_DEVICE_EVENT_FETCH_LIMIT}.`
+                                : "."}
+                            </div>
                           </div>
                           <div className="flex flex-wrap gap-2 text-[11px]">
                             <span className="rounded-full border border-destructive/30 bg-destructive/5 px-2.5 py-1 font-medium text-destructive">
@@ -1699,6 +1730,21 @@ function DevicesPage() {
                           ))}
                         </div>
                       ))}
+                      <div className="flex items-center justify-between gap-3 rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">
+                        <span>
+                          {canLoadMoreDeviceEvents
+                            ? "Perlu audit lebih panjang? Muat batch log berikutnya."
+                            : `Semua log yang tersedia untuk limit ${deviceEventFetchLimit} sudah dimuat.`}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => void handleLoadMoreDeviceEvents()}
+                          disabled={!canLoadMoreDeviceEvents || deviceEventsLoading}
+                          className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent disabled:opacity-60"
+                        >
+                          {deviceEventsLoading ? "Memuat…" : "Load More"}
+                        </button>
+                      </div>
                     </div>
                     <div className="rounded-md border bg-muted/20 p-3">
                       <h4 className="mb-2 text-xs font-semibold text-muted-foreground">
