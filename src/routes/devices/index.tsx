@@ -456,6 +456,10 @@ function summarizeDeviceEventSavedView(state: DeviceEventSavedViewState | null) 
   return parts.length > 0 ? parts.join(" • ") : "Semua log tanpa filter tambahan.";
 }
 
+function normalizeDeviceEventSavedViewLabel(value: string) {
+  return value.trim().replace(/\s+/g, " ").slice(0, 40);
+}
+
 function formatDeviceEventPayloadKey(key: string) {
   return key
     .replace(/([A-Z])/g, " $1")
@@ -1196,6 +1200,37 @@ function DevicesPage() {
     });
   }
 
+  function renameDeviceEventSavedView(viewId: DeviceEventSavedViewId) {
+    const currentView = deviceEventSavedViews.find((view) => view.id === viewId);
+    if (!currentView || typeof window === "undefined") return;
+
+    const nextLabel = window.prompt("Masukkan nama baru untuk saved view ini:", currentView.label);
+    if (nextLabel === null) return;
+
+    const normalizedLabel = normalizeDeviceEventSavedViewLabel(nextLabel);
+    if (normalizedLabel === "") {
+      toast.error("Nama saved view tidak boleh kosong", {
+        description: "Masukkan nama singkat yang mudah dikenali operator.",
+      });
+      return;
+    }
+
+    const nextViews = deviceEventSavedViews.map((view) =>
+      view.id === viewId
+        ? {
+            ...view,
+            label: normalizedLabel,
+          }
+        : view,
+    );
+
+    setDeviceEventSavedViews(nextViews);
+    saveDeviceEventSavedViews(nextViews);
+    toast.success(`Saved view diubah menjadi "${normalizedLabel}"`, {
+      description: "Nama baru langsung dipakai pada slot audit ini.",
+    });
+  }
+
   async function handleLoadMoreDeviceEvents() {
     const deviceCode = selectedDevice?.deviceCode ?? profile?.deviceCode ?? null;
     if (!deviceEventsNextCursor) return;
@@ -1808,6 +1843,13 @@ function DevicesPage() {
                             className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-2.5 py-1 text-[11px] font-medium hover:bg-accent"
                           >
                             Simpan Filter Saat Ini
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => renameDeviceEventSavedView(view.id)}
+                            className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-2.5 py-1 text-[11px] font-medium hover:bg-accent"
+                          >
+                            Ganti Nama
                           </button>
                           <button
                             type="button"
