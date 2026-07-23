@@ -84,6 +84,35 @@ export const APPLY_HISTORY_SAVED_VIEW_OPTIONS = [
   "with-edge-profile",
 ] as const;
 export type ApplyHistorySavedViewPreference = (typeof APPLY_HISTORY_SAVED_VIEW_OPTIONS)[number];
+export const DEVICE_EVENT_SAVED_VIEW_OPTIONS = [
+  "audit-slot-1",
+  "audit-slot-2",
+  "audit-slot-3",
+] as const;
+export type DeviceEventSavedViewPreference = (typeof DEVICE_EVENT_SAVED_VIEW_OPTIONS)[number];
+export const DEVICE_EVENT_SEVERITY_OPTIONS = ["all", "info", "warning", "error"] as const;
+export const DEVICE_EVENT_TYPE_OPTIONS = [
+  "all",
+  "capture",
+  "autofocus",
+  "fallback",
+  "other",
+] as const;
+export const DEVICE_EVENT_TIME_RANGE_OPTIONS = ["all", "today", "7d", "30d", "custom"] as const;
+export type DeviceEventSavedViewState = {
+  severity: (typeof DEVICE_EVENT_SEVERITY_OPTIONS)[number];
+  eventType: (typeof DEVICE_EVENT_TYPE_OPTIONS)[number];
+  timeRange: (typeof DEVICE_EVENT_TIME_RANGE_OPTIONS)[number];
+  searchQuery: string;
+  customStart: string;
+  customEnd: string;
+};
+export type DeviceEventSavedViewEntry = {
+  id: DeviceEventSavedViewPreference;
+  label: string;
+  state: DeviceEventSavedViewState | null;
+  updatedAt: number | null;
+};
 
 export const DEVICE_TEMPLATES: DeviceTemplate[] = [
   {
@@ -281,6 +310,27 @@ const DEVICE_PROFILE_KEY = "capture-system:device-profile:v1";
 const PRESET_FILTER_KEY = "capture-system:preset-filter:v1";
 const APPLY_HISTORY_KEY = "capture-system:apply-history:v1";
 const APPLY_HISTORY_SAVED_VIEW_KEY = "capture-system:apply-history-saved-view:v1";
+const DEVICE_EVENT_SAVED_VIEWS_KEY = "capture-system:device-event-saved-views:v1";
+const DEFAULT_DEVICE_EVENT_SAVED_VIEWS: DeviceEventSavedViewEntry[] = [
+  {
+    id: "audit-slot-1",
+    label: "Audit Harian",
+    state: null,
+    updatedAt: null,
+  },
+  {
+    id: "audit-slot-2",
+    label: "Insiden",
+    state: null,
+    updatedAt: null,
+  },
+  {
+    id: "audit-slot-3",
+    label: "Operator",
+    state: null,
+    updatedAt: null,
+  },
+];
 
 const cameraSettingsSchema = z.object({
   iso: z.enum(ISO_OPTIONS),
@@ -292,6 +342,22 @@ const cameraSettingsSchema = z.object({
 });
 const presetFilterSchema = z.enum(PRESET_FILTERS);
 const applyHistorySavedViewSchema = z.enum(APPLY_HISTORY_SAVED_VIEW_OPTIONS);
+const deviceEventSavedViewPreferenceSchema = z.enum(DEVICE_EVENT_SAVED_VIEW_OPTIONS);
+const deviceEventSavedViewStateSchema = z.object({
+  severity: z.enum(DEVICE_EVENT_SEVERITY_OPTIONS),
+  eventType: z.enum(DEVICE_EVENT_TYPE_OPTIONS),
+  timeRange: z.enum(DEVICE_EVENT_TIME_RANGE_OPTIONS),
+  searchQuery: z.string(),
+  customStart: z.string(),
+  customEnd: z.string(),
+});
+const deviceEventSavedViewEntrySchema = z.object({
+  id: deviceEventSavedViewPreferenceSchema,
+  label: z.string(),
+  state: deviceEventSavedViewStateSchema.nullable(),
+  updatedAt: z.number().nullable(),
+});
+const deviceEventSavedViewsSchema = z.array(deviceEventSavedViewEntrySchema);
 
 const deviceProfileSchema = z.object({
   deviceCode: z.string(),
@@ -419,6 +485,31 @@ export function loadApplyHistory(): ApplyHistoryEntry[] {
   } catch {
     return [];
   }
+}
+
+export function loadDeviceEventSavedViews(): DeviceEventSavedViewEntry[] {
+  if (typeof window === "undefined") return DEFAULT_DEVICE_EVENT_SAVED_VIEWS;
+  try {
+    const raw = window.localStorage.getItem(DEVICE_EVENT_SAVED_VIEWS_KEY);
+    if (!raw) return DEFAULT_DEVICE_EVENT_SAVED_VIEWS;
+
+    const parsed = deviceEventSavedViewsSchema.parse(JSON.parse(raw));
+    return DEFAULT_DEVICE_EVENT_SAVED_VIEWS.map((defaultView) => {
+      const savedView = parsed.find((entry) => entry.id === defaultView.id);
+      return savedView ?? defaultView;
+    });
+  } catch {
+    return DEFAULT_DEVICE_EVENT_SAVED_VIEWS;
+  }
+}
+
+export function saveDeviceEventSavedViews(views: DeviceEventSavedViewEntry[]): void {
+  if (typeof window === "undefined") return;
+  const normalizedViews = DEFAULT_DEVICE_EVENT_SAVED_VIEWS.map((defaultView) => {
+    const view = views.find((entry) => entry.id === defaultView.id);
+    return view ?? defaultView;
+  });
+  window.localStorage.setItem(DEVICE_EVENT_SAVED_VIEWS_KEY, JSON.stringify(normalizedViews));
 }
 
 export function saveApplyHistory(entries: ApplyHistoryEntry[]): void {

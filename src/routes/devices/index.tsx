@@ -65,14 +65,19 @@ import {
   getTemplateCameraSettings,
   loadApplyHistory,
   loadApplyHistorySavedViewPreference,
+  loadDeviceEventSavedViews,
   loadDeviceProfile,
   loadPresetFilterPreference,
   saveDeviceProfile,
   saveApplyHistorySavedViewPreference,
+  saveDeviceEventSavedViews,
   savePresetFilterPreference,
   type ApplyHistoryEntry,
   type ApplyHistorySavedViewPreference,
   type CameraSettings,
+  type DeviceEventSavedViewEntry,
+  type DeviceEventSavedViewPreference,
+  type DeviceEventSavedViewState,
   type DeviceProfile,
   type PresetFilter,
 } from "@/lib/device-config";
@@ -123,6 +128,7 @@ type ApplyHistoryFilter = "All" | "Applied" | "Failed";
 type ApplyHistorySort = "Newest" | "Oldest" | "Applied first" | "Failed first";
 type ApplyHistoryQuickFilter = "Any" | "Has code" | "Has skipped keys" | "Has edge profile";
 type ApplyHistorySavedViewId = ApplyHistorySavedViewPreference;
+type DeviceEventSavedViewId = DeviceEventSavedViewPreference;
 
 type ApplyHistorySavedView = {
   id: ApplyHistorySavedViewId;
@@ -131,6 +137,12 @@ type ApplyHistorySavedView = {
   filter: ApplyHistoryFilter;
   quickFilter: ApplyHistoryQuickFilter;
   sort: ApplyHistorySort;
+};
+
+const DEVICE_EVENT_SAVED_VIEW_DESCRIPTIONS: Record<DeviceEventSavedViewId, string> = {
+  "audit-slot-1": "Audit harian rutin atau shift aktif.",
+  "audit-slot-2": "Investigasi insiden atau gangguan runtime.",
+  "audit-slot-3": "View operator favorit untuk audit cepat.",
 };
 
 const APPLY_HISTORY_SAVED_VIEWS: ApplyHistorySavedView[] = [
@@ -384,6 +396,33 @@ function parseDateTimeLocalValue(value: string): number | null {
   return Number.isNaN(parsed) ? null : parsed;
 }
 
+function matchesDeviceEventSavedView(
+  state: DeviceEventSavedViewState,
+  current: DeviceEventSavedViewState,
+) {
+  return (
+    state.severity === current.severity &&
+    state.eventType === current.eventType &&
+    state.timeRange === current.timeRange &&
+    state.searchQuery.trim() === current.searchQuery.trim() &&
+    state.customStart === current.customStart &&
+    state.customEnd === current.customEnd
+  );
+}
+
+function summarizeDeviceEventSavedView(state: DeviceEventSavedViewState | null) {
+  if (!state) return "Belum ada filter tersimpan.";
+
+  const parts = [
+    state.severity === "all" ? null : `Severity ${state.severity}`,
+    state.eventType === "all" ? null : `Tipe ${state.eventType}`,
+    state.timeRange === "all" ? null : `Waktu ${state.timeRange}`,
+    state.searchQuery.trim() ? `Cari "${state.searchQuery.trim()}"` : null,
+  ].filter(Boolean);
+
+  return parts.length > 0 ? parts.join(" • ") : "Semua log tanpa filter tambahan.";
+}
+
 function formatDeviceEventPayloadKey(key: string) {
   return key
     .replace(/([A-Z])/g, " $1")
@@ -563,6 +602,9 @@ function DevicesPage() {
   const [deviceEventTimeRange, setDeviceEventTimeRange] = useState<DeviceEventTimeRange>("all");
   const [deviceEventCustomStart, setDeviceEventCustomStart] = useState("");
   const [deviceEventCustomEnd, setDeviceEventCustomEnd] = useState("");
+  const [deviceEventSavedViews, setDeviceEventSavedViews] = useState<DeviceEventSavedViewEntry[]>(
+    [],
+  );
   const [deviceEventsHasMore, setDeviceEventsHasMore] = useState(false);
   const [deviceEventsNextCursor, setDeviceEventsNextCursor] = useState<DeviceEventCursor | null>(
     null,
@@ -719,6 +761,10 @@ function DevicesPage() {
   }, [loadRegistry]);
 
   useEffect(() => {
+    setDeviceEventSavedViews(loadDeviceEventSavedViews());
+  }, []);
+
+  useEffect(() => {
     const deviceCode = selectedDevice?.deviceCode ?? profile?.deviceCode ?? null;
     setDeviceEventsHasMore(false);
     setDeviceEventsNextCursor(null);
@@ -826,6 +872,14 @@ function DevicesPage() {
   ];
   const latestDeviceEvent = deviceEvents[0] ?? null;
   const nowMs = Date.now();
+  const currentDeviceEventViewState: DeviceEventSavedViewState = {
+    severity: deviceEventFilter,
+    eventType: deviceEventTypeFilter,
+    timeRange: deviceEventTimeRange,
+    searchQuery: deviceEventSearchQuery,
+    customStart: deviceEventCustomStart,
+    customEnd: deviceEventCustomEnd,
+  };
   const customStartMs = parseDateTimeLocalValue(deviceEventCustomStart);
   const customEndMs = parseDateTimeLocalValue(deviceEventCustomEnd);
   const customRangeLabel =
@@ -913,6 +967,28 @@ function DevicesPage() {
   const pinnedErrorViewCount = deviceEvents.filter(
     (event) => event.severity === "error" && matchesDeviceEventTimeRange(event, "7d", nowMs),
   ).length;
+  const deviceEventSavedViewCounts = Object.fromEntries(
+    deviceEventSavedViews.map((view) => [
+      view.id,
+      view.state
+        ? deviceEvents.filter(
+            (event) =>
+              (view.state?.severity === "all" ? true : event.severity === view.state.severity) &&
+              (view.state?.eventType === "all"
+                ? true
+                : getDeviceEventTypeGroup(event.eventType) === view.state.eventType) &&
+              matchesDeviceEventTimeRange(
+                event,
+                view.state.timeRange,
+                nowMs,
+                parseDateTimeLocalValue(view.state.customStart),
+                parseDateTimeLocalValue(view.state.customEnd),
+              ) &&
+              matchesDeviceEventSearch(event, view.state.searchQuery),
+          ).length
+        : 0,
+    ]),
+  ) as Record<DeviceEventSavedViewId, number>;
   const presetCounts = Object.fromEntries(
     DEVICE_EVENT_PRESETS.map((preset) => [
       preset.id,
@@ -932,8 +1008,13 @@ function DevicesPage() {
     error: visibleDeviceEvents.filter((event) => event.severity === "error").length,
   } as const;
   const canLoadMoreDeviceEvents = deviceEventsHasMore && deviceEventsNextCursor !== null;
+  const activeDeviceSavedView =
+    deviceEventSavedViews.find(
+      (view) => view.state && matchesDeviceEventSavedView(view.state, currentDeviceEventViewState),
+    ) ?? null;
   const activeDeviceLogFilters = [
     hasPinnedErrorView ? "Preset error terbaru" : null,
+    activeDeviceSavedView ? `Saved view ${activeDeviceSavedView.label}` : null,
     deviceEventFilter !== "all"
       ? `Severity ${
           DEVICE_EVENT_FILTERS.find((filter) => filter.id === deviceEventFilter)?.label ??
@@ -1001,6 +1082,66 @@ function DevicesPage() {
     setDeviceEventTypeFilter(preset.eventType);
     setDeviceEventTimeRange(preset.timeRange);
     setDeviceEventSearchQuery("");
+  }
+
+  function applyDeviceEventSavedView(viewId: DeviceEventSavedViewId) {
+    const view = deviceEventSavedViews.find((item) => item.id === viewId);
+    if (!view?.state) {
+      toast.message("Slot saved view masih kosong", {
+        description: "Simpan kombinasi filter aktif ke slot ini terlebih dahulu.",
+      });
+      return;
+    }
+
+    setDeviceEventFilter(view.state.severity);
+    setDeviceEventTypeFilter(view.state.eventType);
+    setDeviceEventTimeRange(view.state.timeRange);
+    setDeviceEventSearchQuery(view.state.searchQuery);
+    setDeviceEventCustomStart(view.state.customStart);
+    setDeviceEventCustomEnd(view.state.customEnd);
+    toast.success(`Saved view "${view.label}" diterapkan`, {
+      description: "Filter log mengikuti konfigurasi audit yang tersimpan.",
+    });
+  }
+
+  function saveCurrentDeviceEventView(viewId: DeviceEventSavedViewId) {
+    const nextViews = deviceEventSavedViews.map((view) =>
+      view.id === viewId
+        ? {
+            ...view,
+            state: currentDeviceEventViewState,
+            updatedAt: Date.now(),
+          }
+        : view,
+    );
+
+    setDeviceEventSavedViews(nextViews);
+    saveDeviceEventSavedViews(nextViews);
+
+    const view = nextViews.find((item) => item.id === viewId);
+    toast.success(`Saved view "${view?.label ?? viewId}" diperbarui`, {
+      description: "Kombinasi filter aktif tersimpan untuk audit berikutnya.",
+    });
+  }
+
+  function clearDeviceEventSavedView(viewId: DeviceEventSavedViewId) {
+    const nextViews = deviceEventSavedViews.map((view) =>
+      view.id === viewId
+        ? {
+            ...view,
+            state: null,
+            updatedAt: null,
+          }
+        : view,
+    );
+
+    setDeviceEventSavedViews(nextViews);
+    saveDeviceEventSavedViews(nextViews);
+
+    const view = nextViews.find((item) => item.id === viewId);
+    toast.success(`Saved view "${view?.label ?? viewId}" dibersihkan`, {
+      description: "Slot kembali kosong dan siap dipakai untuk kombinasi filter lain.",
+    });
   }
 
   async function handleLoadMoreDeviceEvents() {
@@ -1566,12 +1707,73 @@ function DevicesPage() {
                         setDeviceEventTypeFilter("all");
                         setDeviceEventTimeRange("all");
                         setDeviceEventSearchQuery("");
+                        setDeviceEventCustomStart("");
+                        setDeviceEventCustomEnd("");
                       }}
                       className="inline-flex items-center gap-1.5 rounded-full border border-input bg-background px-3 py-1 text-xs font-medium hover:bg-accent"
                     >
                       Reset Filter
                     </button>
                   ) : null}
+                </div>
+                <div className="mb-3 grid gap-2 xl:grid-cols-3">
+                  {deviceEventSavedViews.map((view) => {
+                    const isActive = activeDeviceSavedView?.id === view.id;
+
+                    return (
+                      <div
+                        key={view.id}
+                        className={`rounded-md border p-3 ${
+                          isActive ? "border-primary bg-primary/5" : "bg-muted/20"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="text-xs font-semibold">{view.label}</div>
+                            <div className="mt-1 text-[11px] text-muted-foreground">
+                              {DEVICE_EVENT_SAVED_VIEW_DESCRIPTIONS[view.id]}
+                            </div>
+                          </div>
+                          <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                            {deviceEventSavedViewCounts[view.id]}
+                          </span>
+                        </div>
+                        <div className="mt-2 min-h-[32px] text-[11px] text-muted-foreground">
+                          {summarizeDeviceEventSavedView(view.state)}
+                        </div>
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => applyDeviceEventSavedView(view.id)}
+                            disabled={!view.state}
+                            className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-2.5 py-1 text-[11px] font-medium hover:bg-accent disabled:opacity-50"
+                          >
+                            Pakai
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => saveCurrentDeviceEventView(view.id)}
+                            className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-2.5 py-1 text-[11px] font-medium hover:bg-accent"
+                          >
+                            Simpan Filter Saat Ini
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => clearDeviceEventSavedView(view.id)}
+                            disabled={!view.state}
+                            className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-2.5 py-1 text-[11px] font-medium hover:bg-accent disabled:opacity-50"
+                          >
+                            Hapus
+                          </button>
+                        </div>
+                        <div className="mt-2 text-[11px] text-muted-foreground">
+                          {view.updatedAt
+                            ? `Diperbarui ${formatRelativeTime(view.updatedAt)}`
+                            : "Slot masih kosong"}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
                 <div className="mb-3 flex flex-wrap items-center gap-2">
                   {DEVICE_EVENT_FILTERS.map((filter) => (
