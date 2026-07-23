@@ -65,11 +65,19 @@ const logDeviceEventSchema = z.object({
   payload: z.record(z.string(), z.unknown()).optional(),
 });
 
+const deviceEventSeverityFilterSchema = z.enum(["all", "info", "warning", "error"]);
+const deviceEventTypeFilterSchema = z.enum(["all", "capture", "autofocus", "fallback", "other"]);
+
 const listDeviceEventsSchema = z.object({
   limit: z.number().int().positive().max(50).default(10),
   deviceCode: z.string().trim().min(1).optional(),
   beforeId: z.number().int().positive().optional(),
   beforeCreatedAt: z.string().datetime().optional(),
+  severity: deviceEventSeverityFilterSchema.default("all"),
+  eventType: deviceEventTypeFilterSchema.default("all"),
+  searchQuery: z.string().trim().max(200).default(""),
+  rangeStart: z.string().datetime().optional(),
+  rangeEnd: z.string().datetime().optional(),
 });
 
 export type CaptureRecordView = {
@@ -105,6 +113,7 @@ export type CaptureDashboardSummary = {
 };
 
 export type DeviceEventSeverity = "info" | "warning" | "error";
+export type DeviceEventTypeFilter = z.infer<typeof deviceEventTypeFilterSchema>;
 
 export type DeviceEventView = {
   id: number;
@@ -259,6 +268,10 @@ function mapDeviceEventRow(row: Record<string, unknown>): DeviceEventView {
     payload: parseJsonRecord(row.payload_json),
     createdAt,
   };
+}
+
+function escapeSqlLikePattern(value: string): string {
+  return value.replace(/[[\]%_]/g, "[$&]");
 }
 
 async function resolveCaptureRecordId(
@@ -593,6 +606,68 @@ export const listDeviceEvents = createServerFn({ method: "GET" })
         whereClauses.push(
           "(de.created_at < @beforeCreatedAt OR (de.created_at = @beforeCreatedAt AND de.id < @beforeId))",
         );
+      }
+
+      if (data.severity !== "all") {
+        request.input("severity", sql.NVarChar(20), data.severity);
+        whereClauses.push("de.severity = @severity");
+      }
+
+      if (data.eventType === "capture") {
+        whereClauses.push("de.event_type LIKE N'capture-%'");
+      } else if (data.eventType === "autofocus") {
+        whereClauses.push("de.event_type LIKE N'autofocus-%'");
+      } else if (data.eventType === "fallback") {
+        whereClauses.push("de.event_type LIKE N'%fallback%'");
+      } else if (data.eventType === "other") {
+        whereClauses.push(
+          "de.event_type NOT LIKE N'capture-%' AND de.event_type NOT LIKE N'autofocus-%' AND de.event_type NOT LIKE N'%fallback%'",
+        );
+      }
+
+      if (data.rangeStart) {
+        request.input("rangeStart", sql.DateTime2, new Date(data.rangeStart));
+        whereClauses.push("de.created_at >= @rangeStart");
+      }
+
+      if (data.rangeEnd) {
+        request.input("rangeEnd", sql.DateTime2, new Date(data.rangeEnd));
+        whereClauses.push("de.created_at <= @rangeEnd");
+      }
+
+      if (data.searchQuery !== "") {
+        request.input(
+          "searchQuery",
+          sql.NVarChar(260),
+          `%${escapeSqlLikePattern(data.searchQuery)}%`,
+        );
+        whereClauses.push(`
+          (
+            d.code LIKE @searchQuery
+            OR d.name LIKE @searchQuery
+            OR de.event_type LIKE @searchQuery
+            OR de.severity LIKE @searchQuery
+            OR de.message LIKE @searchQuery
+            OR ISNULL(de.payload_json, N'') LIKE @searchQuery
+            OR (
+              CASE de.event_type
+                WHEN N'metadata-finalized' THEN N'Metadata difinalisasi'
+                WHEN N'capture-trigger-failed' THEN N'Trigger capture gagal'
+                WHEN N'capture-job-failed' THEN N'Job capture gagal'
+                WHEN N'capture-missing-asset' THEN N'Asset capture tidak tersedia'
+                WHEN N'capture-exception' THEN N'Capture exception'
+                WHEN N'autofocus-trigger-failed' THEN N'Trigger autofocus gagal'
+                WHEN N'autofocus-job-failed' THEN N'Job autofocus gagal'
+                WHEN N'autofocus-exception' THEN N'Autofocus exception'
+                WHEN N'network-save-fallback' THEN N'Fallback network save'
+                WHEN N'folder-save-fallback' THEN N'Fallback folder browser'
+                WHEN N'browser-download-fallback' THEN N'Fallback download lokal'
+                WHEN N'capture-record-sync-failed' THEN N'Sinkron capture DB gagal'
+                ELSE de.event_type
+              END
+            ) LIKE @searchQuery
+          )
+        `);
       }
 
       const result = await request.query(`

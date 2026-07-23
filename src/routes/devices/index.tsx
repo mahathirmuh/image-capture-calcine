@@ -396,6 +396,39 @@ function parseDateTimeLocalValue(value: string): number | null {
   return Number.isNaN(parsed) ? null : parsed;
 }
 
+function getDeviceEventTimeRangeBounds(
+  range: DeviceEventTimeRange,
+  nowMs: number,
+  customStartMs?: number | null,
+  customEndMs?: number | null,
+) {
+  if (range === "all") {
+    return { rangeStart: undefined, rangeEnd: undefined };
+  }
+
+  if (range === "today") {
+    const startOfToday = new Date(nowMs);
+    startOfToday.setHours(0, 0, 0, 0);
+    return {
+      rangeStart: startOfToday.toISOString(),
+      rangeEnd: undefined,
+    };
+  }
+
+  if (range === "custom") {
+    return {
+      rangeStart: customStartMs ? new Date(customStartMs).toISOString() : undefined,
+      rangeEnd: customEndMs ? new Date(customEndMs).toISOString() : undefined,
+    };
+  }
+
+  const rangeMs = range === "7d" ? 7 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000;
+  return {
+    rangeStart: new Date(nowMs - rangeMs).toISOString(),
+    rangeEnd: undefined,
+  };
+}
+
 function matchesDeviceEventSavedView(
   state: DeviceEventSavedViewState,
   current: DeviceEventSavedViewState,
@@ -691,11 +724,23 @@ function DevicesPage() {
       beforeCursor?: DeviceEventCursor | null;
       append?: boolean;
     }) => {
+      const now = Date.now();
+      const rangeBounds = getDeviceEventTimeRangeBounds(
+        deviceEventTimeRange,
+        now,
+        parseDateTimeLocalValue(deviceEventCustomStart),
+        parseDateTimeLocalValue(deviceEventCustomEnd),
+      );
+
       setDeviceEventsLoading(true);
       const result = await listDeviceEvents({
         data: {
           limit,
           ...(deviceCode ? { deviceCode } : {}),
+          severity: deviceEventFilter,
+          eventType: deviceEventTypeFilter,
+          searchQuery: deviceEventSearchQuery.trim(),
+          ...rangeBounds,
           ...(beforeCursor
             ? {
                 beforeId: beforeCursor.id,
@@ -721,7 +766,14 @@ function DevicesPage() {
       setDeviceEventsNextCursor(result.nextCursor);
       setDeviceEventsError(null);
     },
-    [],
+    [
+      deviceEventCustomEnd,
+      deviceEventCustomStart,
+      deviceEventFilter,
+      deviceEventSearchQuery,
+      deviceEventTimeRange,
+      deviceEventTypeFilter,
+    ],
   );
 
   // Guarded against a stale response clobbering a newer one -- without this,
