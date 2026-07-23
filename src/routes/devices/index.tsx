@@ -460,6 +460,15 @@ function normalizeDeviceEventSavedViewLabel(value: string) {
   return value.trim().replace(/\s+/g, " ").slice(0, 40);
 }
 
+function toAuditFileSlug(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+}
+
 function formatDeviceEventPayloadKey(key: string) {
   return key
     .replace(/([A-Z])/g, " $1")
@@ -2780,8 +2789,20 @@ function CameraSettingsTab({
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     const filterSuffix = deviceEventFilter === "all" ? "all" : deviceEventFilter;
     const eventTypeSuffix = deviceEventTypeFilter === "all" ? "all-types" : deviceEventTypeFilter;
-    const timeRangeSuffix = deviceEventTimeRange === "all" ? "all-time" : deviceEventTimeRange;
+    const timeRangeSuffix =
+      deviceEventTimeRange === "all"
+        ? "all-time"
+        : deviceEventTimeRange === "custom"
+          ? `custom-${toAuditFileSlug(customRangeLabel)}`
+          : deviceEventTimeRange;
+    const savedViewSuffix = activeDeviceSavedView
+      ? `-${toAuditFileSlug(activeDeviceSavedView.label)}`
+      : "";
+    const presetSuffix = activeDeviceEventPreset
+      ? `-${toAuditFileSlug(activeDeviceEventPreset.label)}`
+      : "";
     const searchSuffix = hasDeviceEventSearch ? "-search" : "";
+    const baseFileName = `device-events${savedViewSuffix}${presetSuffix}-${filterSuffix}-${eventTypeSuffix}-${timeRangeSuffix}${searchSuffix}-${timestamp}`;
 
     let blob: Blob;
     let fileName: string;
@@ -2802,7 +2823,7 @@ function CameraSettingsTab({
           type: "application/json;charset=utf-8;",
         },
       );
-      fileName = `device-events-${filterSuffix}-${eventTypeSuffix}-${timeRangeSuffix}${searchSuffix}-${timestamp}.json`;
+      fileName = `${baseFileName}.json`;
     } else {
       const rows = [
         [
@@ -2830,7 +2851,7 @@ function CameraSettingsTab({
       ];
       const csv = rows.map((row) => row.map(escapeCsvValue).join(",")).join("\r\n");
       blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
-      fileName = `device-events-${filterSuffix}-${eventTypeSuffix}-${timeRangeSuffix}${searchSuffix}-${timestamp}.csv`;
+      fileName = `${baseFileName}.csv`;
     }
 
     const url = URL.createObjectURL(blob);
