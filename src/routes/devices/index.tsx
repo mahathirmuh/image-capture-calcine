@@ -779,6 +779,33 @@ function DevicesPage() {
   const pinnedErrorViewCount = deviceEvents.filter(
     (event) => event.severity === "error" && matchesDeviceEventTimeRange(event, "7d", nowMs),
   ).length;
+  const visibleEventSeverityCounts = {
+    info: visibleDeviceEvents.filter((event) => event.severity === "info").length,
+    warning: visibleDeviceEvents.filter((event) => event.severity === "warning").length,
+    error: visibleDeviceEvents.filter((event) => event.severity === "error").length,
+  } as const;
+  const activeDeviceLogFilters = [
+    hasPinnedErrorView ? "Preset error terbaru" : null,
+    deviceEventFilter !== "all"
+      ? `Severity ${
+          DEVICE_EVENT_FILTERS.find((filter) => filter.id === deviceEventFilter)?.label ??
+          deviceEventFilter
+        }`
+      : null,
+    hasDeviceEventTypeFilter
+      ? `Tipe ${
+          DEVICE_EVENT_TYPE_FILTERS.find((filter) => filter.id === deviceEventTypeFilter)?.label ??
+          deviceEventTypeFilter
+        }`
+      : null,
+    hasDeviceEventTimeRangeFilter
+      ? `Waktu ${
+          DEVICE_EVENT_TIME_FILTERS.find((filter) => filter.id === deviceEventTimeRange)?.label ??
+          deviceEventTimeRange
+        }`
+      : null,
+    hasDeviceEventSearch ? `Cari "${deviceEventSearchQuery.trim()}"` : null,
+  ].filter(Boolean) as string[];
 
   const visibleDevices = registeredDevices.filter((device) => {
     const query = searchQuery.trim().toLowerCase();
@@ -1489,9 +1516,49 @@ function DevicesPage() {
                 ) : (
                   <div className="grid gap-3 xl:grid-cols-[1.25fr_0.85fr]">
                     <div className="space-y-2">
+                      <div className="sticky top-0 z-20 rounded-md border bg-background/95 p-3 backdrop-blur supports-[backdrop-filter]:bg-background/85">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                              Ringkasan Aktif
+                            </div>
+                            <div className="mt-1 text-sm font-semibold text-foreground">
+                              {visibleDeviceEvents.length} log tampil dari {deviceEvents.length}{" "}
+                              total
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap gap-2 text-[11px]">
+                            <span className="rounded-full border border-destructive/30 bg-destructive/5 px-2.5 py-1 font-medium text-destructive">
+                              Error {visibleEventSeverityCounts.error}
+                            </span>
+                            <span className="rounded-full border border-amber-500/30 bg-amber-500/5 px-2.5 py-1 font-medium text-amber-700">
+                              Warning {visibleEventSeverityCounts.warning}
+                            </span>
+                            <span className="rounded-full border border-muted bg-muted/50 px-2.5 py-1 font-medium text-muted-foreground">
+                              Info {visibleEventSeverityCounts.info}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {activeDeviceLogFilters.length > 0 ? (
+                            activeDeviceLogFilters.map((filter) => (
+                              <span
+                                key={filter}
+                                className="rounded-full border border-input bg-muted/40 px-2.5 py-1 text-[11px] text-muted-foreground"
+                              >
+                                {filter}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-[11px] text-muted-foreground">
+                              Tidak ada filter tambahan aktif. Semua log terbaru sedang ditampilkan.
+                            </span>
+                          )}
+                        </div>
+                      </div>
                       {groupedVisibleDeviceEvents.map((group) => (
                         <div key={group.dateKey} className="space-y-2">
-                          <div className="sticky top-0 z-10 rounded-md border bg-muted/50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          <div className="sticky top-[92px] z-10 rounded-md border bg-muted/50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                             {group.label}
                           </div>
                           {group.events.map((event) => (
