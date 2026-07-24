@@ -1826,6 +1826,14 @@ function DevicesPage() {
                   <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
+                      onClick={exportDeviceEventBundle}
+                      disabled={visibleDeviceEvents.length === 0}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:opacity-60"
+                    >
+                      <Download className="h-3.5 w-3.5" /> Export Paket
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => exportDeviceEvents("json")}
                       disabled={visibleDeviceEvents.length === 0}
                       className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:opacity-60"
@@ -2889,10 +2897,7 @@ function CameraSettingsTab({
     });
   }
 
-  function exportDeviceEvents(format: "json" | "csv") {
-    if (visibleDeviceEvents.length === 0) return;
-
-    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  function buildDeviceEventExportBaseFileName(timestamp: string) {
     const filterSuffix = deviceEventFilter === "all" ? "all" : deviceEventFilter;
     const eventTypeSuffix = deviceEventTypeFilter === "all" ? "all-types" : deviceEventTypeFilter;
     const timeRangeSuffix =
@@ -2908,67 +2913,96 @@ function CameraSettingsTab({
       ? `-${toAuditFileSlug(activeDeviceEventPreset.label)}`
       : "";
     const searchSuffix = hasDeviceEventSearch ? "-search" : "";
-    const baseFileName = `device-events${savedViewSuffix}${presetSuffix}-${filterSuffix}-${eventTypeSuffix}-${timeRangeSuffix}${searchSuffix}-${timestamp}`;
+    return `device-events${savedViewSuffix}${presetSuffix}-${filterSuffix}-${eventTypeSuffix}-${timeRangeSuffix}${searchSuffix}-${timestamp}`;
+  }
 
-    let blob: Blob;
-    let fileName: string;
+  function buildDeviceEventExportFile(format: "json" | "csv", timestamp: string) {
+    const baseFileName = buildDeviceEventExportBaseFileName(timestamp);
 
     if (format === "json") {
-      blob = new Blob(
-        [
-          JSON.stringify(
-            visibleDeviceEvents.map((event) => ({
-              ...event,
-              eventLabel: formatDeviceEventLabel(event.eventType),
-            })),
-            null,
-            2,
-          ),
-        ],
-        {
-          type: "application/json;charset=utf-8;",
-        },
-      );
-      fileName = `${baseFileName}.json`;
-    } else {
-      const rows = [
-        [
-          "id",
-          "created_at",
-          "severity",
-          "event_type",
-          "event_label",
-          "device_code",
-          "device_name",
-          "message",
-          "payload_json",
-        ],
-        ...visibleDeviceEvents.map((event) => [
-          String(event.id),
-          event.createdAt,
-          event.severity,
-          event.eventType,
-          formatDeviceEventLabel(event.eventType),
-          event.deviceCode,
-          event.deviceName ?? "",
-          event.message,
-          event.payload ? JSON.stringify(event.payload) : "",
-        ]),
-      ];
-      const csv = rows.map((row) => row.map(escapeCsvValue).join(",")).join("\r\n");
-      blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
-      fileName = `${baseFileName}.csv`;
+      return {
+        blob: new Blob(
+          [
+            JSON.stringify(
+              visibleDeviceEvents.map((event) => ({
+                ...event,
+                eventLabel: formatDeviceEventLabel(event.eventType),
+              })),
+              null,
+              2,
+            ),
+          ],
+          {
+            type: "application/json;charset=utf-8;",
+          },
+        ),
+        fileName: `${baseFileName}.json`,
+      };
     }
 
+    const rows = [
+      [
+        "id",
+        "created_at",
+        "severity",
+        "event_type",
+        "event_label",
+        "device_code",
+        "device_name",
+        "message",
+        "payload_json",
+      ],
+      ...visibleDeviceEvents.map((event) => [
+        String(event.id),
+        event.createdAt,
+        event.severity,
+        event.eventType,
+        formatDeviceEventLabel(event.eventType),
+        event.deviceCode,
+        event.deviceName ?? "",
+        event.message,
+        event.payload ? JSON.stringify(event.payload) : "",
+      ]),
+    ];
+    const csv = rows.map((row) => row.map(escapeCsvValue).join(",")).join("\r\n");
+    return {
+      blob: new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" }),
+      fileName: `${baseFileName}.csv`,
+    };
+  }
+
+  function downloadBlobFile(blob: Blob, fileName: string) {
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
     anchor.download = fileName;
     anchor.click();
     URL.revokeObjectURL(url);
+  }
+
+  function exportDeviceEvents(format: "json" | "csv") {
+    if (visibleDeviceEvents.length === 0) return;
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const { blob, fileName } = buildDeviceEventExportFile(format, timestamp);
+    downloadBlobFile(blob, fileName);
 
     toast.success(`Log device diekspor ke ${format.toUpperCase()}`, {
       description: `Mengekspor ${visibleDeviceEvents.length} log sesuai filter aktif.`,
+    });
+  }
+
+  function exportDeviceEventBundle() {
+    if (visibleDeviceEvents.length === 0) return;
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const jsonFile = buildDeviceEventExportFile("json", timestamp);
+    const csvFile = buildDeviceEventExportFile("csv", timestamp);
+    downloadBlobFile(jsonFile.blob, jsonFile.fileName);
+    downloadBlobFile(csvFile.blob, csvFile.fileName);
+
+    toast.success("Paket log device diekspor", {
+      description: `JSON dan CSV untuk ${visibleDeviceEvents.length} log berhasil diunduh.`,
     });
   }
 
