@@ -3,7 +3,6 @@ import { defineConfig, loadEnv, mergeConfig, type UserConfig } from "vite";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
-import tsConfigPaths from "vite-tsconfig-paths";
 import { devtools } from "@tanstack/devtools-vite";
 import { parseServerEnv } from "./src/lib/env";
 
@@ -31,7 +30,6 @@ export default defineConfig(async ({ command, mode }) => {
 
   const plugins = [
     tailwindcss(),
-    tsConfigPaths({ projects: ["./tsconfig.json"] }),
     tanstackStart({
       importProtection: {
         behavior: "error",
@@ -88,6 +86,7 @@ export default defineConfig(async ({ command, mode }) => {
     // fine. Running Lightning CSS in both keeps the preview honest.
     css: { transformer: "lightningcss" },
     resolve: {
+      tsconfigPaths: true,
       alias: {
         "@": path.resolve(__dirname, "src"),
       },
