@@ -282,6 +282,22 @@ function CountBadge({
   );
 }
 
+function useDebouncedValue<T>(value: T, delayMs: number) {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedValue(value);
+    }, delayMs);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [delayMs, value]);
+
+  return debouncedValue;
+}
+
 function formatDeviceEventLabel(eventType: string): string {
   const labels: Record<string, string> = {
     "metadata-finalized": "Metadata difinalisasi",
@@ -332,6 +348,7 @@ const DEVICE_EVENT_TIME_FILTERS: Array<{ id: DeviceEventTimeRange; label: string
   { id: "30d", label: "30 Hari" },
   { id: "custom", label: "Rentang Kustom" },
 ];
+const DEVICE_EVENT_SEARCH_DEBOUNCE_MS = 250;
 const DEFAULT_DEVICE_EVENT_FETCH_LIMIT = 8;
 const DEVICE_EVENT_FETCH_STEP = 8;
 
@@ -705,6 +722,10 @@ function DevicesPage() {
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [searchQuery, setSearchQuery] = useState("");
+  const debouncedDeviceEventSearchQuery = useDebouncedValue(
+    deviceEventSearchQuery,
+    DEVICE_EVENT_SEARCH_DEBOUNCE_MS,
+  );
 
   const selectedDevice =
     registeredDevices.find((device) => device.id === selectedDeviceId) ??
@@ -798,7 +819,7 @@ function DevicesPage() {
           ...(deviceCode ? { deviceCode } : {}),
           severity: deviceEventFilter,
           eventType: deviceEventTypeFilter,
-          searchQuery: deviceEventSearchQuery.trim(),
+          searchQuery: debouncedDeviceEventSearchQuery.trim(),
           ...rangeBounds,
           ...(beforeCursor
             ? {
@@ -829,7 +850,7 @@ function DevicesPage() {
       deviceEventCustomEnd,
       deviceEventCustomStart,
       deviceEventFilter,
-      deviceEventSearchQuery,
+      debouncedDeviceEventSearchQuery,
       deviceEventTimeRange,
       deviceEventTypeFilter,
     ],
@@ -848,7 +869,7 @@ function DevicesPage() {
       const result = await getDeviceEventAggregates({
         data: {
           ...(deviceCode ? { deviceCode } : {}),
-          searchQuery: deviceEventSearchQuery.trim(),
+          searchQuery: debouncedDeviceEventSearchQuery.trim(),
           customRangeStart: customRangeBounds.rangeStart,
           customRangeEnd: customRangeBounds.rangeEnd,
         },
@@ -862,7 +883,7 @@ function DevicesPage() {
       setDeviceEventAggregates(result.aggregates);
       setDeviceEventAggregatesLoading(false);
     },
-    [deviceEventCustomEnd, deviceEventCustomStart, deviceEventSearchQuery],
+    [debouncedDeviceEventSearchQuery, deviceEventCustomEnd, deviceEventCustomStart],
   );
 
   const loadDeviceEventSavedViewServerCounts = useCallback(
@@ -925,7 +946,7 @@ function DevicesPage() {
       const result = await getDeviceEventPresetCounts({
         data: {
           ...(deviceCode ? { deviceCode } : {}),
-          searchQuery: deviceEventSearchQuery.trim(),
+          searchQuery: debouncedDeviceEventSearchQuery.trim(),
         },
       });
 
@@ -937,7 +958,7 @@ function DevicesPage() {
       setDeviceEventPresetServerCounts(result.counts);
       setDeviceEventPresetServerCountsLoading(false);
     },
-    [deviceEventSearchQuery],
+    [debouncedDeviceEventSearchQuery],
   );
 
   // Guarded against a stale response clobbering a newer one -- without this,
@@ -1132,6 +1153,8 @@ function DevicesPage() {
     visibleDeviceEvents[0] ??
     null;
   const hasDeviceEventSearch = deviceEventSearchQuery.trim() !== "";
+  const isDeviceEventSearchDebouncing =
+    deviceEventSearchQuery.trim() !== debouncedDeviceEventSearchQuery.trim();
   const hasDeviceEventTypeFilter = deviceEventTypeFilter !== "all";
   const hasDeviceEventTimeRangeFilter = deviceEventTimeRange !== "all";
   const hasPinnedErrorView =
@@ -2146,7 +2169,7 @@ function DevicesPage() {
                       <span>{filter.label}</span>
                       <CountBadge
                         value={eventCounts[filter.id]}
-                        loading={deviceEventAggregatesLoading}
+                        loading={deviceEventAggregatesLoading || isDeviceEventSearchDebouncing}
                         className={
                           deviceEventFilter === filter.id
                             ? "bg-primary-foreground/15 text-primary-foreground"
@@ -2171,7 +2194,7 @@ function DevicesPage() {
                       <span>{filter.label}</span>
                       <CountBadge
                         value={eventTypeCounts[filter.id]}
-                        loading={deviceEventAggregatesLoading}
+                        loading={deviceEventAggregatesLoading || isDeviceEventSearchDebouncing}
                         className={
                           deviceEventTypeFilter === filter.id
                             ? "bg-primary-foreground/15 text-primary-foreground"
@@ -2208,7 +2231,7 @@ function DevicesPage() {
                       <span>{filter.label}</span>
                       <CountBadge
                         value={eventTimeCounts[filter.id]}
-                        loading={deviceEventAggregatesLoading}
+                        loading={deviceEventAggregatesLoading || isDeviceEventSearchDebouncing}
                         className={
                           deviceEventTimeRange === filter.id
                             ? "bg-primary-foreground/15 text-primary-foreground"
@@ -2252,6 +2275,11 @@ function DevicesPage() {
                       placeholder="Cari pesan, event, device, atau payload..."
                       className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-3 text-xs outline-none ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
                     />
+                    {isDeviceEventSearchDebouncing ? (
+                      <div className="mt-1 text-[11px] text-muted-foreground">
+                        Menunggu jeda ketik sebelum sinkron ke server...
+                      </div>
+                    ) : null}
                   </div>
                   <div className="text-[11px] text-muted-foreground">
                     Menampilkan {visibleDeviceEvents.length} dari {eventCounts[deviceEventFilter]}{" "}
