@@ -797,13 +797,19 @@ function DevicesPage() {
   const loadDeviceEventAggregates = useCallback(
     async (deviceCode?: string | null) => {
       setDeviceEventAggregates(null);
-      const rangeBounds = getDeviceEventTimeRangeBounds("all", Date.now(), null, null);
+      const customRangeBounds = getDeviceEventTimeRangeBounds(
+        "custom",
+        Date.now(),
+        parseDateTimeLocalValue(deviceEventCustomStart),
+        parseDateTimeLocalValue(deviceEventCustomEnd),
+      );
 
       const result = await getDeviceEventAggregates({
         data: {
           ...(deviceCode ? { deviceCode } : {}),
           searchQuery: deviceEventSearchQuery.trim(),
-          ...rangeBounds,
+          customRangeStart: customRangeBounds.rangeStart,
+          customRangeEnd: customRangeBounds.rangeEnd,
         },
       });
 
@@ -814,7 +820,7 @@ function DevicesPage() {
 
       setDeviceEventAggregates(result.aggregates);
     },
-    [deviceEventSearchQuery],
+    [deviceEventCustomEnd, deviceEventCustomStart, deviceEventSearchQuery],
   );
 
   // Guarded against a stale response clobbering a newer one -- without this,
@@ -1058,21 +1064,19 @@ function DevicesPage() {
       other: deviceEvents.filter((event) => getDeviceEventTypeGroup(event.eventType) === "other")
         .length,
     } satisfies Record<DeviceEventTypeFilter, number>);
-  const eventTimeCounts = {
-    ...(deviceEventAggregates?.timeRange ??
-      ({
-        all: deviceEvents.length,
-        today: deviceEvents.filter((event) => matchesDeviceEventTimeRange(event, "today", nowMs))
-          .length,
-        "7d": deviceEvents.filter((event) => matchesDeviceEventTimeRange(event, "7d", nowMs))
-          .length,
-        "30d": deviceEvents.filter((event) => matchesDeviceEventTimeRange(event, "30d", nowMs))
-          .length,
-      } satisfies Record<Exclude<DeviceEventTimeRange, "custom">, number>)),
-    custom: deviceEvents.filter((event) =>
-      matchesDeviceEventTimeRange(event, "custom", nowMs, customStartMs, customEndMs),
-    ).length,
-  } satisfies Record<DeviceEventTimeRange, number>;
+  const eventTimeCounts =
+    deviceEventAggregates?.timeRange ??
+    ({
+      all: deviceEvents.length,
+      today: deviceEvents.filter((event) => matchesDeviceEventTimeRange(event, "today", nowMs))
+        .length,
+      "7d": deviceEvents.filter((event) => matchesDeviceEventTimeRange(event, "7d", nowMs)).length,
+      "30d": deviceEvents.filter((event) => matchesDeviceEventTimeRange(event, "30d", nowMs))
+        .length,
+      custom: deviceEvents.filter((event) =>
+        matchesDeviceEventTimeRange(event, "custom", nowMs, customStartMs, customEndMs),
+      ).length,
+    } satisfies Record<DeviceEventTimeRange, number>);
   const pinnedErrorViewCount =
     deviceEventAggregates?.preset["error-latest"] ??
     deviceEvents.filter(

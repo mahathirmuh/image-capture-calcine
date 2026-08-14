@@ -84,6 +84,8 @@ const deviceEventAggregateSchema = z.object({
   searchQuery: z.string().trim().max(200).default(""),
   rangeStart: z.string().datetime().optional(),
   rangeEnd: z.string().datetime().optional(),
+  customRangeStart: z.string().datetime().optional(),
+  customRangeEnd: z.string().datetime().optional(),
 });
 
 export type CaptureRecordView = {
@@ -149,7 +151,7 @@ export type DeviceEventAggregates = {
     | "autofocus-failures",
     number
   >;
-  timeRange: Record<"all" | "today" | "7d" | "30d", number>;
+  timeRange: Record<"all" | "today" | "7d" | "30d" | "custom", number>;
 };
 
 export function replaceFileNameInPath(
@@ -769,6 +771,7 @@ export const getDeviceEventAggregates = createServerFn({ method: "GET" })
       const pool = await getCardDbPool();
       const request = pool.request();
       const whereClauses: string[] = [];
+      const customRangeClauses: string[] = [];
 
       applyDeviceEventBaseFilters({
         request,
@@ -776,8 +779,22 @@ export const getDeviceEventAggregates = createServerFn({ method: "GET" })
         data,
       });
 
+      if (data.customRangeStart) {
+        request.input("customRangeStart", sql.DateTime2, new Date(data.customRangeStart));
+        customRangeClauses.push("created_at >= @customRangeStart");
+      }
+
+      if (data.customRangeEnd) {
+        request.input("customRangeEnd", sql.DateTime2, new Date(data.customRangeEnd));
+        customRangeClauses.push("created_at <= @customRangeEnd");
+      }
+
       const whereClause =
         whereClauses.length > 0 ? `WHERE ${whereClauses.join("\n        AND ")}` : "";
+      const customRangeAggregateSql =
+        customRangeClauses.length > 0
+          ? `SUM(CASE WHEN ${customRangeClauses.join(" AND ")} THEN 1 ELSE 0 END) AS custom_count,`
+          : "COUNT(*) AS custom_count,";
       const result = await request.query(`
         WITH filtered_events AS (
           SELECT
@@ -810,6 +827,7 @@ export const getDeviceEventAggregates = createServerFn({ method: "GET" })
           SUM(CASE WHEN created_at >= DATEADD(day, DATEDIFF(day, 0, GETDATE()), 0) THEN 1 ELSE 0 END) AS today_count,
           SUM(CASE WHEN created_at >= DATEADD(day, -7, GETDATE()) THEN 1 ELSE 0 END) AS seven_day_count,
           SUM(CASE WHEN created_at >= DATEADD(day, -30, GETDATE()) THEN 1 ELSE 0 END) AS thirty_day_count,
+          ${customRangeAggregateSql}
           SUM(CASE WHEN severity = N'error' AND created_at >= DATEADD(day, -7, GETDATE()) THEN 1 ELSE 0 END) AS error_latest_count,
           SUM(CASE WHEN severity = N'error' AND created_at >= DATEADD(day, -30, GETDATE()) THEN 1 ELSE 0 END) AS audit_failures_count,
           SUM(CASE WHEN event_type LIKE N'%fallback%' AND created_at >= DATEADD(day, -30, GETDATE()) THEN 1 ELSE 0 END) AS fallback_events_count,
@@ -854,6 +872,7 @@ export const getDeviceEventAggregates = createServerFn({ method: "GET" })
             today: Number(aggregate.today_count ?? 0),
             "7d": Number(aggregate.seven_day_count ?? 0),
             "30d": Number(aggregate.thirty_day_count ?? 0),
+            custom: Number(aggregate.custom_count ?? total),
           },
         } satisfies DeviceEventAggregates,
       };
