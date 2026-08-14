@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -726,6 +726,10 @@ function DevicesPage() {
     deviceEventSearchQuery,
     DEVICE_EVENT_SEARCH_DEBOUNCE_MS,
   );
+  const deviceEventsRequestIdRef = useRef(0);
+  const deviceEventAggregatesRequestIdRef = useRef(0);
+  const deviceEventSavedViewCountsRequestIdRef = useRef(0);
+  const deviceEventPresetCountsRequestIdRef = useRef(0);
 
   const selectedDevice =
     registeredDevices.find((device) => device.id === selectedDeviceId) ??
@@ -804,6 +808,7 @@ function DevicesPage() {
       beforeCursor?: DeviceEventCursor | null;
       append?: boolean;
     }) => {
+      const requestId = ++deviceEventsRequestIdRef.current;
       const now = Date.now();
       const rangeBounds = getDeviceEventTimeRangeBounds(
         deviceEventTimeRange,
@@ -829,6 +834,7 @@ function DevicesPage() {
             : {}),
         },
       });
+      if (requestId !== deviceEventsRequestIdRef.current) return;
       setDeviceEventsLoading(false);
 
       if (!result.ok) {
@@ -858,6 +864,7 @@ function DevicesPage() {
 
   const loadDeviceEventAggregates = useCallback(
     async (deviceCode?: string | null) => {
+      const requestId = ++deviceEventAggregatesRequestIdRef.current;
       setDeviceEventAggregatesLoading(true);
       const customRangeBounds = getDeviceEventTimeRangeBounds(
         "custom",
@@ -874,6 +881,7 @@ function DevicesPage() {
           customRangeEnd: customRangeBounds.rangeEnd,
         },
       });
+      if (requestId !== deviceEventAggregatesRequestIdRef.current) return;
 
       if (!result.ok) {
         setDeviceEventAggregatesLoading(false);
@@ -888,6 +896,7 @@ function DevicesPage() {
 
   const loadDeviceEventSavedViewServerCounts = useCallback(
     async (deviceCode?: string | null) => {
+      const requestId = ++deviceEventSavedViewCountsRequestIdRef.current;
       const views = deviceEventSavedViews.map((view) => {
         if (!view.state) {
           return {
@@ -916,6 +925,7 @@ function DevicesPage() {
       });
 
       if (views.every((view) => view.state === null)) {
+        if (requestId !== deviceEventSavedViewCountsRequestIdRef.current) return;
         setDeviceEventSavedViewServerCounts(EMPTY_DEVICE_EVENT_SAVED_VIEW_COUNTS);
         setDeviceEventSavedViewServerCountsLoading(false);
         return;
@@ -928,6 +938,7 @@ function DevicesPage() {
           views,
         },
       });
+      if (requestId !== deviceEventSavedViewCountsRequestIdRef.current) return;
 
       if (!result.ok) {
         setDeviceEventSavedViewServerCountsLoading(false);
@@ -942,6 +953,7 @@ function DevicesPage() {
 
   const loadDeviceEventPresetServerCounts = useCallback(
     async (deviceCode?: string | null) => {
+      const requestId = ++deviceEventPresetCountsRequestIdRef.current;
       setDeviceEventPresetServerCountsLoading(true);
       const result = await getDeviceEventPresetCounts({
         data: {
@@ -949,6 +961,7 @@ function DevicesPage() {
           searchQuery: debouncedDeviceEventSearchQuery.trim(),
         },
       });
+      if (requestId !== deviceEventPresetCountsRequestIdRef.current) return;
 
       if (!result.ok) {
         setDeviceEventPresetServerCountsLoading(false);
