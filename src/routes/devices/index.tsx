@@ -718,6 +718,7 @@ function DevicesPage() {
   const [deviceEventsNextCursor, setDeviceEventsNextCursor] = useState<DeviceEventCursor | null>(
     null,
   );
+  const [deviceEventAutoRefreshPaused, setDeviceEventAutoRefreshPaused] = useState(false);
   const [selectedDeviceEventId, setSelectedDeviceEventId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
@@ -974,6 +975,40 @@ function DevicesPage() {
     [debouncedDeviceEventSearchQuery],
   );
 
+  const refreshDeviceLogPanel = useCallback(
+    ({
+      deviceCode,
+      resetPaging = false,
+      force = false,
+    }: {
+      deviceCode?: string | null;
+      resetPaging?: boolean;
+      force?: boolean;
+    }) => {
+      if (deviceEventAutoRefreshPaused && !force) return;
+
+      if (resetPaging) {
+        setDeviceEventsHasMore(false);
+        setDeviceEventsNextCursor(null);
+      }
+
+      void loadRecentDeviceEvents({
+        deviceCode,
+        limit: DEFAULT_DEVICE_EVENT_FETCH_LIMIT,
+      });
+      void loadDeviceEventAggregates(deviceCode);
+      void loadDeviceEventSavedViewServerCounts(deviceCode);
+      void loadDeviceEventPresetServerCounts(deviceCode);
+    },
+    [
+      deviceEventAutoRefreshPaused,
+      loadDeviceEventAggregates,
+      loadDeviceEventPresetServerCounts,
+      loadDeviceEventSavedViewServerCounts,
+      loadRecentDeviceEvents,
+    ],
+  );
+
   // Guarded against a stale response clobbering a newer one -- without this,
   // React StrictMode's mount/cleanup/remount in dev fires this effect twice,
   // and whichever of the two overlapping requests resolves last "wins" even
@@ -1016,29 +1051,11 @@ function DevicesPage() {
 
   useEffect(() => {
     const deviceCode = selectedDevice?.deviceCode ?? profile?.deviceCode ?? null;
-    setDeviceEventsHasMore(false);
-    setDeviceEventsNextCursor(null);
-    void loadRecentDeviceEvents({
+    refreshDeviceLogPanel({
       deviceCode,
-      limit: DEFAULT_DEVICE_EVENT_FETCH_LIMIT,
+      resetPaging: true,
     });
-    void loadDeviceEventAggregates(deviceCode);
-  }, [
-    loadDeviceEventAggregates,
-    loadRecentDeviceEvents,
-    profile?.deviceCode,
-    selectedDevice?.deviceCode,
-  ]);
-
-  useEffect(() => {
-    const deviceCode = selectedDevice?.deviceCode ?? profile?.deviceCode ?? null;
-    void loadDeviceEventSavedViewServerCounts(deviceCode);
-  }, [loadDeviceEventSavedViewServerCounts, profile?.deviceCode, selectedDevice?.deviceCode]);
-
-  useEffect(() => {
-    const deviceCode = selectedDevice?.deviceCode ?? profile?.deviceCode ?? null;
-    void loadDeviceEventPresetServerCounts(deviceCode);
-  }, [loadDeviceEventPresetServerCounts, profile?.deviceCode, selectedDevice?.deviceCode]);
+  }, [refreshDeviceLogPanel, profile?.deviceCode, selectedDevice?.deviceCode]);
 
   useEffect(() => {
     if (deviceEvents.length === 0) {
@@ -1517,6 +1534,18 @@ function DevicesPage() {
       limit: DEVICE_EVENT_FETCH_STEP,
       beforeCursor: deviceEventsNextCursor,
       append: true,
+    });
+  }
+
+  function toggleDeviceEventAutoRefresh() {
+    setDeviceEventAutoRefreshPaused((current) => {
+      const nextValue = !current;
+      toast.message(nextValue ? "Auto-sync log dibekukan" : "Auto-sync log diaktifkan kembali", {
+        description: nextValue
+          ? "Filter lokal tetap aktif, tetapi refresh server menunggu sampai kamu lanjutkan atau refresh manual."
+          : "Panel log akan kembali mengikuti filter, device, dan query terbaru.",
+      });
+      return nextValue;
     });
   }
 
@@ -2021,12 +2050,18 @@ function DevicesPage() {
                     </button>
                     <button
                       type="button"
+                      onClick={toggleDeviceEventAutoRefresh}
+                      className="rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent"
+                    >
+                      {deviceEventAutoRefreshPaused ? "Lanjut Sync" : "Bekukan Sync"}
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => {
-                        setDeviceEventsHasMore(false);
-                        setDeviceEventsNextCursor(null);
-                        void loadRecentDeviceEvents({
+                        refreshDeviceLogPanel({
                           deviceCode: selectedDevice?.deviceCode ?? profile?.deviceCode ?? null,
-                          limit: DEFAULT_DEVICE_EVENT_FETCH_LIMIT,
+                          resetPaging: true,
+                          force: true,
                         });
                       }}
                       disabled={deviceEventsLoading}
@@ -2036,6 +2071,13 @@ function DevicesPage() {
                     </button>
                   </div>
                 </div>
+                {deviceEventAutoRefreshPaused ? (
+                  <div className="mb-3 rounded-md border border-dashed border-amber-300 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+                    Tampilan log sedang dibekukan untuk investigasi. Filter lokal tetap berjalan,
+                    tetapi sinkron server menunggu sampai kamu lanjutkan atau tekan{" "}
+                    <span className="font-semibold">Refresh Log</span>.
+                  </div>
+                ) : null}
                 <div className="mb-3 flex flex-wrap items-center gap-2">
                   {DEVICE_EVENT_PRESETS.map((preset) => {
                     const isActive = activeDeviceEventPreset?.id === preset.id;
