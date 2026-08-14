@@ -528,6 +528,7 @@ function GalleryPage() {
   });
   const recentCaptureRecords = filteredCaptureRecords.slice(0, 8);
 
+  const totalPages = Math.max(1, Math.ceil(filteredGallery.length / pageSize));
   const clampedPage = Math.min(page, totalPages);
   const pageStart = (clampedPage - 1) * pageSize;
   const pageItems = filteredGallery.slice(pageStart, pageStart + pageSize);
