@@ -688,6 +688,7 @@ function DevicesPage() {
   const [deviceEventAggregates, setDeviceEventAggregates] = useState<DeviceEventAggregates | null>(
     null,
   );
+  const [deviceEventAggregatesLoading, setDeviceEventAggregatesLoading] = useState(false);
   const [deviceEventPresetServerCountsLoading, setDeviceEventPresetServerCountsLoading] =
     useState(false);
   const [deviceEventPresetServerCounts, setDeviceEventPresetServerCounts] =
@@ -836,7 +837,7 @@ function DevicesPage() {
 
   const loadDeviceEventAggregates = useCallback(
     async (deviceCode?: string | null) => {
-      setDeviceEventAggregates(null);
+      setDeviceEventAggregatesLoading(true);
       const customRangeBounds = getDeviceEventTimeRangeBounds(
         "custom",
         Date.now(),
@@ -854,11 +855,12 @@ function DevicesPage() {
       });
 
       if (!result.ok) {
-        setDeviceEventAggregates(null);
+        setDeviceEventAggregatesLoading(false);
         return;
       }
 
       setDeviceEventAggregates(result.aggregates);
+      setDeviceEventAggregatesLoading(false);
     },
     [deviceEventCustomEnd, deviceEventCustomStart, deviceEventSearchQuery],
   );
@@ -2142,15 +2144,15 @@ function DevicesPage() {
                       }`}
                     >
                       <span>{filter.label}</span>
-                      <span
-                        className={`rounded-full px-1.5 py-0.5 text-[11px] ${
+                      <CountBadge
+                        value={eventCounts[filter.id]}
+                        loading={deviceEventAggregatesLoading}
+                        className={
                           deviceEventFilter === filter.id
                             ? "bg-primary-foreground/15 text-primary-foreground"
                             : "bg-muted text-muted-foreground"
-                        }`}
-                      >
-                        {eventCounts[filter.id]}
-                      </span>
+                        }
+                      />
                     </button>
                   ))}
                 </div>
@@ -2167,15 +2169,15 @@ function DevicesPage() {
                       }`}
                     >
                       <span>{filter.label}</span>
-                      <span
-                        className={`rounded-full px-1.5 py-0.5 text-[11px] ${
+                      <CountBadge
+                        value={eventTypeCounts[filter.id]}
+                        loading={deviceEventAggregatesLoading}
+                        className={
                           deviceEventTypeFilter === filter.id
                             ? "bg-primary-foreground/15 text-primary-foreground"
                             : "bg-muted text-muted-foreground"
-                        }`}
-                      >
-                        {eventTypeCounts[filter.id]}
-                      </span>
+                        }
+                      />
                     </button>
                   ))}
                 </div>
@@ -2204,15 +2206,15 @@ function DevicesPage() {
                       }`}
                     >
                       <span>{filter.label}</span>
-                      <span
-                        className={`rounded-full px-1.5 py-0.5 text-[11px] ${
+                      <CountBadge
+                        value={eventTimeCounts[filter.id]}
+                        loading={deviceEventAggregatesLoading}
+                        className={
                           deviceEventTimeRange === filter.id
                             ? "bg-primary-foreground/15 text-primary-foreground"
                             : "bg-muted text-muted-foreground"
-                        }`}
-                      >
-                        {eventTimeCounts[filter.id]}
-                      </span>
+                        }
+                      />
                     </button>
                   ))}
                 </div>
