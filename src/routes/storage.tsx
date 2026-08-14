@@ -43,6 +43,7 @@ const OFFLINE_STATUS: DeviceStatus = {
   agentVersion: null,
   connectionState: null,
   capabilities: [],
+  statusMessage: "Storage belum bisa menjangkau edge camera service.",
   camera: null,
 };
 
@@ -355,7 +356,11 @@ function StoragePage() {
         <StatusCard
           title="Reachability Edge"
           value={deviceLoading ? "Mengecek..." : deviceStatus?.online ? "Terjangkau" : "Offline"}
-          description={config?.cameraApiUrl ?? "Belum ada CAMERA_API_URL yang termuat."}
+          description={
+            deviceStatus?.online
+              ? (config?.cameraApiUrl ?? "Belum ada CAMERA_API_URL yang termuat.")
+              : (deviceStatus?.statusMessage ?? "Belum ada CAMERA_API_URL yang termuat.")
+          }
           icon={Server}
           tone={deviceStatus?.online ? "success" : "warning"}
         />
@@ -413,7 +418,9 @@ function StoragePage() {
                 : "Offline / tidak terjangkau"}
           </div>
           <p className="mt-2 text-xs text-muted-foreground">
-            {config?.cameraApiUrl ?? "Belum ada camera API URL yang termuat"}
+            {deviceStatus?.online
+              ? (config?.cameraApiUrl ?? "Belum ada camera API URL yang termuat")
+              : (deviceStatus?.statusMessage ?? "Belum ada camera API URL yang termuat")}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
             Pengecekan terakhir: {deviceCheckedAt ? formatDateTime(deviceCheckedAt) : "—"}

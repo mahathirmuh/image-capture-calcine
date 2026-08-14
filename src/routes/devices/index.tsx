@@ -1117,10 +1117,10 @@ function DevicesPage() {
       status: status?.online ? "Terjangkau" : "Offline",
       detail: status?.online
         ? `Terakhir sinkron ${lastSync ? formatRelativeTime(lastSync.getTime()) : "baru saja"}.`
-        : "App belum bisa menjangkau edge API pada refresh terakhir.",
+        : (status?.statusMessage ?? "App belum bisa menjangkau edge API pada refresh terakhir."),
       hint: status?.online
         ? `Status koneksi: ${status.connectionState ?? "unknown"}.`
-        : "Periksa jaringan LAN, service edge API, atau status Mini PC.",
+        : (status?.statusMessage ?? "Periksa jaringan LAN, service edge API, atau status Mini PC."),
       icon: Wifi,
       tone: status?.online ? ("success" as const) : ("warning" as const),
       actionLabel: "Buka Ringkasan",

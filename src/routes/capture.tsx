@@ -809,12 +809,12 @@ function CapturePage() {
         ? "Status edge device sedang dimuat dari service kamera."
         : deviceStatus?.online
           ? `Status koneksi: ${deviceStatus.connectionState ?? "unknown"}.`
-          : "Aplikasi belum bisa menjangkau edge camera service.",
+          : (deviceStatus?.statusMessage ?? "Aplikasi belum bisa menjangkau edge camera service."),
       hint: !deviceStatusLoaded
         ? "Tunggu sampai aplikasi selesai membaca status edge runtime."
         : deviceStatus?.deviceId
           ? `Device ID: ${deviceStatus.deviceId}`
-          : "Periksa jaringan LAN dan status service edge device.",
+          : (deviceStatus?.statusMessage ?? "Periksa jaringan LAN dan status service edge device."),
       icon: Wifi,
       tone: !deviceStatusLoaded
         ? ("warning" as const)

@@ -541,6 +541,11 @@ function GalleryPage() {
       ? "Kamera terhubung"
       : "Edge online"
     : "Offline";
+  const cameraStateHint =
+    deviceStatus?.statusMessage ??
+    (deviceStatus?.online
+      ? (deviceStatus.deviceId ?? "Edge device aktif dan sedang dipantau.")
+      : "Status device belum tersedia.");
   const activeFilters = [
     filterLocation
       ? {
@@ -657,7 +662,7 @@ function GalleryPage() {
             icon={Wifi}
             label="Status Device"
             value={cameraStateLabel}
-            hint={deviceStatus?.deviceId ?? "Device status belum tersedia"}
+            hint={cameraStateHint}
           />
           <OverviewCard
             icon={Package}

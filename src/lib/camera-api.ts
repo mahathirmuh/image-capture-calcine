@@ -249,6 +249,7 @@ export type DeviceStatus = {
   agentVersion: string | null;
   connectionState: "ready" | "disconnected" | "error" | null;
   capabilities: string[];
+  statusMessage?: string | null;
   camera: {
     connected: boolean;
     manufacturer: string | null;
@@ -258,14 +259,130 @@ export type DeviceStatus = {
   } | null;
 };
 
-const OFFLINE_STATUS: DeviceStatus = {
-  online: false,
-  deviceId: null,
-  agentVersion: null,
-  connectionState: null,
-  capabilities: [],
-  camera: null,
-};
+const DEVICE_STATUS_LOG_THROTTLE_MS = 60_000;
+
+let lastDeviceStatusLogKey: string | null = null;
+let lastDeviceStatusLogAt = 0;
+
+function createOfflineStatus(statusMessage: string): DeviceStatus {
+  return {
+    online: false,
+    deviceId: null,
+    agentVersion: null,
+    connectionState: null,
+    capabilities: [],
+    statusMessage,
+    camera: null,
+  };
+}
+
+function describeOnlineStatus(data: {
+  deviceId: string;
+  connectionState: DeviceStatus["connectionState"];
+  camera: DeviceStatus["camera"];
+}) {
+  if (!data.camera?.connected) {
+    return data.deviceId
+      ? `Edge device ${data.deviceId} terjangkau, tetapi kamera USB belum terdeteksi atau belum siap.`
+      : "Edge device terjangkau, tetapi kamera USB belum terdeteksi atau belum siap.";
+  }
+
+  const cameraLabel =
+    [data.camera.manufacturer, data.camera.model].filter(Boolean).join(" ") || "kamera aktif";
+
+  if (data.connectionState === "ready") {
+    return `${cameraLabel} siap dipakai untuk capture.`;
+  }
+
+  return `${cameraLabel} terdeteksi, tetapi state koneksi masih ${data.connectionState ?? "unknown"}.`;
+}
+
+function getEdgeTargetLabel() {
+  try {
+    return new URL(baseUrl()).host;
+  } catch {
+    return baseUrl();
+  }
+}
+
+function describeOfflineStatus(error: unknown) {
+  const edgeTarget = getEdgeTargetLabel();
+  const topLevelCode =
+    typeof error === "object" && error !== null && "code" in error && typeof error.code === "string"
+      ? error.code
+      : null;
+  const cause =
+    typeof error === "object" && error !== null && "cause" in error ? error.cause : undefined;
+  const causeCode =
+    typeof cause === "object" && cause !== null && "code" in cause && typeof cause.code === "string"
+      ? cause.code
+      : null;
+  const code = causeCode ?? topLevelCode ?? "UNKNOWN";
+
+  switch (code) {
+    case "UND_ERR_CONNECT_TIMEOUT":
+    case "ETIMEDOUT":
+      return {
+        key: `timeout:${edgeTarget}`,
+        level: "warn" as const,
+        logMessage: `[camera-api] device status timeout: ${edgeTarget} tidak merespons tepat waktu`,
+        statusMessage: `Service edge kamera di ${edgeTarget} tidak merespons tepat waktu. Periksa power Mini PC, jaringan LAN, atau service edge API.`,
+      };
+    case "ECONNREFUSED":
+      return {
+        key: `refused:${edgeTarget}`,
+        level: "warn" as const,
+        logMessage: `[camera-api] device status refused: ${edgeTarget} menolak koneksi`,
+        statusMessage: `Service edge kamera di ${edgeTarget} menolak koneksi. Service kemungkinan belum berjalan.`,
+      };
+    case "ENETUNREACH":
+    case "EHOSTUNREACH":
+    case "ENOTFOUND":
+      return {
+        key: `unreachable:${edgeTarget}`,
+        level: "warn" as const,
+        logMessage: `[camera-api] device status unreachable: ${edgeTarget} tidak bisa dijangkau`,
+        statusMessage: `Host edge kamera ${edgeTarget} tidak bisa dijangkau dari app server. Periksa LAN, VPN, atau routing jaringan.`,
+      };
+    default:
+      return {
+        key: `unknown:${String(code)}`,
+        level: "error" as const,
+        logMessage: `[camera-api] device status error: gagal membaca ${edgeTarget}`,
+        statusMessage: `Status edge kamera di ${edgeTarget} belum bisa dibaca. Periksa service edge API dan konektivitas jaringan.`,
+      };
+  }
+}
+
+function logDeviceStatusIssue({
+  key,
+  level,
+  logMessage,
+  error,
+}: {
+  key: string;
+  level: "warn" | "error";
+  logMessage: string;
+  error?: unknown;
+}) {
+  const now = Date.now();
+  if (
+    lastDeviceStatusLogKey === key &&
+    now - lastDeviceStatusLogAt < DEVICE_STATUS_LOG_THROTTLE_MS
+  ) {
+    return;
+  }
+
+  lastDeviceStatusLogKey = key;
+  lastDeviceStatusLogAt = now;
+
+  if (level === "warn") {
+    console.warn(logMessage);
+    return;
+  }
+
+  console.error(logMessage, error);
+}
 
 // No session required -- /v1/device is read-only status, unlike the
 // capture/preview endpoints which need X-Session-Token.
@@ -274,8 +391,15 @@ export const getDeviceStatus = createServerFn({ method: "GET" }).handler(
     try {
       const res = await fetch(`${baseUrl()}/v1/device`, { headers: edgeHeaders() });
       if (!res.ok) {
-        console.error(`[camera-api] device status failed: ${res.status}`);
-        return OFFLINE_STATUS;
+        const edgeTarget = getEdgeTargetLabel();
+        logDeviceStatusIssue({
+          key: `http:${res.status}`,
+          level: res.status >= 500 ? "error" : "warn",
+          logMessage: `[camera-api] device status failed: ${edgeTarget} merespons ${res.status}`,
+        });
+        return createOfflineStatus(
+          `Service edge kamera di ${edgeTarget} merespons ${res.status}. Periksa service edge API pada Mini PC.`,
+        );
       }
       const data = (await res.json()) as {
         deviceId: string;
@@ -290,11 +414,18 @@ export const getDeviceStatus = createServerFn({ method: "GET" }).handler(
         agentVersion: data.agentVersion,
         connectionState: data.connectionState,
         capabilities: data.capabilities ?? [],
+        statusMessage: describeOnlineStatus(data),
         camera: data.camera,
       };
     } catch (error) {
-      console.error("[camera-api] device status error:", error);
-      return OFFLINE_STATUS;
+      const offlineStatus = describeOfflineStatus(error);
+      logDeviceStatusIssue({
+        key: offlineStatus.key,
+        level: offlineStatus.level,
+        logMessage: offlineStatus.logMessage,
+        error,
+      });
+      return createOfflineStatus(offlineStatus.statusMessage);
     }
   },
 );

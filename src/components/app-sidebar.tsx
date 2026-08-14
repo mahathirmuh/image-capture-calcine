@@ -52,6 +52,7 @@ function DeviceStatusCard() {
           agentVersion: null,
           connectionState: null,
           capabilities: [],
+          statusMessage: "Status edge kamera belum bisa dibaca dari sidebar.",
           camera: null,
         }),
       );
@@ -72,6 +73,11 @@ function DeviceStatusCard() {
     ? [status.camera.manufacturer, status.camera.model].filter(Boolean).join(" ") ||
       "Model tidak diketahui"
     : "Belum terdeteksi";
+  const statusMessage =
+    status?.statusMessage ??
+    (status?.online
+      ? "Edge device aktif. Status kamera dan jaringan terus disegarkan otomatis."
+      : "Edge camera service belum terjangkau. Periksa Mini PC, LAN, atau service edge API.");
 
   return (
     <div className="rounded-md border bg-sidebar-accent/40 p-3 text-xs group-data-[collapsible=icon]:hidden">
@@ -105,10 +111,13 @@ function DeviceStatusCard() {
         <div className="flex items-center justify-between gap-2">
           <dt>Jaringan</dt>
           <dd className="font-medium text-sidebar-foreground">
-            {status?.online ? "Terhubung" : "Offline"}
+            {status?.online ? "Terhubung" : "Tidak terjangkau"}
           </dd>
         </div>
       </dl>
+      <div className="mt-2 rounded border border-sidebar-border/60 bg-sidebar px-2 py-1.5 text-[10px] leading-relaxed text-sidebar-foreground/70">
+        {statusMessage}
+      </div>
       <div className="mt-2 border-t pt-2 text-[10px] text-sidebar-foreground/50">
         Sinkron terakhir: {lastSync ? formatSyncTime(lastSync) : "—"}
       </div>

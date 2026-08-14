@@ -648,7 +648,8 @@ function DashboardPage() {
       status: status?.online ? "Terjangkau" : "Offline",
       description: status?.online
         ? `Status terakhir diperbarui ${formatRelativeTime(lastRefreshed)}.`
-        : "Dashboard belum bisa menjangkau edge device saat refresh terakhir.",
+        : (status?.statusMessage ??
+          "Dashboard belum bisa menjangkau edge device saat refresh terakhir."),
       detail: status?.online
         ? `Status koneksi: ${status.connectionState ?? "unknown"}${cameraConnected ? " • kamera terhubung" : " • kamera belum siap"}.`
         : "Periksa Mini PC, jaringan LAN, service edge API, atau halaman Devices untuk diagnosa lanjutan.",
@@ -929,7 +930,7 @@ function DashboardPage() {
           icon={Wifi}
           label="Kamera"
           value={status?.online ? (cameraConnected ? "Terhubung" : "Sesi aktif") : "Offline"}
-          sub={cameraLabel}
+          sub={status?.online ? cameraLabel : (status?.statusMessage ?? cameraLabel)}
           tone={cameraConnected ? "emerald" : status?.online ? "amber" : "muted"}
         />
         <StatCard
