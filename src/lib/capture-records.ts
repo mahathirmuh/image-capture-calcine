@@ -67,12 +67,20 @@ const logDeviceEventSchema = z.object({
 
 const deviceEventSeverityFilterSchema = z.enum(["all", "info", "warning", "error"]);
 const deviceEventTypeFilterSchema = z.enum(["all", "capture", "autofocus", "fallback", "other"]);
+const deviceEventSavedViewIdSchema = z.enum(["audit-slot-1", "audit-slot-2", "audit-slot-3"]);
 
 const listDeviceEventsSchema = z.object({
   limit: z.number().int().positive().max(50).default(10),
   deviceCode: z.string().trim().min(1).optional(),
   beforeId: z.number().int().positive().optional(),
   beforeCreatedAt: z.string().datetime().optional(),
+  severity: deviceEventSeverityFilterSchema.default("all"),
+  eventType: deviceEventTypeFilterSchema.default("all"),
+  searchQuery: z.string().trim().max(200).default(""),
+  rangeStart: z.string().datetime().optional(),
+  rangeEnd: z.string().datetime().optional(),
+});
+const deviceEventSavedViewCountFilterSchema = z.object({
   severity: deviceEventSeverityFilterSchema.default("all"),
   eventType: deviceEventTypeFilterSchema.default("all"),
   searchQuery: z.string().trim().max(200).default(""),
@@ -86,6 +94,17 @@ const deviceEventAggregateSchema = z.object({
   rangeEnd: z.string().datetime().optional(),
   customRangeStart: z.string().datetime().optional(),
   customRangeEnd: z.string().datetime().optional(),
+});
+const deviceEventSavedViewCountsSchema = z.object({
+  deviceCode: z.string().trim().min(1).optional(),
+  views: z
+    .array(
+      z.object({
+        id: deviceEventSavedViewIdSchema,
+        state: deviceEventSavedViewCountFilterSchema.nullable(),
+      }),
+    )
+    .max(3),
 });
 
 export type CaptureRecordView = {
@@ -153,6 +172,10 @@ export type DeviceEventAggregates = {
   >;
   timeRange: Record<"all" | "today" | "7d" | "30d" | "custom", number>;
 };
+export type DeviceEventSavedViewCounts = Record<
+  "audit-slot-1" | "audit-slot-2" | "audit-slot-3",
+  number
+>;
 
 export function replaceFileNameInPath(
   filePath: string,
@@ -356,6 +379,81 @@ function applyDeviceEventBaseFilters({
       )
     `);
   }
+}
+
+function applyDeviceEventScopedFilters({
+  request,
+  whereClauses,
+  data,
+}: {
+  request: sql.Request;
+  whereClauses: string[];
+  data: {
+    severity: z.infer<typeof deviceEventSeverityFilterSchema>;
+    eventType: z.infer<typeof deviceEventTypeFilterSchema>;
+  };
+}) {
+  if (data.severity !== "all") {
+    request.input("severity", sql.NVarChar(20), data.severity);
+    whereClauses.push("de.severity = @severity");
+  }
+
+  if (data.eventType === "capture") {
+    whereClauses.push("de.event_type LIKE N'capture-%'");
+  } else if (data.eventType === "autofocus") {
+    whereClauses.push("de.event_type LIKE N'autofocus-%'");
+  } else if (data.eventType === "fallback") {
+    whereClauses.push("de.event_type LIKE N'%fallback%'");
+  } else if (data.eventType === "other") {
+    whereClauses.push(
+      "de.event_type NOT LIKE N'capture-%' AND de.event_type NOT LIKE N'autofocus-%' AND de.event_type NOT LIKE N'%fallback%'",
+    );
+  }
+}
+
+async function countDeviceEventsForFilter({
+  pool,
+  schema,
+  deviceCode,
+  filter,
+}: {
+  pool: sql.ConnectionPool;
+  schema: string;
+  deviceCode?: string;
+  filter: z.infer<typeof deviceEventSavedViewCountFilterSchema>;
+}) {
+  const request = pool.request();
+  const whereClauses: string[] = [];
+
+  applyDeviceEventBaseFilters({
+    request,
+    whereClauses,
+    data: {
+      deviceCode,
+      searchQuery: filter.searchQuery,
+      rangeStart: filter.rangeStart,
+      rangeEnd: filter.rangeEnd,
+    },
+  });
+
+  applyDeviceEventScopedFilters({
+    request,
+    whereClauses,
+    data: {
+      severity: filter.severity,
+      eventType: filter.eventType,
+    },
+  });
+
+  const result = await request.query(`
+    SELECT COUNT(*) AS total_count
+    FROM ${schema}.device_events de
+    INNER JOIN ${schema}.devices d
+      ON d.id = de.device_id
+    ${whereClauses.length > 0 ? `WHERE ${whereClauses.join("\n    AND ")}` : ""};
+  `);
+
+  return Number(result.recordset[0]?.total_count ?? 0);
 }
 
 async function resolveCaptureRecordId(
@@ -693,22 +791,14 @@ export const listDeviceEvents = createServerFn({ method: "GET" })
         );
       }
 
-      if (data.severity !== "all") {
-        request.input("severity", sql.NVarChar(20), data.severity);
-        whereClauses.push("de.severity = @severity");
-      }
-
-      if (data.eventType === "capture") {
-        whereClauses.push("de.event_type LIKE N'capture-%'");
-      } else if (data.eventType === "autofocus") {
-        whereClauses.push("de.event_type LIKE N'autofocus-%'");
-      } else if (data.eventType === "fallback") {
-        whereClauses.push("de.event_type LIKE N'%fallback%'");
-      } else if (data.eventType === "other") {
-        whereClauses.push(
-          "de.event_type NOT LIKE N'capture-%' AND de.event_type NOT LIKE N'autofocus-%' AND de.event_type NOT LIKE N'%fallback%'",
-        );
-      }
+      applyDeviceEventScopedFilters({
+        request,
+        whereClauses,
+        data: {
+          severity: data.severity,
+          eventType: data.eventType,
+        },
+      });
 
       const result = await request.query(`
         SELECT TOP (@fetchLimit)
@@ -751,6 +841,61 @@ export const listDeviceEvents = createServerFn({ method: "GET" })
           error instanceof Error
             ? error.message
             : "Gagal memuat device events dari registry MSSQL.",
+      };
+    }
+  });
+
+export const getDeviceEventSavedViewCounts = createServerFn({ method: "POST" })
+  .validator(deviceEventSavedViewCountsSchema)
+  .handler(async ({ data }) => {
+    if (!isCardDbConfigured()) {
+      return {
+        ok: false as const,
+        code: "CARDDB_NOT_CONFIGURED",
+        message: "Konfigurasi CARDDB belum lengkap di server aplikasi.",
+      };
+    }
+
+    const emptyCounts = {
+      "audit-slot-1": 0,
+      "audit-slot-2": 0,
+      "audit-slot-3": 0,
+    } satisfies DeviceEventSavedViewCounts;
+
+    try {
+      const schema = `[${getCardDbSchema()}]`;
+      const pool = await getCardDbPool();
+      const counts = Object.fromEntries(
+        await Promise.all(
+          data.views.map(async (view) => [
+            view.id,
+            view.state
+              ? await countDeviceEventsForFilter({
+                  pool,
+                  schema,
+                  deviceCode: data.deviceCode,
+                  filter: view.state,
+                })
+              : 0,
+          ]),
+        ),
+      ) as Partial<DeviceEventSavedViewCounts>;
+
+      return {
+        ok: true as const,
+        counts: {
+          ...emptyCounts,
+          ...counts,
+        } satisfies DeviceEventSavedViewCounts,
+      };
+    } catch (error) {
+      return {
+        ok: false as const,
+        code: "DEVICE_EVENT_SAVED_VIEW_COUNTS_FAILED",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Gagal memuat jumlah log untuk saved view audit dari registry MSSQL.",
       };
     }
   });

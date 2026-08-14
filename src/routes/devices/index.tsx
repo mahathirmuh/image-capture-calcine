@@ -90,9 +90,11 @@ import {
 } from "@/lib/device-registry";
 import {
   getDeviceEventAggregates,
+  getDeviceEventSavedViewCounts,
   listDeviceEvents,
   type DeviceEventAggregates,
   type DeviceEventCursor,
+  type DeviceEventSavedViewCounts,
   type DeviceEventView,
 } from "@/lib/capture-records";
 
@@ -145,6 +147,11 @@ const DEVICE_EVENT_SAVED_VIEW_DESCRIPTIONS: Record<DeviceEventSavedViewId, strin
   "audit-slot-1": "Audit harian rutin atau shift aktif.",
   "audit-slot-2": "Investigasi insiden atau gangguan runtime.",
   "audit-slot-3": "View operator favorit untuk audit cepat.",
+};
+const EMPTY_DEVICE_EVENT_SAVED_VIEW_COUNTS: DeviceEventSavedViewCounts = {
+  "audit-slot-1": 0,
+  "audit-slot-2": 0,
+  "audit-slot-3": 0,
 };
 
 const APPLY_HISTORY_SAVED_VIEWS: ApplyHistorySavedView[] = [
@@ -656,6 +663,8 @@ function DevicesPage() {
   const [deviceEventAggregates, setDeviceEventAggregates] = useState<DeviceEventAggregates | null>(
     null,
   );
+  const [deviceEventSavedViewServerCounts, setDeviceEventSavedViewServerCounts] =
+    useState<DeviceEventSavedViewCounts | null>(null);
   const [deviceEventsHasMore, setDeviceEventsHasMore] = useState(false);
   const [deviceEventsNextCursor, setDeviceEventsNextCursor] = useState<DeviceEventCursor | null>(
     null,
@@ -823,6 +832,58 @@ function DevicesPage() {
     [deviceEventCustomEnd, deviceEventCustomStart, deviceEventSearchQuery],
   );
 
+  const loadDeviceEventSavedViewServerCounts = useCallback(
+    async (deviceCode?: string | null) => {
+      const views = deviceEventSavedViews.map((view) => {
+        if (!view.state) {
+          return {
+            id: view.id,
+            state: null,
+          };
+        }
+
+        const rangeBounds = getDeviceEventTimeRangeBounds(
+          view.state.timeRange,
+          Date.now(),
+          parseDateTimeLocalValue(view.state.customStart),
+          parseDateTimeLocalValue(view.state.customEnd),
+        );
+
+        return {
+          id: view.id,
+          state: {
+            severity: view.state.severity,
+            eventType: view.state.eventType,
+            searchQuery: view.state.searchQuery.trim(),
+            rangeStart: rangeBounds.rangeStart,
+            rangeEnd: rangeBounds.rangeEnd,
+          },
+        };
+      });
+
+      if (views.every((view) => view.state === null)) {
+        setDeviceEventSavedViewServerCounts(EMPTY_DEVICE_EVENT_SAVED_VIEW_COUNTS);
+        return;
+      }
+
+      setDeviceEventSavedViewServerCounts(null);
+      const result = await getDeviceEventSavedViewCounts({
+        data: {
+          ...(deviceCode ? { deviceCode } : {}),
+          views,
+        },
+      });
+
+      if (!result.ok) {
+        setDeviceEventSavedViewServerCounts(null);
+        return;
+      }
+
+      setDeviceEventSavedViewServerCounts(result.counts);
+    },
+    [deviceEventSavedViews],
+  );
+
   // Guarded against a stale response clobbering a newer one -- without this,
   // React StrictMode's mount/cleanup/remount in dev fires this effect twice,
   // and whichever of the two overlapping requests resolves last "wins" even
@@ -878,6 +939,11 @@ function DevicesPage() {
     profile?.deviceCode,
     selectedDevice?.deviceCode,
   ]);
+
+  useEffect(() => {
+    const deviceCode = selectedDevice?.deviceCode ?? profile?.deviceCode ?? null;
+    void loadDeviceEventSavedViewServerCounts(deviceCode);
+  }, [loadDeviceEventSavedViewServerCounts, profile?.deviceCode, selectedDevice?.deviceCode]);
 
   useEffect(() => {
     if (deviceEvents.length === 0) {
@@ -1082,7 +1148,7 @@ function DevicesPage() {
     deviceEvents.filter(
       (event) => event.severity === "error" && matchesDeviceEventTimeRange(event, "7d", nowMs),
     ).length;
-  const deviceEventSavedViewCounts = Object.fromEntries(
+  const deviceEventSavedViewLocalCounts = Object.fromEntries(
     deviceEventSavedViews.map((view) => [
       view.id,
       view.state
@@ -1104,6 +1170,8 @@ function DevicesPage() {
         : 0,
     ]),
   ) as Record<DeviceEventSavedViewId, number>;
+  const deviceEventSavedViewCounts =
+    deviceEventSavedViewServerCounts ?? deviceEventSavedViewLocalCounts;
   const presetCounts =
     deviceEventAggregates?.preset ??
     (Object.fromEntries(
