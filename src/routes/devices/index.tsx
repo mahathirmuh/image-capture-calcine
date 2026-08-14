@@ -90,10 +90,12 @@ import {
 } from "@/lib/device-registry";
 import {
   getDeviceEventAggregates,
+  getDeviceEventPresetCounts,
   getDeviceEventSavedViewCounts,
   listDeviceEvents,
   type DeviceEventAggregates,
   type DeviceEventCursor,
+  type DeviceEventPresetCounts,
   type DeviceEventSavedViewCounts,
   type DeviceEventView,
 } from "@/lib/capture-records";
@@ -663,6 +665,8 @@ function DevicesPage() {
   const [deviceEventAggregates, setDeviceEventAggregates] = useState<DeviceEventAggregates | null>(
     null,
   );
+  const [deviceEventPresetServerCounts, setDeviceEventPresetServerCounts] =
+    useState<DeviceEventPresetCounts | null>(null);
   const [deviceEventSavedViewServerCounts, setDeviceEventSavedViewServerCounts] =
     useState<DeviceEventSavedViewCounts | null>(null);
   const [deviceEventsHasMore, setDeviceEventsHasMore] = useState(false);
@@ -884,6 +888,26 @@ function DevicesPage() {
     [deviceEventSavedViews],
   );
 
+  const loadDeviceEventPresetServerCounts = useCallback(
+    async (deviceCode?: string | null) => {
+      setDeviceEventPresetServerCounts(null);
+      const result = await getDeviceEventPresetCounts({
+        data: {
+          ...(deviceCode ? { deviceCode } : {}),
+          searchQuery: deviceEventSearchQuery.trim(),
+        },
+      });
+
+      if (!result.ok) {
+        setDeviceEventPresetServerCounts(null);
+        return;
+      }
+
+      setDeviceEventPresetServerCounts(result.counts);
+    },
+    [deviceEventSearchQuery],
+  );
+
   // Guarded against a stale response clobbering a newer one -- without this,
   // React StrictMode's mount/cleanup/remount in dev fires this effect twice,
   // and whichever of the two overlapping requests resolves last "wins" even
@@ -944,6 +968,11 @@ function DevicesPage() {
     const deviceCode = selectedDevice?.deviceCode ?? profile?.deviceCode ?? null;
     void loadDeviceEventSavedViewServerCounts(deviceCode);
   }, [loadDeviceEventSavedViewServerCounts, profile?.deviceCode, selectedDevice?.deviceCode]);
+
+  useEffect(() => {
+    const deviceCode = selectedDevice?.deviceCode ?? profile?.deviceCode ?? null;
+    void loadDeviceEventPresetServerCounts(deviceCode);
+  }, [loadDeviceEventPresetServerCounts, profile?.deviceCode, selectedDevice?.deviceCode]);
 
   useEffect(() => {
     if (deviceEvents.length === 0) {
@@ -1144,6 +1173,7 @@ function DevicesPage() {
       ).length,
     } satisfies Record<DeviceEventTimeRange, number>);
   const pinnedErrorViewCount =
+    deviceEventPresetServerCounts?.["error-latest"] ??
     deviceEventAggregates?.preset["error-latest"] ??
     deviceEvents.filter(
       (event) => event.severity === "error" && matchesDeviceEventTimeRange(event, "7d", nowMs),
@@ -1173,6 +1203,7 @@ function DevicesPage() {
   const deviceEventSavedViewCounts =
     deviceEventSavedViewServerCounts ?? deviceEventSavedViewLocalCounts;
   const presetCounts =
+    deviceEventPresetServerCounts ??
     deviceEventAggregates?.preset ??
     (Object.fromEntries(
       DEVICE_EVENT_PRESETS.map((preset) => [

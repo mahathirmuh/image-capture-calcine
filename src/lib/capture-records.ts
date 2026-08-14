@@ -68,6 +68,13 @@ const logDeviceEventSchema = z.object({
 const deviceEventSeverityFilterSchema = z.enum(["all", "info", "warning", "error"]);
 const deviceEventTypeFilterSchema = z.enum(["all", "capture", "autofocus", "fallback", "other"]);
 const deviceEventSavedViewIdSchema = z.enum(["audit-slot-1", "audit-slot-2", "audit-slot-3"]);
+const deviceEventPresetIdSchema = z.enum([
+  "error-latest",
+  "audit-failures",
+  "fallback-events",
+  "capture-failures",
+  "autofocus-failures",
+]);
 
 const listDeviceEventsSchema = z.object({
   limit: z.number().int().positive().max(50).default(10),
@@ -105,6 +112,10 @@ const deviceEventSavedViewCountsSchema = z.object({
       }),
     )
     .max(3),
+});
+const deviceEventPresetCountsSchema = z.object({
+  deviceCode: z.string().trim().min(1).optional(),
+  searchQuery: z.string().trim().max(200).default(""),
 });
 
 export type CaptureRecordView = {
@@ -174,6 +185,10 @@ export type DeviceEventAggregates = {
 };
 export type DeviceEventSavedViewCounts = Record<
   "audit-slot-1" | "audit-slot-2" | "audit-slot-3",
+  number
+>;
+export type DeviceEventPresetCounts = Record<
+  "error-latest" | "audit-failures" | "fallback-events" | "capture-failures" | "autofocus-failures",
   number
 >;
 
@@ -454,6 +469,10 @@ async function countDeviceEventsForFilter({
   `);
 
   return Number(result.recordset[0]?.total_count ?? 0);
+}
+
+function getRelativeRangeStart(days: number) {
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 }
 
 async function resolveCaptureRecordId(
@@ -896,6 +915,102 @@ export const getDeviceEventSavedViewCounts = createServerFn({ method: "POST" })
           error instanceof Error
             ? error.message
             : "Gagal memuat jumlah log untuk saved view audit dari registry MSSQL.",
+      };
+    }
+  });
+
+export const getDeviceEventPresetCounts = createServerFn({ method: "GET" })
+  .validator(deviceEventPresetCountsSchema)
+  .handler(async ({ data }) => {
+    if (!isCardDbConfigured()) {
+      return {
+        ok: false as const,
+        code: "CARDDB_NOT_CONFIGURED",
+        message: "Konfigurasi CARDDB belum lengkap di server aplikasi.",
+      };
+    }
+
+    const presetFilters = {
+      "error-latest": {
+        severity: "error",
+        eventType: "all",
+        searchQuery: data.searchQuery,
+        rangeStart: getRelativeRangeStart(7),
+        rangeEnd: undefined,
+      },
+      "audit-failures": {
+        severity: "error",
+        eventType: "all",
+        searchQuery: data.searchQuery,
+        rangeStart: getRelativeRangeStart(30),
+        rangeEnd: undefined,
+      },
+      "fallback-events": {
+        severity: "all",
+        eventType: "fallback",
+        searchQuery: data.searchQuery,
+        rangeStart: getRelativeRangeStart(30),
+        rangeEnd: undefined,
+      },
+      "capture-failures": {
+        severity: "error",
+        eventType: "capture",
+        searchQuery: data.searchQuery,
+        rangeStart: getRelativeRangeStart(30),
+        rangeEnd: undefined,
+      },
+      "autofocus-failures": {
+        severity: "error",
+        eventType: "autofocus",
+        searchQuery: data.searchQuery,
+        rangeStart: getRelativeRangeStart(30),
+        rangeEnd: undefined,
+      },
+    } satisfies Record<
+      z.infer<typeof deviceEventPresetIdSchema>,
+      z.infer<typeof deviceEventSavedViewCountFilterSchema>
+    >;
+
+    const emptyCounts = {
+      "error-latest": 0,
+      "audit-failures": 0,
+      "fallback-events": 0,
+      "capture-failures": 0,
+      "autofocus-failures": 0,
+    } satisfies DeviceEventPresetCounts;
+
+    try {
+      const schema = `[${getCardDbSchema()}]`;
+      const pool = await getCardDbPool();
+      const counts = Object.fromEntries(
+        await Promise.all(
+          Object.entries(presetFilters).map(async ([presetId, filter]) => [
+            presetId,
+            await countDeviceEventsForFilter({
+              pool,
+              schema,
+              deviceCode: data.deviceCode,
+              filter,
+            }),
+          ]),
+        ),
+      ) as Partial<DeviceEventPresetCounts>;
+
+      return {
+        ok: true as const,
+        counts: {
+          ...emptyCounts,
+          ...counts,
+        } satisfies DeviceEventPresetCounts,
+      };
+    } catch (error) {
+      return {
+        ok: false as const,
+        code: "DEVICE_EVENT_PRESET_COUNTS_FAILED",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Gagal memuat jumlah log untuk preset audit dari registry MSSQL.",
       };
     }
   });
