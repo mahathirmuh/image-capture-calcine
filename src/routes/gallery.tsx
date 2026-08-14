@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  AlertTriangle,
   Calendar,
   CheckSquare,
   ChevronLeft,
@@ -15,6 +16,7 @@ import {
   MoreVertical,
   Pencil,
   Package,
+  RefreshCw,
   Search,
   User,
   Wifi,
@@ -205,6 +207,8 @@ function GalleryPage() {
   const [gallery, setGallery] = useState<GalleryItem[]>([]);
   const [hydrated, setHydrated] = useState(false);
   const [deviceStatus, setDeviceStatus] = useState<DeviceStatus | null>(null);
+  const [deviceStatusLoading, setDeviceStatusLoading] = useState(false);
+  const [deviceStatusCheckedAt, setDeviceStatusCheckedAt] = useState<Date | null>(null);
   const [captureRecords, setCaptureRecords] = useState<CaptureRecordView[]>([]);
   const [captureRecordsError, setCaptureRecordsError] = useState<string | null>(null);
 
@@ -235,6 +239,14 @@ function GalleryPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(24);
 
+  const refreshDeviceStatus = useCallback(async () => {
+    setDeviceStatusLoading(true);
+    const result = await getDeviceStatus();
+    setDeviceStatus(result);
+    setDeviceStatusCheckedAt(new Date());
+    setDeviceStatusLoading(false);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     setHydrated(true);
@@ -263,7 +275,9 @@ function GalleryPage() {
       setCaptureRecords(result.records);
     });
     getDeviceStatus().then((result) => {
-      if (!cancelled) setDeviceStatus(result);
+      if (cancelled) return;
+      setDeviceStatus(result);
+      setDeviceStatusCheckedAt(new Date());
     });
     return () => {
       cancelled = true;
@@ -546,6 +560,26 @@ function GalleryPage() {
     (deviceStatus?.online
       ? (deviceStatus.deviceId ?? "Edge device aktif dan sedang dipantau.")
       : "Status device belum tersedia.");
+  const deviceStatusTone = deviceStatus?.online
+    ? deviceStatus.camera?.connected
+      ? "border-emerald-500/30 bg-emerald-500/5 text-emerald-700"
+      : "border-amber-500/30 bg-amber-500/5 text-amber-700"
+    : "border-amber-500/30 bg-amber-500/5 text-amber-700";
+  const deviceStatusBadgeLabel = deviceStatusLoading
+    ? "Menyegarkan status"
+    : deviceStatus?.online
+      ? deviceStatus.camera?.connected
+        ? "Siap capture"
+        : "Edge aktif"
+      : "Tidak terjangkau";
+  const deviceStatusDetail = deviceStatus?.online
+    ? deviceStatus.camera?.connected
+      ? `Kamera ${[deviceStatus.camera.manufacturer, deviceStatus.camera.model].filter(Boolean).join(" ") || "aktif"} terhubung ke edge device.`
+      : "Edge device terjangkau, tetapi kamera USB belum siap dipakai untuk capture."
+    : cameraStateHint;
+  const deviceCheckedAtLabel = deviceStatusCheckedAt
+    ? formatDateTime(deviceStatusCheckedAt.getTime())
+    : "Belum pernah dicek";
   const activeFilters = [
     filterLocation
       ? {
@@ -670,6 +704,47 @@ function GalleryPage() {
             value={filteredCaptureRecords.length}
             hint={`${captureRecords.length} record capture di MSSQL`}
           />
+        </section>
+
+        <section
+          className={`mb-4 rounded-lg border px-4 py-3 ${deviceStatusTone}`}
+          aria-live="polite"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-semibold uppercase tracking-wide">Status Edge</span>
+                <span className="rounded-full bg-background/80 px-2 py-0.5 text-[11px] font-medium text-foreground">
+                  {deviceStatusBadgeLabel}
+                </span>
+                {deviceStatus?.online ? null : <AlertTriangle className="h-3.5 w-3.5" />}
+              </div>
+              <p className="mt-1 text-sm font-medium text-foreground">{deviceStatusDetail}</p>
+              <p className="mt-1 text-xs text-foreground/70">
+                Cek terakhir: {deviceCheckedAtLabel}
+                {deviceStatus?.deviceId ? ` • Device ID: ${deviceStatus.deviceId}` : ""}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  void refreshDeviceStatus();
+                }}
+                disabled={deviceStatusLoading}
+                className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent disabled:opacity-60"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${deviceStatusLoading ? "animate-spin" : ""}`} />
+                {deviceStatusLoading ? "Menyegarkan..." : "Refresh Device"}
+              </button>
+              <Link
+                to="/devices"
+                className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent"
+              >
+                Buka Devices
+              </Link>
+            </div>
+          </div>
         </section>
 
         <section className="mb-4 rounded-lg border bg-card p-4">
