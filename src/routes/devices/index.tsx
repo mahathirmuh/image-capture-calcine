@@ -259,6 +259,29 @@ function StatusChip({
   );
 }
 
+function CountBadge({
+  value,
+  loading,
+  className,
+}: {
+  value: number;
+  loading: boolean;
+  className: string;
+}) {
+  return (
+    // Keep the last known value visible while the server refreshes the badge count.
+    <span
+      aria-busy={loading}
+      className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] ${className} ${
+        loading ? "opacity-80" : ""
+      }`}
+    >
+      {loading ? <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current/60" /> : null}
+      <span>{value}</span>
+    </span>
+  );
+}
+
 function formatDeviceEventLabel(eventType: string): string {
   const labels: Record<string, string> = {
     "metadata-finalized": "Metadata difinalisasi",
@@ -665,8 +688,12 @@ function DevicesPage() {
   const [deviceEventAggregates, setDeviceEventAggregates] = useState<DeviceEventAggregates | null>(
     null,
   );
+  const [deviceEventPresetServerCountsLoading, setDeviceEventPresetServerCountsLoading] =
+    useState(false);
   const [deviceEventPresetServerCounts, setDeviceEventPresetServerCounts] =
     useState<DeviceEventPresetCounts | null>(null);
+  const [deviceEventSavedViewServerCountsLoading, setDeviceEventSavedViewServerCountsLoading] =
+    useState(false);
   const [deviceEventSavedViewServerCounts, setDeviceEventSavedViewServerCounts] =
     useState<DeviceEventSavedViewCounts | null>(null);
   const [deviceEventsHasMore, setDeviceEventsHasMore] = useState(false);
@@ -867,10 +894,11 @@ function DevicesPage() {
 
       if (views.every((view) => view.state === null)) {
         setDeviceEventSavedViewServerCounts(EMPTY_DEVICE_EVENT_SAVED_VIEW_COUNTS);
+        setDeviceEventSavedViewServerCountsLoading(false);
         return;
       }
 
-      setDeviceEventSavedViewServerCounts(null);
+      setDeviceEventSavedViewServerCountsLoading(true);
       const result = await getDeviceEventSavedViewCounts({
         data: {
           ...(deviceCode ? { deviceCode } : {}),
@@ -879,18 +907,19 @@ function DevicesPage() {
       });
 
       if (!result.ok) {
-        setDeviceEventSavedViewServerCounts(null);
+        setDeviceEventSavedViewServerCountsLoading(false);
         return;
       }
 
       setDeviceEventSavedViewServerCounts(result.counts);
+      setDeviceEventSavedViewServerCountsLoading(false);
     },
     [deviceEventSavedViews],
   );
 
   const loadDeviceEventPresetServerCounts = useCallback(
     async (deviceCode?: string | null) => {
-      setDeviceEventPresetServerCounts(null);
+      setDeviceEventPresetServerCountsLoading(true);
       const result = await getDeviceEventPresetCounts({
         data: {
           ...(deviceCode ? { deviceCode } : {}),
@@ -899,11 +928,12 @@ function DevicesPage() {
       });
 
       if (!result.ok) {
-        setDeviceEventPresetServerCounts(null);
+        setDeviceEventPresetServerCountsLoading(false);
         return;
       }
 
       setDeviceEventPresetServerCounts(result.counts);
+      setDeviceEventPresetServerCountsLoading(false);
     },
     [deviceEventSearchQuery],
   );
@@ -1988,19 +2018,21 @@ function DevicesPage() {
                       >
                         {isErrorPreset ? <AlertTriangle className="h-3.5 w-3.5" /> : null}
                         <span>{preset.label}</span>
-                        <span
-                          className={`rounded-full px-1.5 py-0.5 text-[11px] ${
+                        <CountBadge
+                          value={
+                            preset.id === "error-latest"
+                              ? pinnedErrorViewCount
+                              : presetCounts[preset.id]
+                          }
+                          loading={deviceEventPresetServerCountsLoading}
+                          className={
                             isActive
                               ? isErrorPreset
                                 ? "bg-destructive-foreground/15 text-destructive-foreground"
                                 : "bg-primary-foreground/15 text-primary-foreground"
                               : "bg-muted text-muted-foreground"
-                          }`}
-                        >
-                          {preset.id === "error-latest"
-                            ? pinnedErrorViewCount
-                            : presetCounts[preset.id]}
-                        </span>
+                          }
+                        />
                       </button>
                     );
                   })}
@@ -2039,9 +2071,11 @@ function DevicesPage() {
                               {DEVICE_EVENT_SAVED_VIEW_DESCRIPTIONS[view.id]}
                             </div>
                           </div>
-                          <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
-                            {deviceEventSavedViewCounts[view.id]}
-                          </span>
+                          <CountBadge
+                            value={deviceEventSavedViewCounts[view.id]}
+                            loading={deviceEventSavedViewServerCountsLoading}
+                            className="bg-muted text-muted-foreground"
+                          />
                         </div>
                         <div className="mt-2 min-h-[32px] text-[11px] text-muted-foreground">
                           {summarizeDeviceEventSavedView(view.state)}
