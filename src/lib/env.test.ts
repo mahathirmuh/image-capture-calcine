@@ -57,7 +57,7 @@ describe("parseServerEnv", () => {
     const env = parseServerEnv({
       CAMERA_API_URL: "https://camera.internal:8443",
       CAMERA_API_TOKEN: "secret-token",
-      NETWORK_SAVE_ROOT: "\\\\10.1.1.44\\Data Analythics\\ML\\MTI",
+      NETWORK_SAVE_ROOT: "\\\\10.1.1.44\\Data Analytics\\ML\\MTI",
       CARDDB_USER: "capture_app",
       CARDDB_PASSWORD: "db-secret",
       CARDDB_SERVER: "10.60.10.47",
@@ -70,7 +70,7 @@ describe("parseServerEnv", () => {
     expect(env).toEqual({
       CAMERA_API_URL: "https://camera.internal:8443",
       CAMERA_API_TOKEN: "secret-token",
-      NETWORK_SAVE_ROOT: "\\\\10.1.1.44\\Data Analythics\\ML\\MTI",
+      NETWORK_SAVE_ROOT: "\\\\10.1.1.44\\Data Analytics\\ML\\MTI",
       CARDDB_USER: "capture_app",
       CARDDB_PASSWORD: "db-secret",
       CARDDB_SERVER: "10.60.10.47",

@@ -1210,7 +1210,7 @@ function CapturePage() {
               capture akan otomatis disimpan ke sana sehingga folder di sini tidak wajib dipilih.
               Picker ini adalah fallback saat path tersebut belum tersedia: pilih folder, misalnya
               network share seperti{" "}
-              <span className="font-mono">{"\\\\10.1.1.44\\Data Analythics\\ML\\MTI"}</span>, lalu
+              <span className="font-mono">{"\\\\10.1.1.44\\Data Analytics\\ML\\MTI"}</span>, lalu
               gambar akan dikirim ke sana dengan subfolder Tahun/Bulan/Hari yang sama, misalnya
               `2026/07/18`. Browser hanya menampilkan nama folder, bukan path jaringan penuh. Jika
               semua jalur simpan gagal diakses, hasil capture akan diunduh lokal agar tidak hilang.
