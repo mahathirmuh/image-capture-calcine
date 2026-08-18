@@ -96,8 +96,8 @@ describe("device-config", () => {
   it("stores preset guidance metadata for UI preview badges", () => {
     const template = getTemplateById("calcine-night-shift");
 
-    expect(template.recommendedFor).toContain("Night shift");
-    expect(template.badges).toEqual(["Calcine", "Night Shift", "Low Light"]);
+    expect(template.recommendedFor).toContain("shift malam");
+    expect(template.badges).toEqual(["Calcine", "Shift Malam", "Minim Cahaya"]);
     expect(template.filterTags).toEqual(["Calcine", "Night"]);
   });
 
