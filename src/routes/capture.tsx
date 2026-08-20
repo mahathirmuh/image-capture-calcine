@@ -251,6 +251,7 @@ function CapturePage() {
   const [pattern, setPattern] = useState<string>(DEFAULT_PREFS.pattern);
   const [ext, setExt] = useState<"jpg">(DEFAULT_PREFS.ext);
   const [counter, setCounter] = useState<number>(DEFAULT_PREFS.counter);
+  const [livePreview, setLivePreview] = useState<boolean>(DEFAULT_PREFS.livePreview);
 
   const [hydrated, setHydrated] = useState(false);
   const [supportsFS, setSupportsFS] = useState(false);
@@ -264,6 +265,7 @@ function CapturePage() {
     cameraUsable,
     deviceStatus,
     deviceStatusLoaded,
+    fetchPreviewOnce,
     leaseToken,
     previewFetching,
     sessionId,
@@ -273,7 +275,7 @@ function CapturePage() {
     stopCamera,
     cancelStart,
     waitingForCamera,
-  } = useCaptureCameraSession({ setError, setStatus });
+  } = useCaptureCameraSession({ setError, setStatus, previewEnabled: livePreview });
 
   function getActiveDeviceContext() {
     const profile = loadDeviceProfile();
@@ -323,6 +325,7 @@ function CapturePage() {
     setPattern(prefs.pattern);
     setExt(prefs.ext);
     setCounter(prefs.counter);
+    setLivePreview(prefs.livePreview);
     setPrefsLoaded(true);
 
     let cancelled = false;
@@ -364,8 +367,8 @@ function CapturePage() {
   // Persist preferences whenever they change (after the initial load).
   useEffect(() => {
     if (!prefsLoaded) return;
-    savePrefs({ location, pattern, ext, counter });
-  }, [prefsLoaded, location, pattern, ext, counter]);
+    savePrefs({ location, pattern, ext, counter, livePreview });
+  }, [prefsLoaded, location, pattern, ext, counter, livePreview]);
 
   async function captureToBin(bin: Bin) {
     if (!sessionId || !leaseToken) return;
@@ -1069,9 +1072,11 @@ function CapturePage() {
                       ? "Menghubungkan ke kamera…"
                       : cameraAsleep
                         ? "Kamera tidak merespons…"
-                        : sessionId
-                          ? "Menunggu preview…"
-                          : "Kamera belum aktif"}
+                        : !sessionId
+                          ? "Kamera belum aktif"
+                          : livePreview
+                            ? "Menunggu preview…"
+                            : "Live preview mati — capture tetap bisa dijalankan"}
                   </div>
                 )}
               </div>
@@ -1083,7 +1088,9 @@ function CapturePage() {
                     ? "Capture dibekukan"
                     : cameraAsleep
                       ? "Tidak ada sinyal"
-                      : "Preview langsung"}
+                      : livePreview
+                        ? "Preview langsung"
+                        : "Preview mati"}
                 </span>
                 {showFrozen && <span className="text-emerald-600">Siap disimpan</span>}
               </div>
@@ -1153,6 +1160,32 @@ function CapturePage() {
             className="rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
           >
             Hentikan session
+          </button>
+        )}
+        <button
+          onClick={() => setLivePreview((on) => !on)}
+          disabled={!cameraUsable || capturingBin !== null}
+          title={
+            livePreview
+              ? "Matikan preview agar kamera tidak bekerja terus-menerus"
+              : "Nyalakan preview untuk melihat framing sebelum capture"
+          }
+          className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
+        >
+          <span
+            className={`h-1.5 w-1.5 rounded-full ${livePreview ? "bg-emerald-500" : "bg-muted-foreground/40"}`}
+          />
+          {livePreview ? "Matikan Live Preview" : "Live Preview"}
+        </button>
+        {!livePreview && (
+          <button
+            onClick={() => void fetchPreviewOnce()}
+            disabled={!cameraUsable || capturingBin !== null || previewFetching}
+            title="Ambil satu frame preview tanpa menyalakan polling terus-menerus"
+            className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
+          >
+            <Camera className="h-3.5 w-3.5" />
+            {previewFetching ? "Mengambil…" : "Ambil 1 frame"}
           </button>
         )}
         <button

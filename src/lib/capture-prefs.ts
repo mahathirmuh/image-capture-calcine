@@ -15,6 +15,10 @@ export type Prefs = {
   // Captures come straight from the camera as JPEG, so the extension is fixed.
   ext: "jpg";
   counter: number;
+  // Each preview frame is a real USB round trip (~1s, see
+  // CAMERA_PREVIEW_POLLING.md), so the loop stays off until the operator asks
+  // for it -- an idle tab should not keep the camera working for nobody.
+  livePreview: boolean;
 };
 
 export const DEFAULT_PREFS: Prefs = {
@@ -24,6 +28,7 @@ export const DEFAULT_PREFS: Prefs = {
   pattern: "{DD} {MMMM} {YYYY} {HH}.{mm} {LOCATION} {SOURCE}",
   ext: "jpg",
   counter: 1,
+  livePreview: false,
 };
 
 export const FILENAME_PATTERN_TOKENS = [

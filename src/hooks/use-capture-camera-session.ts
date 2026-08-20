@@ -30,6 +30,9 @@ export type CameraSessionIssue = { code: string; message: string; updatedAt: num
 type UseCaptureCameraSessionArgs = {
   setError: Dispatch<SetStateAction<string | null>>;
   setStatus: Dispatch<SetStateAction<string | null>>;
+  // Gates the preview poll loop only. Session, heartbeat, and device-status
+  // polling keep running, so capture stays ready with preview switched off.
+  previewEnabled: boolean;
 };
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -51,7 +54,11 @@ function releaseSessionKeepalive(session: CameraSessionRef) {
   });
 }
 
-export function useCaptureCameraSession({ setError, setStatus }: UseCaptureCameraSessionArgs) {
+export function useCaptureCameraSession({
+  setError,
+  setStatus,
+  previewEnabled,
+}: UseCaptureCameraSessionArgs) {
   const [cameraFrame, setCameraFrame] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [leaseToken, setLeaseToken] = useState<string | null>(null);
@@ -83,6 +90,17 @@ export function useCaptureCameraSession({ setError, setStatus }: UseCaptureCamer
 
   useEffect(() => {
     if (!sessionId || !leaseToken) return;
+
+    // Drop the last frame when preview is switched off -- leaving it on screen
+    // would look live while the camera has actually stopped being polled.
+    if (!previewEnabled) {
+      setCameraFrame((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
+      setPreviewFetching(false);
+      return;
+    }
 
     const session = { sessionId, leaseToken };
     const liveOpsReady = isCameraReadyForLiveOps(deviceStatus);
@@ -156,7 +174,7 @@ export function useCaptureCameraSession({ setError, setStatus }: UseCaptureCamer
       cancelled = true;
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, [deviceStatus, leaseToken, sessionId, setStatus]);
+  }, [deviceStatus, leaseToken, previewEnabled, sessionId, setStatus]);
 
   useEffect(() => {
     let cancelled = false;
@@ -361,6 +379,35 @@ export function useCaptureCameraSession({ setError, setStatus }: UseCaptureCamer
     }
   }, [setStatus]);
 
+  // One-shot preview for when the live loop is switched off: the operator
+  // still needs to check framing before firing a capture, but a single frame
+  // costs one USB round trip instead of one every ~1.2s indefinitely.
+  const fetchPreviewOnce = useCallback(async () => {
+    const session = sessionRef.current;
+    if (!session || cameraBusyRef.current) return;
+
+    setPreviewFetching(true);
+    try {
+      const res = await getPreviewFrame({ data: session });
+      const blob = await res.blob();
+      setCameraFrame((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return URL.createObjectURL(blob);
+      });
+    } catch (error) {
+      if (isIgnorableSessionFetchError(error)) return;
+      // Unlike the loop, this was an explicit click -- say something rather
+      // than swallowing it, otherwise the button looks dead.
+      setError(
+        getRuntimeErrorCode(error) === "INVALID_SESSION"
+          ? "Session kamera tidak lagi valid. Mulai ulang kamera."
+          : getErrorMessage(error, "Gagal mengambil frame preview"),
+      );
+    } finally {
+      setPreviewFetching(false);
+    }
+  }, [setError]);
+
   const cameraOnline = !!(
     deviceStatus?.online &&
     deviceStatus.camera?.connected &&
@@ -377,6 +424,7 @@ export function useCaptureCameraSession({ setError, setStatus }: UseCaptureCamer
     cameraUsable,
     deviceStatus,
     deviceStatusLoaded,
+    fetchPreviewOnce,
     leaseToken,
     previewFetching,
     sessionId,
