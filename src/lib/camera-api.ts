@@ -189,12 +189,14 @@ export const triggerAutofocus = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<ApiSuccess<{ job: CaptureJob }> | ApiFailure> => {
     let res: Response;
     try {
+      // No content-type header on purpose: this POST carries no body, and the
+      // edge handler never reads one -- it works off the session token and the
+      // idempotency key headers alone. Declaring application/json without a
+      // body makes Fastify reject the request outright with "Body cannot be
+      // empty when content-type is set to 'application/json'".
       res = await fetch(`${baseUrl()}/v1/camera/focus/autofocus`, {
         method: "POST",
-        headers: edgeHeaders({
-          "content-type": "application/json",
-          "X-Session-Token": data.leaseToken,
-        }),
+        headers: edgeHeaders({ "X-Session-Token": data.leaseToken }),
       });
     } catch {
       return { ok: false, code: "UNREACHABLE", message: "Tidak bisa menjangkau service kamera" };
@@ -392,13 +394,40 @@ export const getDeviceStatus = createServerFn({ method: "GET" }).handler(
       const res = await fetch(`${baseUrl()}/v1/device`, { headers: edgeHeaders() });
       if (!res.ok) {
         const edgeTarget = getEdgeTargetLabel();
+        // The edge puts the real cause in the body -- for CAMERA_COMMAND_FAILED
+        // that is gphoto2's own stderr. Reporting only the status number sent us
+        // chasing a healthy edge service when the camera was the problem.
+        const failure = (await res
+          .clone()
+          .json()
+          .catch(() => null)) as { code?: string; message?: string } | null;
+        const edgeCode = failure?.code;
+        // gphoto2 stderr arrives multi-line, e.g. "*** Error ***" then
+        // "Could not claim the USB device" on the next line.
+        // Flatten it: this lands in a single-line status banner, and raw newlines
+        // there render as a run-on smear.
+        const edgeMessage = failure?.message?.replace(/\s+/g, " ").trim();
+        const cameraFailed = edgeCode === "CAMERA_COMMAND_FAILED";
+
         logDeviceStatusIssue({
-          key: `http:${res.status}`,
-          level: res.status >= 500 ? "error" : "warn",
-          logMessage: `[camera-api] device status failed: ${edgeTarget} merespons ${res.status}`,
+          key: `http:${res.status}:${edgeCode ?? "-"}`,
+          // A failed camera command is usually transient (asleep, USB re-enumerating)
+          // and recovers on the next poll, so it stays a warning even though the
+          // edge answers 502 for it.
+          level: res.status >= 500 && !cameraFailed ? "error" : "warn",
+          logMessage: `[camera-api] device status failed: ${edgeTarget} merespons ${res.status}${
+            edgeCode ? ` ${edgeCode}` : ""
+          }${edgeMessage ? ` — ${edgeMessage}` : ""}`,
         });
+
         return createOfflineStatus(
-          `Service edge kamera di ${edgeTarget} merespons ${res.status}. Periksa service edge API pada Mini PC.`,
+          cameraFailed
+            ? `Perintah ke kamera gagal di ${edgeTarget}${
+                edgeMessage ? `: ${edgeMessage}` : "."
+              } Service edge sendiri normal — periksa kabel USB, power, dan kondisi kamera.`
+            : `Service edge kamera di ${edgeTarget} merespons ${res.status}${
+                edgeMessage ? ` (${edgeMessage})` : ""
+              }. Periksa service edge API pada Mini PC.`,
         );
       }
       const data = (await res.json()) as {
