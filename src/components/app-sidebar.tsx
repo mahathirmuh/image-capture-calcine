@@ -1,4 +1,4 @@
-import { Camera, LogOut } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { Link, useRouteContext, useRouter, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -208,9 +208,13 @@ export function AppSidebar() {
     <Sidebar collapsible="icon">
       <SidebarHeader className="gap-0 border-b border-sidebar-border px-3 py-3.5">
         <div className="flex items-center gap-2.5">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-            <Camera className="h-4 w-4" />
-          </span>
+          <img
+            src="/app-logo.png"
+            alt="Logo Capture Calcine"
+            width={256}
+            height={256}
+            className="h-8 w-8 shrink-0"
+          />
           <div className="flex flex-col overflow-hidden transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] group-data-[collapsible=icon]:w-0 group-data-[collapsible=icon]:opacity-0">
             <span className="truncate text-sm font-semibold leading-tight text-sidebar-foreground">
               Capture App

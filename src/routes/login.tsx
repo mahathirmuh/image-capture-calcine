@@ -380,9 +380,15 @@ function BrandPanel() {
     <div className="flex flex-col justify-between gap-8">
       <div>
         <div className="flex items-center gap-3.5">
-          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-lg shadow-slate-900/20">
-            <Camera className="h-6 w-6" />
-          </span>
+          {/* Logo sudah punya bentuk lingkarannya sendiri, jadi tidak dibungkus
+              kotak navy lagi -- dua bentuk bertumpuk hanya saling meredam. */}
+          <img
+            src="/app-logo.png"
+            alt="Logo Capture Calcine"
+            width={256}
+            height={256}
+            className="h-16 w-16 shrink-0"
+          />
           <div>
             <p className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
               Capture <span className="text-blue-700">Calcine</span>
