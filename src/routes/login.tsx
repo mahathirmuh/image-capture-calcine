@@ -248,7 +248,7 @@ function LoginPage() {
                 <button
                   type="button"
                   onClick={() => setHelpOpen(true)}
-                  className="text-sm font-medium text-blue-700 underline-offset-4 transition-colors hover:text-blue-900 hover:underline"
+                  className="text-sm font-medium text-brand underline-offset-4 transition-colors hover:text-brand-strong hover:underline"
                 >
                   Lupa password?
                 </button>
@@ -327,7 +327,7 @@ function BackdropLayers() {
           putih kosong di koneksi plant yang lambat. */}
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 bg-gradient-to-br from-slate-200 via-slate-100 to-blue-100"
+        className="pointer-events-none absolute inset-0 bg-gradient-to-br from-slate-200 via-slate-100 to-brand-subtle"
       />
 
       {BACKDROP_PHOTOS.map((photo, index) => (
@@ -391,7 +391,7 @@ function BrandPanel() {
           />
           <div>
             <p className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
-              Capture <span className="text-blue-700">Calcine</span>
+              Capture <span className="text-brand">Calcine</span>
             </p>
             <p className="mt-1 text-[13px] leading-snug text-slate-500">
               Dokumentasi Sampling Calcine
@@ -401,7 +401,7 @@ function BrandPanel() {
           </div>
         </div>
 
-        <div className="mt-5 h-1 w-16 rounded-full bg-blue-700" />
+        <div className="mt-5 h-1 w-16 rounded-full bg-brand-accent" />
 
         <p className="mt-5 max-w-xl text-[15px] leading-relaxed text-slate-600">
           Platform terpadu untuk mengambil, menyimpan, dan menelusuri foto sampel calcine dari
@@ -442,7 +442,7 @@ function ModuleCard({ icon: Icon, title, subtitle, description }: ModuleHighligh
         <Icon className="h-[18px] w-[18px]" />
       </span>
       <p className="mt-3 text-[15px] font-semibold leading-tight text-slate-900">{title}</p>
-      <p className="mt-0.5 text-[13px] font-medium leading-tight text-blue-700">{subtitle}</p>
+      <p className="mt-0.5 text-[13px] font-medium leading-tight text-brand">{subtitle}</p>
       <p className="mt-2 text-[12.5px] leading-relaxed text-slate-500">{description}</p>
     </div>
   );
@@ -492,33 +492,33 @@ function SsoSection() {
 
 function HelpSection({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   return (
-    <div className="mt-5 overflow-hidden rounded-xl border border-blue-100 bg-blue-50/70">
+    <div className="mt-5 overflow-hidden rounded-xl border border-brand-border bg-brand-subtle/70">
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={open}
-        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-blue-100/60"
+        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-brand-border/50"
       >
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-100 text-sm font-semibold text-blue-700">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-border text-sm font-semibold text-brand-strong">
           ?
         </span>
         <span className="min-w-0 flex-1">
           <span className="block text-[13px] font-medium leading-tight text-slate-700">
             Butuh bantuan masuk?
           </span>
-          <span className="block text-[13px] font-semibold leading-tight text-blue-700">
+          <span className="block text-[13px] font-semibold leading-tight text-brand-strong">
             Panduan Login
           </span>
         </span>
         {open ? (
-          <ChevronDown className="h-4 w-4 shrink-0 text-blue-700" />
+          <ChevronDown className="h-4 w-4 shrink-0 text-brand-strong" />
         ) : (
-          <ChevronRight className="h-4 w-4 shrink-0 text-blue-700" />
+          <ChevronRight className="h-4 w-4 shrink-0 text-brand-strong" />
         )}
       </button>
 
       {open && (
-        <div className="border-t border-blue-100 px-4 py-3 text-[12.5px] leading-relaxed text-slate-600">
+        <div className="border-t border-brand-border px-4 py-3 text-[12.5px] leading-relaxed text-slate-600">
           <ul className="space-y-1.5">
             <li>
               Pakai username operator yang didaftarkan admin, misalnya{" "}

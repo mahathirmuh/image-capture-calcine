@@ -59,6 +59,11 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+  --color-brand: var(--brand);
+  --color-brand-strong: var(--brand-strong);
+  --color-brand-accent: var(--brand-accent);
+  --color-brand-subtle: var(--brand-subtle);
+  --color-brand-border: var(--brand-border);
 }
 
 :root {
@@ -87,6 +92,21 @@
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
+  /*
+   * Teal merek, diambil dari lengkung teal pada logo aplikasi (#02B3B8).
+   *
+   * Ada dua nilai karena satu nilai tidak bisa melayani keduanya: teal seterang
+   * logo hanya mencapai kontras 2.58:1 di atas putih -- jauh di bawah 4.5:1
+   * yang dibutuhkan teks kecil. Jadi `brand` adalah versi yang digelapkan
+   * (4.98:1, lulus WCAG AA) untuk teks dan ikon, sementara `brand-accent`
+   * memakai teal logo apa adanya dan hanya boleh dipakai untuk elemen dekoratif
+   * tanpa teks di atasnya.
+   */
+  --brand: oklch(0.534 0.088 198.932);
+  --brand-strong: oklch(0.471 0.077 199.649);
+  --brand-accent: oklch(0.696 0.118 198.342);
+  --brand-subtle: oklch(0.957 0.019 196.841);
+  --brand-border: oklch(0.905 0.043 198.199);
   --sidebar: oklch(0.984 0.003 247.858);
   --sidebar-foreground: oklch(0.129 0.042 264.695);
   --sidebar-primary: oklch(0.208 0.042 265.755);
@@ -122,6 +142,12 @@
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
+  /* Peran dibalik: di atas permukaan gelap, teal terang yang terbaca. */
+  --brand: oklch(0.762 0.111 198.1);
+  --brand-strong: oklch(0.83 0.099 197.8);
+  --brand-accent: oklch(0.696 0.118 198.342);
+  --brand-subtle: oklch(0.31 0.045 205);
+  --brand-border: oklch(0.42 0.06 202);
   --sidebar: oklch(0.208 0.042 265.755);
   --sidebar-foreground: oklch(0.984 0.003 247.858);
   --sidebar-primary: oklch(0.488 0.243 264.376);
