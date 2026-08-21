@@ -60,6 +60,7 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
   --color-brand-strong: var(--brand-strong);
   --color-brand-accent: var(--brand-accent);
   --color-brand-subtle: var(--brand-subtle);
@@ -103,6 +104,7 @@
    * tanpa teks di atasnya.
    */
   --brand: oklch(0.534 0.088 198.932);
+  --brand-foreground: oklch(0.984 0.003 247.858);
   --brand-strong: oklch(0.471 0.077 199.649);
   --brand-accent: oklch(0.696 0.118 198.342);
   --brand-subtle: oklch(0.957 0.019 196.841);
@@ -144,6 +146,7 @@
   --chart-5: oklch(0.645 0.246 16.439);
   /* Peran dibalik: di atas permukaan gelap, teal terang yang terbaca. */
   --brand: oklch(0.762 0.111 198.1);
+  --brand-foreground: oklch(0.208 0.042 265.755);
   --brand-strong: oklch(0.83 0.099 197.8);
   --brand-accent: oklch(0.696 0.118 198.342);
   --brand-subtle: oklch(0.31 0.045 205);

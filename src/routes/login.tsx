@@ -181,9 +181,7 @@ function LoginPage() {
             </div>
 
             <div className="mt-6 text-center">
-              <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-                Selamat Datang
-              </h1>
+              <h1 className="text-2xl font-semibold tracking-tight text-brand">Selamat Datang</h1>
               <p className="mt-1.5 text-sm text-slate-500">
                 Masuk untuk mulai mendokumentasikan sampel calcine.
               </p>
@@ -268,7 +266,7 @@ function LoginPage() {
               <Button
                 type="submit"
                 disabled={submitting}
-                className="h-11 w-full bg-primary text-base font-semibold hover:bg-primary/90"
+                className="h-11 w-full bg-brand text-base font-semibold text-brand-foreground hover:bg-brand-strong"
               >
                 {submitting ? (
                   <>
@@ -416,15 +414,15 @@ function BrandPanel() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-slate-700/40 shadow-lg lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-brand-foreground/25 shadow-lg lg:grid-cols-4">
         {PILLARS.map((pillar) => (
-          <div key={pillar.title} className="flex items-center gap-2.5 bg-primary px-4 py-3.5">
-            <pillar.icon className="h-5 w-5 shrink-0 text-primary-foreground/70" />
+          <div key={pillar.title} className="flex items-center gap-2.5 bg-brand-strong px-4 py-3.5">
+            <pillar.icon className="h-5 w-5 shrink-0 text-brand-foreground/80" />
             <div className="min-w-0">
-              <p className="truncate text-[13px] font-semibold leading-tight text-primary-foreground">
+              <p className="truncate text-[13px] font-semibold leading-tight text-brand-foreground">
                 {pillar.title}
               </p>
-              <p className="truncate text-[11px] leading-tight text-primary-foreground/60">
+              <p className="truncate text-[11px] leading-tight text-brand-foreground/80">
                 {pillar.subtitle}
               </p>
             </div>
@@ -438,10 +436,10 @@ function BrandPanel() {
 function ModuleCard({ icon: Icon, title, subtitle, description }: ModuleHighlight) {
   return (
     <div className="rounded-xl border border-white/80 bg-white/85 p-4 shadow-sm backdrop-blur-sm transition-shadow hover:shadow-md">
-      <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+      <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand text-brand-foreground">
         <Icon className="h-[18px] w-[18px]" />
       </span>
-      <p className="mt-3 text-[15px] font-semibold leading-tight text-slate-900">{title}</p>
+      <p className="mt-3 text-[15px] font-semibold leading-tight text-brand">{title}</p>
       <p className="mt-0.5 text-[13px] font-medium leading-tight text-brand">{subtitle}</p>
       <p className="mt-2 text-[12.5px] leading-relaxed text-slate-500">{description}</p>
     </div>
