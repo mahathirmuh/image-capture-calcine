@@ -161,7 +161,7 @@ function LoginPage() {
     <div className="relative min-h-svh w-full overflow-hidden bg-slate-100">
       <BackdropLayers />
 
-      <div className="relative z-10 mx-auto flex min-h-svh w-full max-w-[1680px] flex-col gap-10 px-5 py-8 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(360px,430px)] lg:items-stretch lg:gap-14 lg:px-12 lg:py-10">
+      <div className="relative z-10 flex min-h-svh w-full flex-col gap-10 px-5 py-8 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(360px,430px)] lg:items-stretch lg:gap-14 lg:px-12 lg:py-10">
         <BrandPanel />
 
         <div className="flex items-center justify-center lg:py-2">
@@ -328,18 +328,14 @@ function BackdropLayers() {
       <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-slate-50" />
 
       {/*
-        Pita foto. Lebarnya dihitung dari konstanta layout di atas supaya tepi
-        potongnya jatuh persis di tepi kiri kolom kartu, bukan di angka persen
-        yang meleset saat jendela diubah:
-          calc(100% - 478px)  -> 430px lebar maksimum kolom kartu + 3rem padding kanan
-          calc(50% + 362px)   -> setelah container mentok di 1680px dan mulai
-                                 terpusat, tepi kartu berhenti mengikuti tepi layar
-        Yang lebih kecil dari keduanya yang berlaku, persis seperti kolomnya
-        sendiri berperilaku.
+        Pita foto. Lebarnya dihitung dari konstanta layout, bukan angka persen
+        yang meleset saat jendela diubah: 478px = 430px lebar maksimum kolom
+        kartu + 3rem padding kanan, sehingga tepi potongnya jatuh persis di tepi
+        kiri kolom kartu di lebar layar berapa pun.
       */}
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-y-0 left-0 w-full overflow-hidden lg:w-[min(calc(100%-478px),calc(50%+362px))]"
+        className="pointer-events-none absolute inset-y-0 left-0 w-full overflow-hidden lg:w-[calc(100%-478px)]"
       >
         {/* Warna dasar sebelum foto termuat, supaya tidak ada kedipan kosong
             di koneksi plant yang lambat. */}
@@ -364,15 +360,17 @@ function BackdropLayers() {
         className="pointer-events-none absolute inset-0 bg-white/85 lg:hidden"
       />
 
-      {/* Fade putih dari kiri. Ditahan penuh sampai 36% -- ujung paragraf
-          deskripsi -- baru dilepas habis di 52%, supaya sisa pita sampai garis
-          potong menampilkan foto tanpa penutup apa pun. */}
+      {/* Fade putih dari kiri, dipatok piksel dan bukan persen: yang harus
+          ditutupinya adalah blok konten selebar 620px + padding 48px, dan itu
+          lebarnya tetap. Stop persen ikut melar bersama jendela -- di layar
+          1280px, 52% jatuh di 666px sementara paragraf baru berakhir di 624px,
+          jadi ujung kalimatnya duduk nyaris tanpa penutup di atas foto. */}
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 hidden lg:block"
         style={{
           background:
-            "linear-gradient(to right, rgb(255 255 255 / 0.92) 0%, rgb(255 255 255 / 0.92) 36%, rgb(255 255 255 / 0) 52%)",
+            "linear-gradient(to right, rgb(255 255 255 / 0.92) 0px, rgb(255 255 255 / 0.92) 640px, rgb(255 255 255 / 0) 880px)",
         }}
       />
 
@@ -420,7 +418,7 @@ function BrandPanel() {
             <p className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
               Capture <span className="text-brand">Calcine</span>
             </p>
-            <p className="mt-1 text-[13px] leading-snug text-slate-800">
+            <p className="mt-1 text-[13px] leading-snug text-slate-600">
               Dokumentasi Sampling Calcine
               <br />
               Cepat, Konsisten, dan Terlacak
@@ -430,7 +428,7 @@ function BrandPanel() {
 
         <div className="mt-5 h-1 w-16 rounded-full bg-brand-accent" />
 
-        <p className="mt-5 max-w-xl text-[15px] leading-relaxed text-slate-800">
+        <p className="mt-5 max-w-xl text-[15px] leading-relaxed text-slate-600">
           Platform terpadu untuk mengambil, menyimpan, dan menelusuri foto sampel calcine dari
           seluruh plant &mdash; satu alur kerja dari kamera di lapangan sampai arsip di share
           jaringan.
