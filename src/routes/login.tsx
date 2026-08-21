@@ -328,14 +328,18 @@ function BackdropLayers() {
       <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-slate-50" />
 
       {/*
-        Pita foto. Lebarnya dihitung dari konstanta layout, bukan angka persen
-        yang meleset saat jendela diubah: 478px = 430px lebar maksimum kolom
-        kartu + 3rem padding kanan, sehingga tepi potongnya jatuh persis di tepi
-        kiri kolom kartu di lebar layar berapa pun.
+        Pita foto. Tepi kanannya luruh halus ke putih lewat mask, bukan dipotong
+        tegas -- potongan pisau membuat kartu login tampak menempel di dinding
+        foto, sedangkan peluruhan membuatnya mengambang di atasnya.
+        Lebarnya dihitung dari konstanta layout, bukan angka persen yang meleset
+        saat jendela diubah: 478px = 430px lebar maksimum kolom kartu + 3rem
+        padding kanan, jadi tepi kiri kartu selalu 478px dari kanan. Pita
+        sengaja dilebihkan sampai 398px supaya peluruhan sepanjang 200px itu
+        mengangkangi tepi kartu, bukan berhenti tepat sebelumnya.
       */}
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-y-0 left-0 w-full overflow-hidden lg:w-[calc(100%-478px)]"
+        className="pointer-events-none absolute inset-y-0 left-0 w-full overflow-hidden lg:w-[calc(100%-398px)] lg:[-webkit-mask-image:linear-gradient(to_right,#000_0px,#000_calc(100%_-_200px),transparent_100%)] lg:[mask-image:linear-gradient(to_right,#000_0px,#000_calc(100%_-_200px),transparent_100%)]"
       >
         {/* Warna dasar sebelum foto termuat, supaya tidak ada kedipan kosong
             di koneksi plant yang lambat. */}
