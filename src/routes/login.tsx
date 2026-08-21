@@ -289,28 +289,44 @@ function LoginPage() {
 }
 
 /**
- * Lapisan latar dipasang bertingkat supaya halaman tetap rapi tanpa aset foto:
- * gradasi selalu tampil, foto opsional menimpanya kalau berkasnya ada, lalu
- * scrim menurunkan kontras foto agar teks di atasnya tetap terbaca.
+ * Latar halaman adalah diptych yang mengikuti alur prosesnya sendiri: bijih
+ * tembaga di kolom kiri tempat teks berada, calcine jadi di kolom kanan tempat
+ * kartu login duduk.
+ *
+ * Di bawah breakpoint lg layoutnya menumpuk jadi satu kolom dan hanya foto
+ * bijih yang tampil -- memaksa dua foto berdampingan di lebar ponsel membuat
+ * keduanya terlalu sempit untuk terbaca sebagai apa pun.
+ *
+ * Dua lapis putih di atas foto bukan hiasan: seluruh teks brand panel duduk
+ * langsung di atas foto bijih yang ramai, dan tanpa scrim itu kontrasnya
+ * jatuh. Kalau foto terasa terlalu pucat atau terlalu ramai, dua nilai inilah
+ * yang diatur, bukan berkas fotonya.
  */
 function BackdropLayers() {
   return (
     <>
+      {/* Warna dasar sebelum foto selesai termuat, supaya tidak ada kedipan
+          putih kosong di koneksi plant yang lambat. */}
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 bg-gradient-to-br from-slate-200 via-slate-100 to-blue-100"
       />
+
+      <div aria-hidden="true" className="pointer-events-none absolute inset-0 flex">
+        <div
+          className="h-full flex-1 bg-cover bg-center"
+          style={{ backgroundImage: "url('/login-bg-ore.webp')" }}
+        />
+        <div
+          className="hidden h-full border-l border-white/40 bg-cover bg-center lg:block lg:w-[34%]"
+          style={{ backgroundImage: "url('/login-bg-calcine.webp')" }}
+        />
+      </div>
+
+      <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-white/55" />
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 bg-cover bg-center"
-        // Taruh foto plant di public/login-bg.jpg untuk mengganti gradasi di
-        // atas. Kalau berkasnya tidak ada, lapisan ini transparan dan halaman
-        // tetap tampil normal -- tidak ada ikon gambar rusak.
-        style={{ backgroundImage: "url('/login-bg.jpg')" }}
-      />
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 bg-gradient-to-r from-white/90 via-white/70 to-white/95"
+        className="pointer-events-none absolute inset-0 bg-gradient-to-r from-white/75 via-white/25 to-white/70"
       />
       <div
         aria-hidden="true"
