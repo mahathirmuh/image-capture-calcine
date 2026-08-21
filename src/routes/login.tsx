@@ -20,7 +20,7 @@ import {
   TriangleAlert,
   type LucideIcon,
 } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
 
@@ -92,6 +92,12 @@ const MODULES: ModuleHighlight[] = [
     description: "Pola penamaan berkas, jadwal pengambilan, dan zona waktu operasional.",
   },
 ];
+
+// Latar bergantian. Menambah foto cukup menaruh berkasnya di public/ lalu
+// menambah satu baris di sini -- tidak ada kode lain yang perlu tahu jumlahnya.
+const BACKDROP_PHOTOS = ["/login-bg-ore.webp", "/login-bg-calcine.webp"];
+
+const SLIDE_INTERVAL_MS = 7000;
 
 const PILLARS = [
   { icon: ShieldCheck, title: "Sampel Terekam", subtitle: "Tiap BIN Terdokumentasi" },
@@ -170,7 +176,9 @@ function LoginPage() {
               </span>
             </div>
 
-            <BrandLockup className="mt-5" />
+            <div className="mt-5 flex justify-center">
+              <GroupLogos />
+            </div>
 
             <div className="mt-6 text-center">
               <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
@@ -289,20 +297,30 @@ function LoginPage() {
 }
 
 /**
- * Latar halaman adalah diptych yang mengikuti alur prosesnya sendiri: bijih
- * tembaga di kolom kiri tempat teks berada, calcine jadi di kolom kanan tempat
- * kartu login duduk.
- *
- * Di bawah breakpoint lg layoutnya menumpuk jadi satu kolom dan hanya foto
- * bijih yang tampil -- memaksa dua foto berdampingan di lebar ponsel membuat
- * keduanya terlalu sempit untuk terbaca sebagai apa pun.
+ * Latar halaman adalah slideshow foto operasional yang saling menyilang halus.
  *
  * Dua lapis putih di atas foto bukan hiasan: seluruh teks brand panel duduk
- * langsung di atas foto bijih yang ramai, dan tanpa scrim itu kontrasnya
- * jatuh. Kalau foto terasa terlalu pucat atau terlalu ramai, dua nilai inilah
- * yang diatur, bukan berkas fotonya.
+ * langsung di atas foto yang ramai, dan tanpa scrim itu kontrasnya jatuh.
+ * Kalau foto terasa terlalu pucat atau terlalu ramai, dua nilai inilah yang
+ * diatur, bukan berkas fotonya.
  */
 function BackdropLayers() {
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  useEffect(() => {
+    if (BACKDROP_PHOTOS.length < 2) return;
+
+    // Operator yang menyetel "reduce motion" di OS-nya tidak dipaksa menonton
+    // latar berganti-ganti -- foto pertama dibiarkan diam.
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+    const timer = setInterval(() => {
+      setActiveIndex((current) => (current + 1) % BACKDROP_PHOTOS.length);
+    }, SLIDE_INTERVAL_MS);
+
+    return () => clearInterval(timer);
+  }, []);
+
   return (
     <>
       {/* Warna dasar sebelum foto selesai termuat, supaya tidak ada kedipan
@@ -312,16 +330,16 @@ function BackdropLayers() {
         className="pointer-events-none absolute inset-0 bg-gradient-to-br from-slate-200 via-slate-100 to-blue-100"
       />
 
-      <div aria-hidden="true" className="pointer-events-none absolute inset-0 flex">
+      {BACKDROP_PHOTOS.map((photo, index) => (
         <div
-          className="h-full flex-1 bg-cover bg-center"
-          style={{ backgroundImage: "url('/login-bg-ore.webp')" }}
+          key={photo}
+          aria-hidden="true"
+          className={`pointer-events-none absolute inset-0 bg-cover bg-center transition-opacity duration-[1500ms] ease-in-out ${
+            index === activeIndex ? "opacity-100" : "opacity-0"
+          }`}
+          style={{ backgroundImage: `url('${photo}')` }}
         />
-        <div
-          className="hidden h-full border-l border-white/40 bg-cover bg-center lg:block lg:w-[34%]"
-          style={{ backgroundImage: "url('/login-bg-calcine.webp')" }}
-        />
-      </div>
+      ))}
 
       <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-white/55" />
       <div
@@ -336,16 +354,24 @@ function BackdropLayers() {
   );
 }
 
-function BrandLockup({ className }: { className?: string }) {
+/**
+ * Logo grup dipasang sebagai satu berkas, bukan tiga: ketiganya sudah punya
+ * jarak dan perbandingan ukuran yang benar relatif satu sama lain di dalam
+ * artwork aslinya, dan memecahnya jadi tiga <img> akan mengundang jarak yang
+ * meleset saat kartunya menyempit.
+ */
+function GroupLogos({ className }: { className?: string }) {
   return (
-    <div className={`flex items-center justify-center gap-2.5 ${className ?? ""}`}>
-      <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
-        <Camera className="h-[18px] w-[18px]" />
-      </span>
-      <span className="text-lg font-semibold tracking-tight text-slate-900">
-        Capture <span className="text-blue-700">Calcine</span>
-      </span>
-    </div>
+    <img
+      src="/merdeka-group-logo.png"
+      // Nama ketiganya dieja supaya pembaca layar tidak hanya mendengar "logo".
+      alt="Merdeka Copper Gold, Merdeka Battery Materials, dan Merdeka Gold Resources"
+      // Dimensi asli dicantumkan supaya browser memesan ruangnya lebih dulu dan
+      // kartu login tidak melompat saat gambarnya selesai termuat.
+      width={1140}
+      height={140}
+      className={`h-auto w-full max-w-[300px] ${className ?? ""}`}
+    />
   );
 }
 
