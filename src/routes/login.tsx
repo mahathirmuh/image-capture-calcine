@@ -297,10 +297,16 @@ function LoginPage() {
 /**
  * Latar halaman adalah slideshow foto operasional yang saling menyilang halus.
  *
- * Dua lapis putih di atas foto bukan hiasan: seluruh teks brand panel duduk
- * langsung di atas foto yang ramai, dan tanpa scrim itu kontrasnya jatuh.
- * Kalau foto terasa terlalu pucat atau terlalu ramai, dua nilai inilah yang
- * diatur, bukan berkas fotonya.
+ * Dua lapis putih di atasnya menahan kontras teks, bukan hiasan. Foto bijih
+ * justru gelap tepat di area teks panel kiri (luminansi median 0.048), jadi
+ * scrim-nya tidak bisa dilepas begitu saja -- teks abu-abu terang langsung
+ * hilang di atasnya.
+ *
+ * Nilainya disetel setipis mungkin sambil menjaga titik terburuk tetap lulus
+ * WCAG AA: efektif ~0.63 di tepi kiri sampai ~0.53 di tengah, dan teks yang
+ * duduk langsung di atas foto dinaikkan ke slate-800 supaya sanggup di sana
+ * (terburuk 4.88:1 di x=38% lebar layar). Menipiskan lagi berarti ikut
+ * menggelapkan teksnya, bukan hanya mengubah dua angka ini.
  */
 function BackdropLayers() {
   const [activeIndex, setActiveIndex] = useState(0);
@@ -339,10 +345,10 @@ function BackdropLayers() {
         />
       ))}
 
-      <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-white/55" />
+      <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-white/50" />
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 bg-gradient-to-r from-white/75 via-white/25 to-white/70"
+        className="pointer-events-none absolute inset-0 bg-gradient-to-r from-white/28 via-white/5 to-white/22"
       />
       <div
         aria-hidden="true"
@@ -391,7 +397,7 @@ function BrandPanel() {
             <p className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
               Capture <span className="text-brand">Calcine</span>
             </p>
-            <p className="mt-1 text-[13px] leading-snug text-slate-500">
+            <p className="mt-1 text-[13px] leading-snug text-slate-800">
               Dokumentasi Sampling Calcine
               <br />
               Cepat, Konsisten, dan Terlacak
@@ -401,7 +407,7 @@ function BrandPanel() {
 
         <div className="mt-5 h-1 w-16 rounded-full bg-brand-accent" />
 
-        <p className="mt-5 max-w-xl text-[15px] leading-relaxed text-slate-600">
+        <p className="mt-5 max-w-xl text-[15px] leading-relaxed text-slate-800">
           Platform terpadu untuk mengambil, menyimpan, dan menelusuri foto sampel calcine dari
           seluruh plant &mdash; satu alur kerja dari kamera di lapangan sampai arsip di share
           jaringan.
@@ -435,13 +441,13 @@ function BrandPanel() {
 
 function ModuleCard({ icon: Icon, title, subtitle, description }: ModuleHighlight) {
   return (
-    <div className="rounded-xl border border-white/80 bg-white/85 p-4 shadow-sm backdrop-blur-sm transition-shadow hover:shadow-md">
+    <div className="rounded-xl border border-white/80 bg-white/95 p-4 shadow-sm backdrop-blur-sm transition-shadow hover:shadow-md">
       <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand text-brand-foreground">
         <Icon className="h-[18px] w-[18px]" />
       </span>
       <p className="mt-3 text-[15px] font-semibold leading-tight text-brand">{title}</p>
       <p className="mt-0.5 text-[13px] font-medium leading-tight text-brand">{subtitle}</p>
-      <p className="mt-2 text-[12.5px] leading-relaxed text-slate-500">{description}</p>
+      <p className="mt-2 text-[12.5px] leading-relaxed text-slate-600">{description}</p>
     </div>
   );
 }
