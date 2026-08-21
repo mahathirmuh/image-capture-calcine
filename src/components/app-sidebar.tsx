@@ -23,8 +23,6 @@ import { loadGallery } from "@/lib/gallery-store";
 import { getDeviceStatus, type DeviceStatus } from "@/lib/camera-api";
 import { NAV_ITEMS } from "@/lib/nav-items";
 
-const items = NAV_ITEMS;
-
 const DEVICE_STATUS_POLL_MS = 30_000;
 
 function formatSyncTime(date: Date) {
@@ -196,7 +194,10 @@ export function AppSidebar() {
   const currentPath = useRouterState({
     select: (router) => router.location.pathname,
   });
+  const user = useRouteContext({ from: "__root__", select: (context) => context.user });
   const [captureCount, setCaptureCount] = useState(0);
+
+  const items = NAV_ITEMS.filter((item) => !item.adminOnly || user?.role === "admin");
 
   useEffect(() => {
     loadGallery().then((items) => setCaptureCount(items.length));

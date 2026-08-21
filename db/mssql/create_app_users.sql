@@ -5,9 +5,13 @@
 -- sudah ada.
 --
 -- Akun TIDAK dibuat di sini. Password harus melewati hashing scrypt milik
--- aplikasi, jadi tambah/ubah akun lewat:
+-- aplikasi, jadi tambah/ubah akun lewat halaman Users di aplikasi (menu
+-- sidebar, hanya terlihat oleh admin), atau lewat baris perintah:
 --
 --   node --env-file=.env scripts/create-user.mjs <username> <password> --name "Nama Lengkap"
+--
+-- Baris perintah tetap diperlukan untuk membuat akun admin pertama, saat belum
+-- ada siapa pun yang bisa masuk untuk membuka halaman Users.
 --
 -- Menulis INSERT manual dengan password apa adanya akan menghasilkan baris
 -- yang tidak pernah bisa login: verifikasi selalu gagal untuk nilai yang bukan

@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as UsersRouteImport } from './routes/users'
 import { Route as StorageRouteImport } from './routes/storage'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as LoginRouteImport } from './routes/login'
@@ -19,6 +20,11 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as DevicesIndexRouteImport } from './routes/devices/index'
 import { Route as DevicesRegisterRouteImport } from './routes/devices/register'
 
+const UsersRoute = UsersRouteImport.update({
+  id: '/users',
+  path: '/users',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const StorageRoute = StorageRouteImport.update({
   id: '/storage',
   path: '/storage',
@@ -73,6 +79,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
   '/storage': typeof StorageRoute
+  '/users': typeof UsersRoute
   '/devices/register': typeof DevicesRegisterRoute
   '/devices/': typeof DevicesIndexRoute
 }
@@ -84,6 +91,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
   '/storage': typeof StorageRoute
+  '/users': typeof UsersRoute
   '/devices/register': typeof DevicesRegisterRoute
   '/devices': typeof DevicesIndexRoute
 }
@@ -96,6 +104,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
   '/storage': typeof StorageRoute
+  '/users': typeof UsersRoute
   '/devices/register': typeof DevicesRegisterRoute
   '/devices/': typeof DevicesIndexRoute
 }
@@ -109,6 +118,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/settings'
     | '/storage'
+    | '/users'
     | '/devices/register'
     | '/devices/'
   fileRoutesByTo: FileRoutesByTo
@@ -120,6 +130,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/settings'
     | '/storage'
+    | '/users'
     | '/devices/register'
     | '/devices'
   id:
@@ -131,6 +142,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/settings'
     | '/storage'
+    | '/users'
     | '/devices/register'
     | '/devices/'
   fileRoutesById: FileRoutesById
@@ -143,12 +155,20 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   SettingsRoute: typeof SettingsRoute
   StorageRoute: typeof StorageRoute
+  UsersRoute: typeof UsersRoute
   DevicesRegisterRoute: typeof DevicesRegisterRoute
   DevicesIndexRoute: typeof DevicesIndexRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/users': {
+      id: '/users'
+      path: '/users'
+      fullPath: '/users'
+      preLoaderRoute: typeof UsersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/storage': {
       id: '/storage'
       path: '/storage'
@@ -223,6 +243,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   SettingsRoute: SettingsRoute,
   StorageRoute: StorageRoute,
+  UsersRoute: UsersRoute,
   DevicesRegisterRoute: DevicesRegisterRoute,
   DevicesIndexRoute: DevicesIndexRoute,
 }
