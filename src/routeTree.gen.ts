@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as StorageRouteImport } from './routes/storage'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as GalleryRouteImport } from './routes/gallery'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as CaptureRouteImport } from './routes/capture'
@@ -26,6 +27,11 @@ const StorageRoute = StorageRouteImport.update({
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
 const GalleryRoute = GalleryRouteImport.update({
@@ -64,6 +70,7 @@ export interface FileRoutesByFullPath {
   '/capture': typeof CaptureRoute
   '/dashboard': typeof DashboardRoute
   '/gallery': typeof GalleryRoute
+  '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
   '/storage': typeof StorageRoute
   '/devices/register': typeof DevicesRegisterRoute
@@ -74,6 +81,7 @@ export interface FileRoutesByTo {
   '/capture': typeof CaptureRoute
   '/dashboard': typeof DashboardRoute
   '/gallery': typeof GalleryRoute
+  '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
   '/storage': typeof StorageRoute
   '/devices/register': typeof DevicesRegisterRoute
@@ -85,6 +93,7 @@ export interface FileRoutesById {
   '/capture': typeof CaptureRoute
   '/dashboard': typeof DashboardRoute
   '/gallery': typeof GalleryRoute
+  '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
   '/storage': typeof StorageRoute
   '/devices/register': typeof DevicesRegisterRoute
@@ -97,6 +106,7 @@ export interface FileRouteTypes {
     | '/capture'
     | '/dashboard'
     | '/gallery'
+    | '/login'
     | '/settings'
     | '/storage'
     | '/devices/register'
@@ -107,6 +117,7 @@ export interface FileRouteTypes {
     | '/capture'
     | '/dashboard'
     | '/gallery'
+    | '/login'
     | '/settings'
     | '/storage'
     | '/devices/register'
@@ -117,6 +128,7 @@ export interface FileRouteTypes {
     | '/capture'
     | '/dashboard'
     | '/gallery'
+    | '/login'
     | '/settings'
     | '/storage'
     | '/devices/register'
@@ -128,6 +140,7 @@ export interface RootRouteChildren {
   CaptureRoute: typeof CaptureRoute
   DashboardRoute: typeof DashboardRoute
   GalleryRoute: typeof GalleryRoute
+  LoginRoute: typeof LoginRoute
   SettingsRoute: typeof SettingsRoute
   StorageRoute: typeof StorageRoute
   DevicesRegisterRoute: typeof DevicesRegisterRoute
@@ -148,6 +161,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/gallery': {
@@ -200,6 +220,7 @@ const rootRouteChildren: RootRouteChildren = {
   CaptureRoute: CaptureRoute,
   DashboardRoute: DashboardRoute,
   GalleryRoute: GalleryRoute,
+  LoginRoute: LoginRoute,
   SettingsRoute: SettingsRoute,
   StorageRoute: StorageRoute,
   DevicesRegisterRoute: DevicesRegisterRoute,

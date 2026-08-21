@@ -7,7 +7,9 @@ export const getRouter = () => {
 
   const router = createRouter({
     routeTree,
-    context: { queryClient },
+    // `user` diisi ulang oleh beforeLoad di __root setiap kali router dimuat
+    // atau di-invalidate; null di sini hanya nilai awal sebelum sesi dibaca.
+    context: { queryClient, user: null },
     scrollRestoration: true,
     defaultPreloadStaleTime: 0,
   });

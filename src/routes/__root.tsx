@@ -3,6 +3,7 @@ import {
   Outlet,
   Link,
   createRootRouteWithContext,
+  redirect,
   useRouter,
   useRouterState,
   HeadContent,
@@ -17,6 +18,9 @@ import { Toaster } from "@/components/ui/sonner";
 import { SidebarProvider, SidebarTrigger, SidebarInset, useSidebar } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { NAV_ITEMS, SUB_PAGE_TITLES } from "@/lib/nav-items";
+import { fetchCurrentUser, type SessionUser } from "@/lib/auth";
+
+const LOGIN_PATH = "/login";
 
 function NotFoundComponent() {
   return (
@@ -75,7 +79,22 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   );
 }
 
-export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
+export const Route = createRootRouteWithContext<{
+  queryClient: QueryClient;
+  user: SessionUser | null;
+}>()({
+  // Satu-satunya gerbang aplikasi. Ditaruh di root supaya rute baru ikut
+  // terkunci begitu berkasnya dibuat -- tidak ada daftar rute terproteksi yang
+  // bisa lupa diperbarui.
+  beforeLoad: async ({ location }) => {
+    const user = await fetchCurrentUser();
+
+    if (!user && location.pathname !== LOGIN_PATH) {
+      throw redirect({ to: LOGIN_PATH, search: { redirect: location.href } });
+    }
+
+    return { user };
+  },
   head: () => ({
     meta: [
       { charSet: "utf-8" },
@@ -189,6 +208,20 @@ function Breadcrumb() {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const onLoginRoute = useRouterState({
+    select: (router) => router.location.pathname === LOGIN_PATH,
+  });
+
+  // Layar login berdiri sendiri tanpa sidebar dan topbar: sebelum operator
+  // masuk, tidak ada satu pun tujuan navigasi di sana yang bisa dibuka.
+  if (onLoginRoute) {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <Outlet />
+        <Toaster richColors />
+      </QueryClientProvider>
+    );
+  }
 
   return (
     <QueryClientProvider client={queryClient}>

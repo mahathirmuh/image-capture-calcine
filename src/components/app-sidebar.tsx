@@ -1,8 +1,10 @@
-import { Camera } from "lucide-react";
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Camera, LogOut } from "lucide-react";
+import { Link, useRouteContext, useRouter, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Sidebar,
   SidebarContent,
@@ -16,6 +18,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { logout } from "@/lib/auth";
 import { loadGallery } from "@/lib/gallery-store";
 import { getDeviceStatus, type DeviceStatus } from "@/lib/camera-api";
 import { NAV_ITEMS } from "@/lib/nav-items";
@@ -125,6 +128,69 @@ function DeviceStatusCard() {
   );
 }
 
+function initialsOf(fullName: string) {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  const first = parts[0][0] ?? "";
+  const last = parts.length > 1 ? (parts[parts.length - 1][0] ?? "") : "";
+  return (first + last).toUpperCase();
+}
+
+function SessionCard() {
+  const user = useRouteContext({ from: "__root__", select: (context) => context.user });
+  const router = useRouter();
+  const [signingOut, setSigningOut] = useState(false);
+
+  if (!user) return null;
+
+  async function handleLogout() {
+    setSigningOut(true);
+    try {
+      await logout();
+      // invalidate() dulu: beforeLoad di root membaca sesi yang sudah kosong
+      // dan menendang ke /login sendiri. Kalau urutannya dibalik, /login masih
+      // melihat context.user lama dan memantulkan balik ke dashboard.
+      await router.invalidate();
+      await router.navigate({ to: "/login", replace: true });
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? `Gagal keluar: ${error.message}` : "Gagal keluar dari sesi.",
+      );
+      setSigningOut(false);
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-2 rounded-md border bg-sidebar-accent/40 p-2 group-data-[collapsible=icon]:border-0 group-data-[collapsible=icon]:bg-transparent group-data-[collapsible=icon]:p-0">
+      <span
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sidebar-primary text-[11px] font-semibold text-sidebar-primary-foreground"
+        title={user.fullName}
+      >
+        {initialsOf(user.fullName)}
+      </span>
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] group-data-[collapsible=icon]:w-0 group-data-[collapsible=icon]:opacity-0">
+        <span className="truncate text-xs font-medium leading-tight text-sidebar-foreground">
+          {user.fullName}
+        </span>
+        <span className="truncate text-[10px] leading-tight text-sidebar-foreground/50">
+          {user.username} &middot; {user.role}
+        </span>
+      </div>
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={handleLogout}
+        disabled={signingOut}
+        aria-label="Keluar"
+        title="Keluar"
+        className="h-7 w-7 shrink-0 text-sidebar-foreground/60 hover:text-sidebar-foreground group-data-[collapsible=icon]:hidden"
+      >
+        <LogOut className="h-4 w-4" />
+      </Button>
+    </div>
+  );
+}
+
 export function AppSidebar() {
   const { state, setOpenMobile } = useSidebar();
   const currentPath = useRouterState({
@@ -203,7 +269,8 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      <SidebarFooter className="border-t border-sidebar-border">
+      <SidebarFooter className="gap-2 border-t border-sidebar-border">
+        <SessionCard />
         <DeviceStatusCard />
       </SidebarFooter>
     </Sidebar>

@@ -19,6 +19,13 @@ const serverEnvSchema = z.object({
   CARDDB_NAME: z.preprocess(emptyStringToUndefined, z.string().optional()),
   CARDDB_PORT: z.preprocess(emptyStringToUndefined, z.coerce.number().int().positive().optional()),
   CARDDB_SCHEMA: z.preprocess(emptyStringToUndefined, z.string().optional()),
+  // Kunci penyegel cookie sesi login. Panjang minimum 32 karakter dipaksakan
+  // oleh algoritma seal TanStack Start -- nilai yang lebih pendek ditolak saat
+  // runtime, jadi lebih baik gagal di sini dengan pesan yang jelas.
+  SESSION_SECRET: z.preprocess(
+    emptyStringToUndefined,
+    z.string().min(32, "minimal 32 karakter").optional(),
+  ),
   NITRO_PRESET: z.preprocess(emptyStringToUndefined, z.string().optional()),
 });
 

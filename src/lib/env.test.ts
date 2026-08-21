@@ -14,6 +14,7 @@ describe("parseServerEnv", () => {
       CARDDB_NAME: undefined,
       CARDDB_PORT: undefined,
       CARDDB_SCHEMA: undefined,
+      SESSION_SECRET: undefined,
       NITRO_PRESET: undefined,
     });
 
@@ -36,6 +37,7 @@ describe("parseServerEnv", () => {
       CARDDB_NAME: "",
       CARDDB_PORT: "",
       CARDDB_SCHEMA: "   ",
+      SESSION_SECRET: "   ",
       NITRO_PRESET: " ",
     });
 
@@ -49,6 +51,7 @@ describe("parseServerEnv", () => {
       CARDDB_NAME: undefined,
       CARDDB_PORT: undefined,
       CARDDB_SCHEMA: undefined,
+      SESSION_SECRET: undefined,
       NITRO_PRESET: undefined,
     });
   });
@@ -64,6 +67,7 @@ describe("parseServerEnv", () => {
       CARDDB_NAME: "Capture-Calcine",
       CARDDB_PORT: "1433",
       CARDDB_SCHEMA: "dbo",
+      SESSION_SECRET: "0123456789abcdef0123456789abcdef",
       NITRO_PRESET: "node-server",
     });
 
@@ -77,8 +81,18 @@ describe("parseServerEnv", () => {
       CARDDB_NAME: "Capture-Calcine",
       CARDDB_PORT: 1433,
       CARDDB_SCHEMA: "dbo",
+      SESSION_SECRET: "0123456789abcdef0123456789abcdef",
       NITRO_PRESET: "node-server",
     });
+  });
+
+  it("fails fast when SESSION_SECRET is too short to seal a session cookie", () => {
+    expect(() =>
+      parseServerEnv({
+        CAMERA_API_URL: "http://10.60.20.155:3000",
+        SESSION_SECRET: "terlalu-pendek",
+      }),
+    ).toThrowError(/SESSION_SECRET: minimal 32 karakter/i);
   });
 
   it("fails fast when CAMERA_API_URL is invalid", () => {
