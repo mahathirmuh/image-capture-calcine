@@ -125,10 +125,13 @@ export const Route = createRootRouteWithContext<{
         rel: "stylesheet",
         href: appCss,
       },
-      // SVG dipakai browser modern (tajam di semua ukuran, 538 byte);
-      // .ico tetap disediakan sebagai cadangan untuk yang belum mendukung.
-      { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
-      { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
+      // Logo aplikasi berupa ilustrasi raster, jadi tidak ada varian SVG-nya:
+      // .ico membawa 16/32/48 px sekaligus supaya browser memilih sendiri yang
+      // paling pas untuk tab, bookmark, dan daftar riwayat. PNG 96 px melayani
+      // layar hi-dpi yang meminta ukuran di atas isi .ico.
+      { rel: "icon", href: "/favicon.ico", sizes: "16x16 32x32 48x48" },
+      { rel: "icon", href: "/favicon-96.png", type: "image/png", sizes: "96x96" },
+      { rel: "apple-touch-icon", href: "/apple-touch-icon.png", sizes: "180x180" },
     ],
   }),
   shellComponent: RootShell,
