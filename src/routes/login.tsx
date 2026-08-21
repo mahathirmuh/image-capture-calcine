@@ -295,18 +295,14 @@ function LoginPage() {
 }
 
 /**
- * Latar halaman adalah slideshow foto operasional yang saling menyilang halus.
+ * Latar halaman bukan foto full-bleed, melainkan pita foto yang dipotong tegas
+ * di garis kolom kartu login -- di sebelah kanan potongan itu yang terlihat
+ * adalah permukaan polos halaman, bukan foto yang dikaburkan.
  *
- * Dua lapis putih di atasnya menahan kontras teks, bukan hiasan. Foto bijih
- * justru gelap tepat di area teks panel kiri (luminansi median 0.048), jadi
- * scrim-nya tidak bisa dilepas begitu saja -- teks abu-abu terang langsung
- * hilang di atasnya.
- *
- * Nilainya disetel setipis mungkin sambil menjaga titik terburuk tetap lulus
- * WCAG AA: efektif ~0.63 di tepi kiri sampai ~0.53 di tengah, dan teks yang
- * duduk langsung di atas foto dinaikkan ke slate-800 supaya sanggup di sana
- * (terburuk 4.88:1 di x=38% lebar layar). Menipiskan lagi berarti ikut
- * menggelapkan teksnya, bukan hanya mengubah dua angka ini.
+ * Susunannya dari kiri ke kanan: konten brand di atas putih, foto menguat
+ * sampai tampil utuh tanpa scrim sama sekali di pita kosong antara konten dan
+ * potongan, lalu berhenti mendadak. Itu sebabnya foto bisa dibiarkan penuh --
+ * tidak ada teks yang duduk di atas bagian yang tidak ditutup.
  */
 function BackdropLayers() {
   const [activeIndex, setActiveIndex] = useState(0);
@@ -327,29 +323,59 @@ function BackdropLayers() {
 
   return (
     <>
-      {/* Warna dasar sebelum foto selesai termuat, supaya tidak ada kedipan
-          putih kosong di koneksi plant yang lambat. */}
+      {/* Permukaan polos halaman. Inilah yang tampil di sebelah kanan potongan,
+          tempat kartu login duduk. */}
+      <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-slate-50" />
+
+      {/*
+        Pita foto. Lebarnya dihitung dari konstanta layout di atas supaya tepi
+        potongnya jatuh persis di tepi kiri kolom kartu, bukan di angka persen
+        yang meleset saat jendela diubah:
+          calc(100% - 478px)  -> 430px lebar maksimum kolom kartu + 3rem padding kanan
+          calc(50% + 362px)   -> setelah container mentok di 1680px dan mulai
+                                 terpusat, tepi kartu berhenti mengikuti tepi layar
+        Yang lebih kecil dari keduanya yang berlaku, persis seperti kolomnya
+        sendiri berperilaku.
+      */}
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 bg-gradient-to-br from-slate-200 via-slate-100 to-brand-subtle"
-      />
+        className="pointer-events-none absolute inset-y-0 left-0 w-full overflow-hidden lg:w-[min(calc(100%-478px),calc(50%+362px))]"
+      >
+        {/* Warna dasar sebelum foto termuat, supaya tidak ada kedipan kosong
+            di koneksi plant yang lambat. */}
+        <div className="absolute inset-0 bg-gradient-to-br from-slate-200 via-slate-100 to-brand-subtle" />
 
-      {BACKDROP_PHOTOS.map((photo, index) => (
-        <div
-          key={photo}
-          aria-hidden="true"
-          className={`pointer-events-none absolute inset-0 bg-cover bg-center transition-opacity duration-[1500ms] ease-in-out ${
-            index === activeIndex ? "opacity-100" : "opacity-0"
-          }`}
-          style={{ backgroundImage: `url('${photo}')` }}
-        />
-      ))}
+        {BACKDROP_PHOTOS.map((photo, index) => (
+          <div
+            key={photo}
+            className={`absolute inset-0 bg-cover bg-center transition-opacity duration-[1500ms] ease-in-out ${
+              index === activeIndex ? "opacity-100" : "opacity-0"
+            }`}
+            style={{ backgroundImage: `url('${photo}')` }}
+          />
+        ))}
+      </div>
 
-      <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-white/50" />
+      {/* Di bawah lg layoutnya menumpuk dan teks membentang selebar layar, jadi
+          tidak ada pita kosong yang bisa menampung foto utuh -- di sana yang
+          dipakai selubung rata. */}
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 bg-gradient-to-r from-white/28 via-white/5 to-white/22"
+        className="pointer-events-none absolute inset-0 bg-white/85 lg:hidden"
       />
+
+      {/* Fade putih dari kiri. Ditahan penuh sampai 36% -- ujung paragraf
+          deskripsi -- baru dilepas habis di 52%, supaya sisa pita sampai garis
+          potong menampilkan foto tanpa penutup apa pun. */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 hidden lg:block"
+        style={{
+          background:
+            "linear-gradient(to right, rgb(255 255 255 / 0.92) 0%, rgb(255 255 255 / 0.92) 36%, rgb(255 255 255 / 0) 52%)",
+        }}
+      />
+
       <div
         aria-hidden="true"
         className="pointer-events-none absolute -bottom-24 -right-16 h-72 w-72 rounded-full bg-[radial-gradient(circle,rgb(148_163_184/0.35)_1.5px,transparent_1.6px)] bg-[length:14px_14px]"
@@ -358,12 +384,6 @@ function BackdropLayers() {
   );
 }
 
-/**
- * Logo grup dipasang sebagai satu berkas, bukan tiga: ketiganya sudah punya
- * jarak dan perbandingan ukuran yang benar relatif satu sama lain di dalam
- * artwork aslinya, dan memecahnya jadi tiga <img> akan mengundang jarak yang
- * meleset saat kartunya menyempit.
- */
 function GroupLogos({ className }: { className?: string }) {
   return (
     <img
@@ -382,7 +402,10 @@ function GroupLogos({ className }: { className?: string }) {
 function BrandPanel() {
   return (
     <div className="flex flex-col justify-between gap-8">
-      <div>
+      {/* Dibatasi supaya berhenti sebelum pita foto. Tanpa batas ini kartu modul
+          memenuhi seluruh kolom kiri dan fotonya tidak pernah benar-benar
+          terlihat -- justru itu yang membedakannya dari latar full-bleed. */}
+      <div className="max-w-[620px]">
         <div className="flex items-center gap-3.5">
           {/* Logo sudah punya bentuk lingkarannya sendiri, jadi tidak dibungkus
               kotak navy lagi -- dua bentuk bertumpuk hanya saling meredam. */}
@@ -420,7 +443,7 @@ function BrandPanel() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-brand-foreground/25 shadow-lg lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-brand-foreground/25 shadow-lg lg:max-w-[880px] lg:grid-cols-4">
         {PILLARS.map((pillar) => (
           <div key={pillar.title} className="flex items-center gap-2.5 bg-brand-strong px-4 py-3.5">
             <pillar.icon className="h-5 w-5 shrink-0 text-brand-foreground/80" />
