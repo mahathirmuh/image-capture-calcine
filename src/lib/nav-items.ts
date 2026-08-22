@@ -9,22 +9,34 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-// Single source of truth for the app's top-level sections, shared by the
-// sidebar nav and the topbar breadcrumb so they can never drift apart.
+// Urutan grup di sidebar. Dipisah dari daftar item supaya urutannya tidak
+// bergantung pada urutan item -- menambah item baru di grup mana pun tidak
+// menggeser posisi grupnya.
+export const NAV_GROUPS = ["Operasional", "Infrastruktur", "Pengaturan"] as const;
+export type NavGroup = (typeof NAV_GROUPS)[number];
+
 // `adminOnly` menyembunyikan entri dari sidebar untuk non-admin. Itu semata
 // kerapian tampilan -- penjaga yang sebenarnya ada di beforeLoad rute dan di
 // setiap serverFn-nya, karena menyembunyikan tautan tidak menghalangi siapa pun
 // mengetik URL-nya langsung.
-export type NavItem = { title: string; url: string; icon: LucideIcon; adminOnly?: boolean };
+export type NavItem = {
+  title: string;
+  url: string;
+  icon: LucideIcon;
+  group: NavGroup;
+  adminOnly?: boolean;
+};
 
+// Single source of truth for the app's top-level sections, shared by the
+// sidebar nav and the topbar breadcrumb so they can never drift apart.
 export const NAV_ITEMS: NavItem[] = [
-  { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
-  { title: "Capture", url: "/capture", icon: Camera },
-  { title: "Gallery", url: "/gallery", icon: Images },
-  { title: "Devices", url: "/devices", icon: Network },
-  { title: "Storage", url: "/storage", icon: HardDrive },
-  { title: "Users", url: "/users", icon: UsersRound, adminOnly: true },
-  { title: "Settings", url: "/settings", icon: Settings },
+  { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard, group: "Operasional" },
+  { title: "Capture", url: "/capture", icon: Camera, group: "Operasional" },
+  { title: "Gallery", url: "/gallery", icon: Images, group: "Operasional" },
+  { title: "Devices", url: "/devices", icon: Network, group: "Infrastruktur" },
+  { title: "Storage", url: "/storage", icon: HardDrive, group: "Infrastruktur" },
+  { title: "Users", url: "/users", icon: UsersRound, group: "Pengaturan", adminOnly: true },
+  { title: "Settings", url: "/settings", icon: Settings, group: "Pengaturan" },
 ];
 
 // Titles for routes nested under a NAV_ITEMS url that need their own
@@ -32,3 +44,8 @@ export const NAV_ITEMS: NavItem[] = [
 export const SUB_PAGE_TITLES: Record<string, string> = {
   "/devices/register": "Daftarkan Device",
 };
+
+/** Entri NAV_ITEMS yang memuat sebuah path, termasuk sub-halamannya. */
+export function findNavItem(pathname: string): NavItem | undefined {
+  return NAV_ITEMS.find((item) => pathname === item.url || pathname.startsWith(`${item.url}/`));
+}

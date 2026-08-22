@@ -26,6 +26,7 @@ import {
 } from "@/lib/capture-records";
 import { PLANTS } from "@/lib/locations";
 import { getStorageConfigSummary } from "@/lib/storage-diagnostics";
+import { PageTitle } from "@/components/page-shell";
 
 export const Route = createFileRoute("/dashboard")({
   component: DashboardPage,
@@ -148,7 +149,7 @@ function StatCard({
   tone?: keyof typeof STAT_TONES;
 }) {
   return (
-    <div className="rounded-lg border bg-card p-4">
+    <div className="rounded-xl border bg-card shadow-sm p-4">
       <span
         className={`mb-3 inline-flex h-9 w-9 items-center justify-center rounded-lg ${STAT_TONES[tone]}`}
       >
@@ -175,7 +176,7 @@ function ActionCard({
   return (
     <Link
       to={to}
-      className="group rounded-lg border bg-card p-4 transition-colors hover:border-primary/40 hover:bg-accent/20"
+      className="group rounded-xl border bg-card shadow-sm p-4 transition-colors hover:border-primary/40 hover:bg-accent/20"
     >
       <div className="mb-3 flex items-center justify-between">
         <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
@@ -282,7 +283,7 @@ function InsightCard({
   return (
     <Link
       to={to}
-      className="group rounded-lg border bg-card p-4 transition-colors hover:border-primary/40 hover:bg-accent/20"
+      className="group rounded-xl border bg-card shadow-sm p-4 transition-colors hover:border-primary/40 hover:bg-accent/20"
     >
       <div className="mb-3 flex items-start justify-between gap-3">
         <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
@@ -749,10 +750,10 @@ function DashboardPage() {
     <div className="p-6">
       <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-          <p className="text-sm text-muted-foreground">
-            Ringkasan capture, kamera, dan status device.
-          </p>
+          <PageTitle
+            title="Dashboard"
+            description="Ringkasan capture, kamera, dan status device."
+          />
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground">
@@ -770,7 +771,7 @@ function DashboardPage() {
       </header>
 
       <section className="mb-6 grid gap-4 xl:grid-cols-[1.4fr_1fr]">
-        <div className="rounded-lg border bg-card p-5">
+        <div className="rounded-xl border bg-card shadow-sm p-5">
           <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
             <div>
               <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -838,7 +839,7 @@ function DashboardPage() {
           </div>
         </div>
 
-        <section className="rounded-lg border bg-card p-5">
+        <section className="rounded-xl border bg-card shadow-sm p-5">
           <div className="mb-3 flex items-center gap-2">
             <ShieldAlert className="h-4 w-4 text-primary" />
             <h2 className="text-sm font-semibold">Perhatian & Tindakan Berikutnya</h2>
@@ -957,7 +958,7 @@ function DashboardPage() {
 
       <div className="mb-6 grid gap-4 lg:grid-cols-2">
         {/* Captures by Location */}
-        <section className="rounded-lg border bg-card p-4">
+        <section className="rounded-xl border bg-card shadow-sm p-4">
           <h2 className="mb-3 flex items-center gap-1.5 text-sm font-semibold">
             <MapPin className="h-4 w-4 text-muted-foreground" /> Capture per Lokasi
           </h2>
@@ -987,7 +988,7 @@ function DashboardPage() {
         </section>
 
         {/* Captures by Bin */}
-        <section className="rounded-lg border bg-card p-4">
+        <section className="rounded-xl border bg-card shadow-sm p-4">
           <h2 className="mb-3 flex items-center gap-1.5 text-sm font-semibold">
             <Package className="h-4 w-4 text-muted-foreground" /> Capture per Bin
           </h2>
@@ -1011,7 +1012,7 @@ function DashboardPage() {
       </div>
 
       {/* Last 7 days trend */}
-      <section className="mb-6 rounded-lg border bg-card p-4">
+      <section className="mb-6 rounded-xl border bg-card shadow-sm p-4">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold">Capture — 7 Hari Terakhir</h2>
           <span className="text-xs text-muted-foreground">{weekTotal} capture minggu ini</span>
@@ -1025,7 +1026,7 @@ function DashboardPage() {
 
       <div className="grid gap-4 lg:grid-cols-4">
         {/* Recent captures */}
-        <section className="rounded-lg border bg-card p-4">
+        <section className="rounded-xl border bg-card shadow-sm p-4">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-semibold">Capture Terbaru</h2>
             <Link to="/gallery" className="text-xs font-medium text-primary hover:underline">
@@ -1064,7 +1065,7 @@ function DashboardPage() {
           )}
         </section>
 
-        <section className="rounded-lg border bg-card p-4">
+        <section className="rounded-xl border bg-card shadow-sm p-4">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-semibold">Registry Capture Terbaru</h2>
             <Link to="/gallery" className="text-xs font-medium text-primary hover:underline">
@@ -1109,7 +1110,7 @@ function DashboardPage() {
           </div>
         </section>
 
-        <section className="rounded-lg border bg-card p-4">
+        <section className="rounded-xl border bg-card shadow-sm p-4">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-semibold">Event Device Terbaru</h2>
             <Link to="/devices" className="text-xs font-medium text-primary hover:underline">
@@ -1160,7 +1161,7 @@ function DashboardPage() {
         </section>
 
         {/* Device health */}
-        <section className="rounded-lg border bg-card p-4">
+        <section className="rounded-xl border bg-card shadow-sm p-4">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-semibold">Kesehatan Device</h2>
             <Link to="/devices" className="text-xs font-medium text-primary hover:underline">

@@ -43,6 +43,7 @@ import {
   getRuntimeErrorCode,
 } from "@/lib/camera-runtime";
 import { PLANTS, toLocationToken } from "@/lib/locations";
+import { PageTitle } from "@/components/page-shell";
 
 export const Route = createFileRoute("/capture")({
   component: CapturePage,
@@ -213,7 +214,7 @@ function RuntimeCard({
         ? "bg-destructive/10 text-destructive"
         : "bg-amber-500/10 text-amber-700";
   return (
-    <div className="rounded-lg border bg-card p-4">
+    <div className="rounded-xl border bg-card shadow-sm p-4">
       <div className="mb-3 flex items-start justify-between gap-3">
         <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
           <Icon className="h-4 w-4" />
@@ -874,11 +875,10 @@ function CapturePage() {
     <div className="p-6">
       <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Capture</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Ambil gambar dari kamera, lihat preview, lalu simpan ke folder pilihan dengan format
-            nama file kustom.
-          </p>
+          <PageTitle
+            title="Capture"
+            description="Ambil gambar dari kamera, lihat preview, lalu simpan ke folder pilihan dengan format nama file kustom."
+          />
         </div>
         <div className="inline-flex items-center gap-1.5 rounded-md border bg-card px-3 py-1.5 text-sm">
           <MapPin className="h-4 w-4 text-muted-foreground" />
@@ -930,7 +930,7 @@ function CapturePage() {
         </div>
       )}
       <section className="mb-6 grid gap-4 xl:grid-cols-[1.35fr_1fr]">
-        <div className="rounded-lg border bg-card p-5">
+        <div className="rounded-xl border bg-card shadow-sm p-5">
           <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -959,7 +959,7 @@ function CapturePage() {
           </div>
         </div>
 
-        <section className="rounded-lg border bg-card p-5">
+        <section className="rounded-xl border bg-card shadow-sm p-5">
           <div className="mb-3 flex items-center gap-2">
             {activeRuntimeIssue?.tone === "danger" ? (
               <AlertTriangle className="h-4 w-4 text-destructive" />
@@ -1037,7 +1037,7 @@ function CapturePage() {
                     label: "Live",
                   };
           return (
-            <section key={bin} className="rounded-lg border bg-card p-4">
+            <section key={bin} className="rounded-xl border bg-card shadow-sm p-4">
               <div className="mb-3 flex items-center justify-between">
                 <h2 className="text-lg font-semibold">{bin}</h2>
                 <span
@@ -1200,7 +1200,7 @@ function CapturePage() {
       </div>
 
       {/* Settings */}
-      <section className="mt-6 rounded-lg border bg-card p-4">
+      <section className="mt-6 rounded-xl border bg-card shadow-sm p-4">
         <h2 className="mb-4 text-lg font-semibold">Pengaturan Simpan</h2>
 
         <div className="grid gap-4 md:grid-cols-3">

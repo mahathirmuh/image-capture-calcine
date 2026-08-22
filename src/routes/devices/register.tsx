@@ -49,6 +49,7 @@ import {
   type PresetFilter,
 } from "@/lib/device-config";
 import { upsertRegisteredDeviceProfile } from "@/lib/device-registry";
+import { PageTitle } from "@/components/page-shell";
 
 export const Route = createFileRoute("/devices/register")({
   component: RegisterDevicePage,
@@ -244,11 +245,10 @@ function RegisterDevicePage() {
 
       <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Daftarkan Device Baru</h1>
-          <p className="text-sm text-muted-foreground">
-            Daftarkan Mini PC aktif lalu siapkan profil devicenya. Pengaturan kamera disimpan di
-            aplikasi ini sekarang dan nantinya bisa disinkronkan ke edge agent.
-          </p>
+          <PageTitle
+            title="Daftarkan Device Baru"
+            description="Daftarkan Mini PC aktif lalu siapkan profil devicenya. Pengaturan kamera disimpan di aplikasi ini sekarang dan nantinya bisa disinkronkan ke edge agent."
+          />
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -270,7 +270,7 @@ function RegisterDevicePage() {
       </header>
 
       {/* Step indicator (visual only -- this is a mock, single-scroll form) */}
-      <div className="mb-6 flex items-center justify-center gap-2 rounded-lg border bg-card px-6 py-4">
+      <div className="mb-6 flex items-center justify-center gap-2 rounded-xl border bg-card shadow-sm px-6 py-4">
         {["Identifikasi Device", "Lokasi & Sumber", "Konfigurasi", "Tinjau & Selesai"].map(
           (label, i) => {
             const stepNum = i + 1;
@@ -309,7 +309,7 @@ function RegisterDevicePage() {
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
         <div className="space-y-6">
           {/* Step 1 */}
-          <section className="rounded-lg border bg-card p-4">
+          <section className="rounded-xl border bg-card shadow-sm p-4">
             <div className="mb-3 flex items-center gap-2">
               <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
                 1
@@ -398,7 +398,7 @@ function RegisterDevicePage() {
           </section>
 
           {/* Step 2 */}
-          <section className="rounded-lg border bg-card p-4">
+          <section className="rounded-xl border bg-card shadow-sm p-4">
             <div className="mb-3 flex items-center gap-2">
               <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
                 2
@@ -474,7 +474,7 @@ function RegisterDevicePage() {
           </section>
 
           {/* Step 3 */}
-          <section className="rounded-lg border bg-card p-4">
+          <section className="rounded-xl border bg-card shadow-sm p-4">
             <div className="mb-3 flex items-center gap-2">
               <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
                 3
@@ -721,7 +721,7 @@ function RegisterDevicePage() {
 
           {/* Step 4: Review */}
           {showReview && (
-            <section className="rounded-lg border bg-card p-4">
+            <section className="rounded-xl border bg-card shadow-sm p-4">
               <div className="mb-3 flex items-center gap-2">
                 <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
                   4
@@ -829,7 +829,7 @@ function RegisterDevicePage() {
         {/* Right info panel */}
         {howItWorksOpen && (
           <aside className="space-y-4">
-            <div className="rounded-lg border bg-card p-4">
+            <div className="rounded-xl border bg-card shadow-sm p-4">
               <h3 className="mb-3 text-sm font-semibold">Cara Mendaftarkan Device</h3>
               <ol className="space-y-3">
                 {HOW_IT_WORKS.map((step, i) => (
@@ -858,7 +858,7 @@ function RegisterDevicePage() {
               </ol>
             </div>
 
-            <div className="rounded-lg border bg-card p-4">
+            <div className="rounded-xl border bg-card shadow-sm p-4">
               <h3 className="mb-3 text-sm font-semibold">Apa saja yang akan dikonfigurasi?</h3>
               <ul className="space-y-1.5">
                 {WHAT_GETS_CONFIGURED.map((item) => (

@@ -25,6 +25,7 @@ import {
   type Prefs,
 } from "@/lib/capture-prefs";
 import { PLANTS, toLocationToken } from "@/lib/locations";
+import { PageTitle } from "@/components/page-shell";
 
 export const Route = createFileRoute("/settings")({
   component: SettingsPage,
@@ -91,7 +92,7 @@ function SummaryCard({
   icon: React.ComponentType<{ className?: string }>;
 }) {
   return (
-    <div className="rounded-lg border bg-card p-4">
+    <div className="rounded-xl border bg-card shadow-sm p-4">
       <div className="mb-2 flex items-center gap-2">
         <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
           <Icon className="h-4 w-4" />
@@ -280,11 +281,10 @@ function SettingsPage() {
     <div className="p-6">
       <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
-          <p className="text-sm text-muted-foreground">
-            Kelola preference operator, preview filename, dan akses folder simpan yang dipakai
-            halaman Capture.
-          </p>
+          <PageTitle
+            title="Settings"
+            description="Kelola preference operator, preview filename, dan akses folder simpan yang dipakai halaman Capture."
+          />
         </div>
         <div className="flex flex-wrap gap-2">
           <Link
@@ -343,7 +343,7 @@ function SettingsPage() {
 
       <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
         <section className="space-y-6">
-          <div className="rounded-lg border bg-card p-5">
+          <div className="rounded-xl border bg-card shadow-sm p-5">
             <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h2 className="text-base font-semibold">Capture Preferences</h2>
@@ -536,7 +536,7 @@ function SettingsPage() {
             </div>
           </div>
 
-          <div className="rounded-lg border bg-card p-5">
+          <div className="rounded-xl border bg-card shadow-sm p-5">
             <div className="mb-4 flex items-center gap-2">
               <FolderOpen className="h-4 w-4 text-primary" />
               <h2 className="text-base font-semibold">Saved Folder Access</h2>
@@ -603,7 +603,7 @@ function SettingsPage() {
         </section>
 
         <section className="space-y-6">
-          <div className="rounded-lg border bg-card p-5">
+          <div className="rounded-xl border bg-card shadow-sm p-5">
             <div className="mb-4 flex items-center gap-2">
               <ShieldCheck className="h-4 w-4 text-primary" />
               <h2 className="text-base font-semibold">How Preferences Are Used</h2>
@@ -624,7 +624,7 @@ function SettingsPage() {
             </ul>
           </div>
 
-          <div className="rounded-lg border bg-card p-5">
+          <div className="rounded-xl border bg-card shadow-sm p-5">
             <div className="mb-4 flex items-center gap-2">
               <Settings2 className="h-4 w-4 text-primary" />
               <h2 className="text-base font-semibold">Operator Notes</h2>

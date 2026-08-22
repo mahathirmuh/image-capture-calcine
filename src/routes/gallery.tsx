@@ -45,6 +45,7 @@ import {
   saveGalleryViewState,
 } from "@/lib/gallery-preferences";
 import { getImageDimensions, computeHistogram, type Histogram } from "@/lib/image-analysis";
+import { PageTitle } from "@/components/page-shell";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -188,7 +189,7 @@ function OverviewCard({
   hint: React.ReactNode;
 }) {
   return (
-    <div className="rounded-lg border bg-card p-4">
+    <div className="rounded-xl border bg-card shadow-sm p-4">
       <div className="mb-2 flex items-center gap-2">
         <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
           <Icon className="h-4 w-4" />
@@ -634,10 +635,10 @@ function GalleryPage() {
       <div className="flex-1 overflow-auto p-6">
         <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Gallery</h1>
-            <p className="text-sm text-muted-foreground">
-              Telusuri, review, dan kelola hasil capture yang tersimpan.
-            </p>
+            <PageTitle
+              title="Gallery"
+              description="Telusuri, review, dan kelola hasil capture yang tersimpan."
+            />
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -747,7 +748,7 @@ function GalleryPage() {
           </div>
         </section>
 
-        <section className="mb-4 rounded-lg border bg-card p-4">
+        <section className="mb-4 rounded-xl border bg-card shadow-sm p-4">
           <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
             <div>
               <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -815,7 +816,7 @@ function GalleryPage() {
           )}
         </section>
 
-        <section className="mb-4 rounded-lg border bg-card p-4">
+        <section className="mb-4 rounded-xl border bg-card shadow-sm p-4">
           <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
             <div>
               <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -884,7 +885,7 @@ function GalleryPage() {
         </section>
 
         {/* Filter bar */}
-        <section className="mb-4 grid gap-3 rounded-lg border bg-card p-4 sm:grid-cols-3 lg:grid-cols-6">
+        <section className="mb-4 grid gap-3 rounded-xl border bg-card shadow-sm p-4 sm:grid-cols-3 lg:grid-cols-6">
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">Lokasi</label>
             <select
@@ -978,7 +979,7 @@ function GalleryPage() {
         </section>
 
         {activeFilters.length > 0 && (
-          <section className="mb-4 rounded-lg border bg-card p-3">
+          <section className="mb-4 rounded-xl border bg-card shadow-sm p-3">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Filter Aktif

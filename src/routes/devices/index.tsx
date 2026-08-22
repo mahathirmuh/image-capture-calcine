@@ -46,6 +46,7 @@ import {
 } from "@/lib/camera-api";
 import { loadGallery } from "@/lib/gallery-store";
 import { loadPrefs } from "@/lib/capture-prefs";
+import { PageTitle } from "@/components/page-shell";
 import {
   APERTURE_OPTIONS,
   APPLY_HISTORY_SAVED_VIEW_OPTIONS,
@@ -594,7 +595,7 @@ function ReadinessCard({
   onAction: () => void;
 }) {
   return (
-    <div className="rounded-lg border bg-card p-4">
+    <div className="rounded-xl border bg-card shadow-sm p-4">
       <div className="mb-3 flex items-start justify-between gap-3">
         <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
           <Icon className="h-4 w-4" />
@@ -1553,10 +1554,10 @@ function DevicesPage() {
     <div className="p-6">
       <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Devices</h1>
-          <p className="text-sm text-muted-foreground">
-            Kelola dan pantau semua Mini PC serta kamera operasional.
-          </p>
+          <PageTitle
+            title="Devices"
+            description="Kelola dan pantau semua Mini PC serta kamera operasional."
+          />
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <StatusChip
               label={readinessLabel}
@@ -1586,7 +1587,7 @@ function DevicesPage() {
       </header>
 
       <section className="mb-6 grid gap-4 xl:grid-cols-[1.35fr_1fr]">
-        <div className="rounded-lg border bg-card p-5">
+        <div className="rounded-xl border bg-card shadow-sm p-5">
           <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
             <div>
               <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -1613,7 +1614,7 @@ function DevicesPage() {
           </div>
         </div>
 
-        <section className="rounded-lg border bg-card p-5">
+        <section className="rounded-xl border bg-card shadow-sm p-5">
           <div className="mb-3 flex items-center gap-2">
             <AlertTriangle className="h-4 w-4 text-primary" />
             <h2 className="text-sm font-semibold">Perhatian & Tindakan Berikutnya</h2>
@@ -1663,7 +1664,7 @@ function DevicesPage() {
       </section>
 
       {/* Filter bar -- functional against the one real device we have */}
-      <section className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border bg-card p-3">
+      <section className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border bg-card shadow-sm p-3">
         <div className="relative min-w-[200px] flex-1">
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <input
@@ -1751,7 +1752,7 @@ function DevicesPage() {
                   setSelectedDeviceId(device.id);
                   syncProfileFromRegistryDevice(device, profile);
                 }}
-                className={`rounded-lg border bg-card p-4 text-left transition-colors hover:border-primary/40 hover:bg-accent/20 ${
+                className={`rounded-xl border bg-card shadow-sm p-4 text-left transition-colors hover:border-primary/40 hover:bg-accent/20 ${
                   isSelected ? "border-2 border-primary" : ""
                 }`}
               >
@@ -1830,7 +1831,7 @@ function DevicesPage() {
         </div>
       )}
 
-      <section className="rounded-lg border bg-card">
+      <section className="rounded-xl border bg-card shadow-sm">
         <div className="flex items-center gap-2 border-b px-4 py-3">
           <Cpu className="h-4 w-4 text-muted-foreground" />
           <span className="font-semibold">

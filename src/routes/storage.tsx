@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { getDeviceStatus, type DeviceStatus } from "@/lib/camera-api";
+import { PageTitle } from "@/components/page-shell";
 import {
   getStorageConfigSummary,
   probeNetworkSaveRoot,
@@ -82,7 +83,7 @@ function StatusCard({
         ? "bg-amber-500/10 text-amber-600"
         : "bg-primary/10 text-primary";
   return (
-    <div className="rounded-lg border bg-card p-4">
+    <div className="rounded-xl border bg-card shadow-sm p-4">
       <div className="mb-3 flex items-center gap-2">
         <span className={`inline-flex h-9 w-9 items-center justify-center rounded-lg ${toneClass}`}>
           <Icon className="h-4 w-4" />
@@ -310,11 +311,10 @@ function StoragePage() {
     <div className="p-6">
       <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Storage</h1>
-          <p className="text-sm text-muted-foreground">
-            Uji `NETWORK_SAVE_ROOT`, konfirmasi reachability edge API, dan pahami kapan Capture akan
-            berpindah ke fallback browser download.
-          </p>
+          <PageTitle
+            title="Storage"
+            description="Uji NETWORK_SAVE_ROOT, konfirmasi reachability edge API, dan pahami kapan Capture akan berpindah ke fallback browser download."
+          />
         </div>
         <div className="flex flex-wrap gap-2">
           <button
@@ -384,7 +384,7 @@ function StoragePage() {
       </section>
 
       <section className="mb-6 grid gap-4 md:grid-cols-3">
-        <div className="rounded-lg border bg-card p-4">
+        <div className="rounded-xl border bg-card shadow-sm p-4">
           <div className="mb-2 flex items-center gap-2">
             <HardDrive className="h-4 w-4 text-primary" />
             <h2 className="font-semibold">Network Save Root</h2>
@@ -405,7 +405,7 @@ function StoragePage() {
           </p>
         </div>
 
-        <div className="rounded-lg border bg-card p-4">
+        <div className="rounded-xl border bg-card shadow-sm p-4">
           <div className="mb-2 flex items-center gap-2">
             <Network className="h-4 w-4 text-primary" />
             <h2 className="font-semibold">Edge API</h2>
@@ -427,7 +427,7 @@ function StoragePage() {
           </p>
         </div>
 
-        <div className="rounded-lg border bg-card p-4">
+        <div className="rounded-xl border bg-card shadow-sm p-4">
           <div className="mb-2 flex items-center gap-2">
             {liveCaptureSaveReady ? (
               <CheckCircle2 className="h-4 w-4 text-emerald-600" />
@@ -447,7 +447,7 @@ function StoragePage() {
       </section>
 
       <section className="mb-6 grid gap-4 xl:grid-cols-[1.1fr_1fr]">
-        <div className="rounded-lg border bg-card p-4">
+        <div className="rounded-xl border bg-card shadow-sm p-4">
           <div className="mb-3 flex items-center gap-2">
             <Info className="h-4 w-4 text-primary" />
             <h2 className="font-semibold">Tindakan Berikutnya</h2>
@@ -471,7 +471,7 @@ function StoragePage() {
           </div>
         </div>
 
-        <div className="rounded-lg border bg-card p-4">
+        <div className="rounded-xl border bg-card shadow-sm p-4">
           <div className="mb-3 flex items-center gap-2">
             <HardDrive className="h-4 w-4 text-primary" />
             <h2 className="font-semibold">Urutan Alur Simpan</h2>
@@ -511,7 +511,7 @@ function StoragePage() {
       </section>
 
       <section className="mb-6 grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-        <div className="rounded-lg border bg-card p-4">
+        <div className="rounded-xl border bg-card shadow-sm p-4">
           <div className="mb-3 flex items-center gap-2">
             <CheckCircle2 className="h-4 w-4 text-primary" />
             <h2 className="font-semibold">Checklist Kesiapan</h2>
@@ -533,7 +533,7 @@ function StoragePage() {
           </div>
         </div>
 
-        <div className="rounded-lg border bg-card p-4">
+        <div className="rounded-xl border bg-card shadow-sm p-4">
           <div className="mb-3 flex items-center gap-2">
             <Info className="h-4 w-4 text-primary" />
             <h2 className="font-semibold">Panduan Probe</h2>
@@ -583,7 +583,7 @@ function StoragePage() {
         </div>
       </section>
 
-      <section className="mb-6 rounded-lg border bg-card p-4">
+      <section className="mb-6 rounded-xl border bg-card shadow-sm p-4">
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="flex items-center gap-2 font-semibold">
@@ -656,7 +656,7 @@ function StoragePage() {
         )}
       </section>
 
-      <section className="rounded-lg border bg-card p-4">
+      <section className="rounded-xl border bg-card shadow-sm p-4">
         <div className="mb-3 flex items-start gap-2">
           <Info className="mt-0.5 h-4 w-4 text-primary" />
           <div>

@@ -17,7 +17,8 @@ import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
 import { SidebarProvider, SidebarTrigger, SidebarInset, useSidebar } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
-import { NAV_ITEMS, SUB_PAGE_TITLES } from "@/lib/nav-items";
+import { findNavItem, SUB_PAGE_TITLES } from "@/lib/nav-items";
+import { UserMenu } from "@/components/user-menu";
 import { fetchCurrentUser, type SessionUser } from "@/lib/auth";
 
 const LOGIN_PATH = "/login";
@@ -181,9 +182,7 @@ function SidebarToggle() {
 // can't disagree) instead of the old static link.
 function Breadcrumb() {
   const currentPath = useRouterState({ select: (router) => router.location.pathname });
-  const section = NAV_ITEMS.find(
-    (item) => currentPath === item.url || currentPath.startsWith(`${item.url}/`),
-  );
+  const section = findNavItem(currentPath);
   const subTitle = SUB_PAGE_TITLES[currentPath];
 
   if (!section) {
@@ -232,11 +231,20 @@ function RootComponent() {
         <div className="flex min-h-svh w-full">
           <AppSidebar />
           <SidebarInset className="transition-[width,margin] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]">
-            <header className="flex h-14 items-center gap-2 border-b px-4">
+            {/* Topbar menempel di atas supaya identitas operator dan tombol
+                lipat sidebar tetap terjangkau saat halaman panjang di-scroll --
+                Gallery dan Devices keduanya jauh lebih tinggi dari satu layar. */}
+            <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center gap-2 border-b bg-background px-4">
               <SidebarToggle />
               <Breadcrumb />
+              <div className="ml-auto flex items-center gap-1">
+                <UserMenu />
+              </div>
             </header>
-            <div className="flex-1 overflow-auto">
+            {/* Latar abu di sini, bukan di tiap halaman: kartu putih isi halaman
+                baru terbaca sebagai permukaan kalau ada yang lebih gelap di
+                belakangnya. */}
+            <div className="flex-1 overflow-auto bg-muted/50">
               <Outlet />
             </div>
           </SidebarInset>

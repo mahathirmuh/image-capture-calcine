@@ -43,6 +43,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { PageTitle } from "@/components/page-shell";
 import {
   Table,
   TableBody,
@@ -201,10 +202,10 @@ function UsersPage() {
     <div className="p-6">
       <header className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Users</h1>
-          <p className="text-sm text-muted-foreground">
-            Kelola akun yang boleh masuk ke aplikasi, perannya, dan status aktifnya.
-          </p>
+          <PageTitle
+            title="Users"
+            description="Kelola akun yang boleh masuk ke aplikasi, perannya, dan status aktifnya."
+          />
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="sm" onClick={refresh} disabled={loading}>
