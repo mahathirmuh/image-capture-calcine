@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
 import type { SessionUser } from "./auth";
+import { PLANTS } from "./locations";
 
 export const USER_ROLES = ["admin", "operator"] as const;
 export type UserRole = (typeof USER_ROLES)[number];
@@ -21,6 +22,21 @@ export const ROLE_LABELS: Record<UserRole, string> = {
 // yang tampil di tabel dan di sidebar.
 const ADMIN = ROLE_LABELS.admin;
 
+/**
+ * Penempatan plant sebuah akun: salah satu plant dari daftar bersama di
+ * locations.ts, atau sentinel ALL untuk yang tidak terikat satu plant.
+ *
+ * Sentinel disimpan sebagai nilai, bukan NULL. NULL akan berarti dua hal
+ * sekaligus -- "berlaku di semua plant" dan "belum pernah diisi" -- dan keduanya
+ * menuntut tindakan berbeda saat kolom ini nanti dipakai membatasi akses.
+ */
+export const USER_PLANT_ALL = "ALL";
+export const USER_PLANT_OPTIONS = [USER_PLANT_ALL, ...PLANTS] as const;
+
+export function userPlantLabel(value: string) {
+  return value === USER_PLANT_ALL ? "Semua Plant" : value;
+}
+
 // Sama dengan ambang di scripts/create-user.mjs, supaya akun yang dibuat lewat
 // halaman ini dan lewat baris perintah tunduk pada aturan yang sama.
 export const MIN_PASSWORD_LENGTH = 8;
@@ -31,6 +47,7 @@ export type AppUser = {
   fullName: string;
   email: string | null;
   role: string;
+  plant: string;
   isActive: boolean;
   lastLoginAt: string | null;
   createdAt: string;
@@ -63,6 +80,7 @@ const passwordSchema = z
   .max(200, "Password maksimal 200 karakter");
 
 const roleSchema = z.enum(USER_ROLES);
+const plantSchema = z.enum(USER_PLANT_OPTIONS).default(USER_PLANT_ALL);
 
 export const createUserSchema = z.object({
   username: usernameSchema,
@@ -70,6 +88,7 @@ export const createUserSchema = z.object({
   email: z.union([emailSchema, z.literal("")]).transform((value) => value || null),
   password: passwordSchema,
   role: roleSchema,
+  plant: plantSchema,
   isActive: z.boolean(),
 });
 
@@ -78,6 +97,7 @@ export const updateUserSchema = z.object({
   fullName: z.string().trim().min(1, "Nama lengkap wajib diisi").max(200),
   email: z.union([emailSchema, z.literal("")]).transform((value) => value || null),
   role: roleSchema,
+  plant: plantSchema,
   isActive: z.boolean(),
 });
 
@@ -235,6 +255,7 @@ export const createAppUser = createServerFn({ method: "POST" })
         email: data.email,
         passwordHash: await hashPassword(data.password),
         role: data.role,
+        plant: data.plant,
         isActive: data.isActive,
       });
 
@@ -245,7 +266,7 @@ export const createAppUser = createServerFn({ method: "POST" })
         actorUsername: gate.actor.username,
         targetId: user.id,
         targetUsername: user.username,
-        detail: `peran: ${ROLE_LABELS[data.role]}; status: ${data.isActive ? "aktif" : "nonaktif"}`,
+        detail: `peran: ${ROLE_LABELS[data.role]}; plant: ${userPlantLabel(data.plant)}; status: ${data.isActive ? "aktif" : "nonaktif"}`,
       });
 
       return { ok: true, user };
@@ -288,6 +309,7 @@ export const updateAppUser = createServerFn({ method: "POST" })
         target,
         user,
         (role) => ROLE_LABELS[role as UserRole] ?? role,
+        userPlantLabel,
       );
       // Perubahan yang tidak mengubah apa pun -- operator menekan Simpan tanpa
       // menyentuh isian -- tidak perlu meninggalkan jejak.

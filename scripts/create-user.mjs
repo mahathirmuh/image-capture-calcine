@@ -6,6 +6,7 @@
 //   --name  "Nama Lengkap"   nama yang tampil di sidebar (default: username)
 //   --email nama@mbma.co.id  alamat email, boleh dipakai untuk login
 //   --role  admin|operator   default: operator
+//   --plant "Acid Plant"     penempatan plant; default ALL (semua plant)
 //   --inactive               buat/tandai akun sebagai nonaktif
 //
 // Username yang sudah ada akan diperbarui, bukan digandakan -- jadi perintah
@@ -22,7 +23,7 @@ import sql from "mssql";
 
 import { hashPassword } from "../src/lib/server/password.ts";
 
-const FLAGS_WITH_VALUE = new Set(["--name", "--email", "--role"]);
+const FLAGS_WITH_VALUE = new Set(["--name", "--email", "--role", "--plant"]);
 
 function parseArgs(argv) {
   const positional = [];
@@ -108,6 +109,7 @@ async function main() {
       .input("email", sql.NVarChar(200), options.email ?? null)
       .input("passwordHash", sql.NVarChar(400), passwordHash)
       .input("role", sql.NVarChar(50), options.role ?? "operator")
+      .input("plant", sql.NVarChar(100), options.plant ?? "ALL")
       .input("isActive", sql.Bit, options.inactive ? 0 : 1).query(`
         MERGE [${schema}].app_users AS target
         USING (SELECT @username AS username) AS source
@@ -118,11 +120,12 @@ async function main() {
             email = @email,
             password_hash = @passwordHash,
             role = @role,
+            plant = @plant,
             is_active = @isActive,
             updated_at = SYSUTCDATETIME()
         WHEN NOT MATCHED THEN
-          INSERT (username, full_name, email, password_hash, role, is_active)
-          VALUES (@username, @fullName, @email, @passwordHash, @role, @isActive)
+          INSERT (username, full_name, email, password_hash, role, plant, is_active)
+          VALUES (@username, @fullName, @email, @passwordHash, @role, @plant, @isActive)
         OUTPUT $action AS action, inserted.id AS id;
       `);
 

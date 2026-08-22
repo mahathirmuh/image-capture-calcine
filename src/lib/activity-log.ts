@@ -125,9 +125,22 @@ export const listActivityLog = createServerFn({ method: "POST" })
  * yang penting justru tenggelam di antaranya.
  */
 export function describeUserChange(
-  sebelum: { fullName: string; email: string | null; role: string; isActive: boolean },
-  sesudah: { fullName: string; email: string | null; role: string; isActive: boolean },
+  sebelum: {
+    fullName: string;
+    email: string | null;
+    role: string;
+    plant: string;
+    isActive: boolean;
+  },
+  sesudah: {
+    fullName: string;
+    email: string | null;
+    role: string;
+    plant: string;
+    isActive: boolean;
+  },
   labelPeran: (role: string) => string,
+  labelPlant: (plant: string) => string = (plant) => plant,
 ): string | null {
   const berubah: string[] = [];
 
@@ -139,6 +152,9 @@ export function describeUserChange(
   }
   if (sebelum.role !== sesudah.role) {
     berubah.push(`peran: ${labelPeran(sebelum.role)} -> ${labelPeran(sesudah.role)}`);
+  }
+  if (sebelum.plant !== sesudah.plant) {
+    berubah.push(`plant: ${labelPlant(sebelum.plant)} -> ${labelPlant(sesudah.plant)}`);
   }
   if (sebelum.isActive !== sesudah.isActive) {
     berubah.push(

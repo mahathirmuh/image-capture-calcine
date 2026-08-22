@@ -64,6 +64,9 @@ import {
   ROLE_LABELS,
   updateAppUser,
   updateUserSchema,
+  USER_PLANT_ALL,
+  USER_PLANT_OPTIONS,
+  userPlantLabel,
   USER_ROLES,
   type AppUser,
   type UserRole,
@@ -111,6 +114,7 @@ type FormState = {
   password: string;
   confirmPassword: string;
   role: UserRole;
+  plant: string;
   isActive: boolean;
 };
 
@@ -121,6 +125,7 @@ const EMPTY_FORM: FormState = {
   password: "",
   confirmPassword: "",
   role: "operator",
+  plant: USER_PLANT_ALL,
   isActive: true,
 };
 
@@ -262,6 +267,7 @@ function UsersPage() {
               <TableHead>Nama lengkap</TableHead>
               <TableHead>Email</TableHead>
               <TableHead>Peran</TableHead>
+              <TableHead>Plant</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Login terakhir</TableHead>
               <TableHead className="text-right">Aksi</TableHead>
@@ -270,14 +276,14 @@ function UsersPage() {
           <TableBody>
             {loading && users === null ? (
               <TableRow>
-                <TableCell colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={8} className="py-10 text-center text-sm text-muted-foreground">
                   <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
                   Memuat daftar akun...
                 </TableCell>
               </TableRow>
             ) : terlihat.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={8} className="py-10 text-center text-sm text-muted-foreground">
                   {users && users.length > 0
                     ? "Tidak ada akun yang cocok dengan pencarian itu."
                     : "Belum ada akun terdaftar."}
@@ -309,6 +315,9 @@ function UsersPage() {
                       ) : (
                         <Badge variant="secondary">{ROLE_LABELS.operator}</Badge>
                       )}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {userPlantLabel(user.plant)}
                     </TableCell>
                     <TableCell>
                       <span
@@ -447,6 +456,7 @@ function UserFormDialog({
             password: "",
             confirmPassword: "",
             role: (existing.role === "admin" ? "admin" : "operator") as UserRole,
+            plant: existing.plant,
             isActive: existing.isActive,
           }
         : EMPTY_FORM,
@@ -475,6 +485,7 @@ function UserFormDialog({
           fullName: form.fullName,
           email: form.email,
           role: form.role,
+          plant: form.plant,
           isActive: form.isActive,
         })
       : createUserSchema.safeParse({
@@ -483,6 +494,7 @@ function UserFormDialog({
           email: form.email,
           password: form.password,
           role: form.role,
+          plant: form.plant,
           isActive: form.isActive,
         });
 
@@ -501,6 +513,7 @@ function UserFormDialog({
               fullName: form.fullName,
               email: form.email,
               role: form.role,
+              plant: form.plant,
               isActive: form.isActive,
             },
           })
@@ -511,6 +524,7 @@ function UserFormDialog({
               email: form.email,
               password: form.password,
               role: form.role,
+              plant: form.plant,
               isActive: form.isActive,
             },
           });
@@ -635,6 +649,29 @@ function UserFormDialog({
               </div>
             </>
           )}
+
+          <div className="space-y-1.5">
+            <Label htmlFor="plant">Plant</Label>
+            <Select
+              value={form.plant}
+              onValueChange={(value) => setForm((f) => ({ ...f, plant: value }))}
+              disabled={saving}
+            >
+              <SelectTrigger id="plant">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {USER_PLANT_OPTIONS.map((plant) => (
+                  <SelectItem key={plant} value={plant}>
+                    {userPlantLabel(plant)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Penempatan operator. Belum membatasi akses ke halaman mana pun untuk saat ini.
+            </p>
+          </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">

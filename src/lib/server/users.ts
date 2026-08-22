@@ -84,6 +84,7 @@ export type AppUserRow = {
   fullName: string;
   email: string | null;
   role: string;
+  plant: string;
   isActive: boolean;
   lastLoginAt: string | null;
   createdAt: string;
@@ -103,6 +104,7 @@ function mapAdminRow(row: Record<string, unknown>): AppUserRow {
     fullName: String(row.full_name ?? ""),
     email: typeof row.email === "string" && row.email !== "" ? row.email : null,
     role: String(row.role ?? "operator"),
+    plant: String(row.plant ?? "ALL"),
     isActive: Boolean(row.is_active),
     lastLoginAt: toIso(row.last_login_at),
     createdAt: toIso(row.created_at) ?? new Date().toISOString(),
@@ -111,7 +113,7 @@ function mapAdminRow(row: Record<string, unknown>): AppUserRow {
 }
 
 const USER_COLUMNS = `
-  u.id, u.username, u.full_name, u.email, u.role,
+  u.id, u.username, u.full_name, u.email, u.role, u.plant,
   u.is_active, u.last_login_at, u.created_at, u.updated_at
 `;
 
@@ -180,6 +182,7 @@ export async function insertUser(input: {
   email: string | null;
   passwordHash: string;
   role: string;
+  plant: string;
   isActive: boolean;
 }): Promise<AppUserRow> {
   const { pool, schema } = await db();
@@ -190,11 +193,12 @@ export async function insertUser(input: {
     .input("email", sql.NVarChar(200), input.email)
     .input("passwordHash", sql.NVarChar(400), input.passwordHash)
     .input("role", sql.NVarChar(50), input.role)
+    .input("plant", sql.NVarChar(100), input.plant)
     .input("isActive", sql.Bit, input.isActive ? 1 : 0).query(`
       INSERT INTO ${schema}.app_users
-        (username, full_name, email, password_hash, role, is_active)
+        (username, full_name, email, password_hash, role, plant, is_active)
       OUTPUT ${USER_COLUMNS.replace(/u\./g, "inserted.")}
-      VALUES (@username, @fullName, @email, @passwordHash, @role, @isActive);
+      VALUES (@username, @fullName, @email, @passwordHash, @role, @plant, @isActive);
     `);
   return mapAdminRow(result.recordset[0] as Record<string, unknown>);
 }
@@ -204,6 +208,7 @@ export async function updateUserProfile(input: {
   fullName: string;
   email: string | null;
   role: string;
+  plant: string;
   isActive: boolean;
 }): Promise<AppUserRow | null> {
   const { pool, schema } = await db();
@@ -213,11 +218,13 @@ export async function updateUserProfile(input: {
     .input("fullName", sql.NVarChar(200), input.fullName)
     .input("email", sql.NVarChar(200), input.email)
     .input("role", sql.NVarChar(50), input.role)
+    .input("plant", sql.NVarChar(100), input.plant)
     .input("isActive", sql.Bit, input.isActive ? 1 : 0).query(`
       UPDATE ${schema}.app_users
       SET full_name = @fullName,
           email = @email,
           role = @role,
+          plant = @plant,
           is_active = @isActive,
           updated_at = SYSUTCDATETIME()
       OUTPUT ${USER_COLUMNS.replace(/u\./g, "inserted.")}
