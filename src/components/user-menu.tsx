@@ -74,8 +74,14 @@ export function UserMenu() {
             <span className="max-w-[160px] truncate text-sm font-medium text-foreground">
               {user.fullName}
             </span>
+            {/* Peran, bukan email atau username.
+                Email boleh kosong, dan saat kosong baris ini jatuh ke username
+                -- yang pada akun "admin" terbaca persis seperti sebutan peran
+                dan menyesatkan. Peran selalu terisi, selalu pendek, dan tidak
+                pernah bisa disalahartikan. Email dan username tetap terbaca
+                lengkap di dalam dropdown-nya. */}
             <span className="max-w-[160px] truncate text-[11px] text-muted-foreground">
-              {user.email ?? user.username}
+              {roleLabel}
             </span>
           </span>
           <ChevronDown className="hidden h-4 w-4 shrink-0 text-muted-foreground sm:block" />
