@@ -1,4 +1,4 @@
-import { useRouteContext, useRouter } from "@tanstack/react-router";
+import { useRouter } from "@tanstack/react-router";
 import { ChevronDown, LogOut, ShieldCheck, UserRound } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { logout } from "@/lib/auth";
+import { useSessionUser } from "@/lib/use-session-user";
 import { ROLE_LABELS, type UserRole } from "@/lib/user-admin";
 
 function initialsOf(fullName: string) {
@@ -30,7 +31,7 @@ function initialsOf(fullName: string) {
  * layar sempit, di mana operator paling perlu memastikan ia login sebagai siapa.
  */
 export function UserMenu() {
-  const user = useRouteContext({ from: "__root__", select: (context) => context.user });
+  const user = useSessionUser();
   const router = useRouter();
   const [signingOut, setSigningOut] = useState(false);
 

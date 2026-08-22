@@ -38,7 +38,7 @@ export const NAV_ITEMS: NavItem[] = [
   { title: "Storage", url: "/storage", icon: HardDrive, group: "Infrastruktur" },
   { title: "Users", url: "/users", icon: UsersRound, group: "Pengaturan", adminOnly: true },
   { title: "Log", url: "/log", icon: ScrollText, group: "Pengaturan", adminOnly: true },
-  { title: "Settings", url: "/settings", icon: Settings, group: "Pengaturan" },
+  { title: "Settings", url: "/settings", icon: Settings, group: "Pengaturan", adminOnly: true },
 ];
 
 // Titles for routes nested under a NAV_ITEMS url that need their own

@@ -1,4 +1,4 @@
-import { Link, useRouteContext, useRouterState } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +18,7 @@ import {
 import { loadGallery } from "@/lib/gallery-store";
 import { getDeviceStatus, type DeviceStatus } from "@/lib/camera-api";
 import { NAV_GROUPS, NAV_ITEMS } from "@/lib/nav-items";
+import { useIsAdmin } from "@/lib/use-session-user";
 
 const DEVICE_STATUS_POLL_MS = 30_000;
 
@@ -127,10 +128,10 @@ export function AppSidebar() {
   const currentPath = useRouterState({
     select: (router) => router.location.pathname,
   });
-  const user = useRouteContext({ from: "__root__", select: (context) => context.user });
+  const isAdmin = useIsAdmin();
   const [captureCount, setCaptureCount] = useState(0);
 
-  const items = NAV_ITEMS.filter((item) => !item.adminOnly || user?.role === "admin");
+  const items = NAV_ITEMS.filter((item) => !item.adminOnly || isAdmin);
 
   useEffect(() => {
     loadGallery().then((items) => setCaptureCount(items.length));

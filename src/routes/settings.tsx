@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
@@ -28,6 +28,18 @@ import { PLANTS, toLocationToken } from "@/lib/locations";
 import { PageTitle } from "@/components/page-shell";
 
 export const Route = createFileRoute("/settings")({
+  // Pola filename dan counter menentukan bentuk nama seluruh berkas foto yang
+  // dihasilkan aplikasi ini, jadi mengubahnya berdampak ke arsip semua orang,
+  // bukan ke satu operator saja.
+  //
+  // Akses folder simpan TIDAK ikut terkunci: halaman Capture punya pemilih
+  // foldernya sendiri, jadi operator tetap bisa memberi izin folder di mesinnya
+  // tanpa memanggil Super Admin.
+  beforeLoad: ({ context }) => {
+    if (context.user && context.user.role !== "admin") {
+      throw redirect({ to: "/dashboard" });
+    }
+  },
   component: SettingsPage,
   head: () => ({
     meta: [

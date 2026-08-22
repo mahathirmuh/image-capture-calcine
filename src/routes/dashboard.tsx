@@ -25,6 +25,7 @@ import {
   type DeviceEventView,
 } from "@/lib/capture-records";
 import { PLANTS } from "@/lib/locations";
+import { useIsAdmin } from "@/lib/use-session-user";
 import { getStorageConfigSummary } from "@/lib/storage-diagnostics";
 import { PageTitle } from "@/components/page-shell";
 
@@ -423,6 +424,7 @@ function WeekTrendChart({ days }: { days: DayBucket[] }) {
 }
 
 function DashboardPage() {
+  const isAdmin = useIsAdmin();
   const [gallery, setGallery] = useState<GalleryItem[]>([]);
   const [status, setStatus] = useState<DeviceStatus | null>(null);
   const [storageConfig, setStorageConfig] = useState<StorageConfigSummary | null>(null);
@@ -830,12 +832,14 @@ function DashboardPage() {
               description="Verifikasi share path, edge reachability, dan fallback save."
               icon={FolderOpen}
             />
-            <ActionCard
-              to="/settings"
-              title="Settings Operator"
-              description="Atur pattern filename, counter, dan akses folder simpan."
-              icon={Settings2}
-            />
+            {isAdmin && (
+              <ActionCard
+                to="/settings"
+                title="Settings Operator"
+                description="Atur pattern filename, counter, dan akses folder simpan."
+                icon={Settings2}
+              />
+            )}
           </div>
         </div>
 
