@@ -46,6 +46,7 @@ function DeviceStatusCard() {
       const result = await getDeviceStatus().catch(
         (): DeviceStatus => ({
           online: false,
+          target: null,
           deviceId: null,
           agentVersion: null,
           connectionState: null,
@@ -67,6 +68,18 @@ function DeviceStatusCard() {
   }, []);
 
   const cameraConnected = !!status?.camera?.connected;
+
+  // Registry bilang device ini X, tetapi mesin yang menjawab di alamat itu
+  // mengaku Y. Itu berarti edge_api_url menunjuk ke mesin yang salah -- galat
+  // yang paling mungkin terjadi begitu ada beberapa device dengan port berbeda,
+  // dan yang selama ini tidak akan pernah terlihat karena hanya salah satu dari
+  // kedua nama itu yang pernah ditampilkan.
+  const mismatch = Boolean(
+    status?.online &&
+    status.target?.deviceCode &&
+    status.deviceId &&
+    status.target.deviceCode !== status.deviceId,
+  );
   const cameraLabel = status?.camera
     ? [status.camera.manufacturer, status.camera.model].filter(Boolean).join(" ") ||
       "Model tidak diketahui"
@@ -88,12 +101,24 @@ function DeviceStatusCard() {
       </div>
       <dl className="space-y-1 text-sidebar-foreground/70">
         <div className="flex items-center justify-between gap-2">
-          <dt>Mini PC</dt>
+          <dt>Device</dt>
           <dd
             className="truncate font-medium text-sidebar-foreground"
-            title={status?.deviceId ?? undefined}
+            title={status?.target?.deviceCode ?? undefined}
           >
-            {status?.deviceId ?? "—"}
+            {status?.target?.deviceName ?? "—"}
+          </dd>
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <dt>Alamat</dt>
+          <dd className="truncate font-medium text-sidebar-foreground" title={status?.target?.host}>
+            {status?.target?.host ?? "—"}
+          </dd>
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <dt>Plant</dt>
+          <dd className="truncate font-medium text-sidebar-foreground">
+            {status?.target?.plant ?? "—"}
           </dd>
         </div>
         <div className="flex items-center justify-between gap-2">
@@ -103,16 +128,22 @@ function DeviceStatusCard() {
           </dd>
         </div>
         <div className="flex items-center justify-between gap-2">
-          <dt>Koneksi</dt>
-          <dd className="font-medium text-sidebar-foreground">{cameraConnected ? "USB" : "—"}</dd>
-        </div>
-        <div className="flex items-center justify-between gap-2">
           <dt>Jaringan</dt>
           <dd className="font-medium text-sidebar-foreground">
             {status?.online ? "Terhubung" : "Tidak terjangkau"}
           </dd>
         </div>
       </dl>
+      {mismatch && (
+        <div className="mt-2 rounded border border-destructive/40 bg-destructive/5 px-2 py-1.5 text-[10px] leading-relaxed text-destructive">
+          Registry menyebut device ini{" "}
+          <span className="font-medium">{status?.target?.deviceCode}</span>, tetapi yang menjawab di
+          alamat itu memperkenalkan diri sebagai{" "}
+          <span className="font-medium">{status?.deviceId}</span>. Alamatnya kemungkinan menunjuk ke
+          mesin yang salah.
+        </div>
+      )}
+
       <div className="mt-2 rounded border border-sidebar-border/60 bg-sidebar px-2 py-1.5 text-[10px] leading-relaxed text-sidebar-foreground/70">
         {statusMessage}
       </div>

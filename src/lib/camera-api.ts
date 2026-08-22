@@ -282,8 +282,26 @@ export async function pollJob(jobId: string, intervalMs = 500): Promise<JobResul
   }
 }
 
+/**
+ * Device mana yang aplikasi PUTUSKAN untuk dihubungi, menurut registry.
+ *
+ * Berbeda dari `DeviceStatus.deviceId`, yang merupakan laporan edge tentang
+ * dirinya sendiri. Kalau keduanya tidak cocok, alamat di registry menunjuk ke
+ * mesin yang salah -- kesalahan yang paling mungkin terjadi begitu ada beberapa
+ * device dengan port berbeda, dan yang tidak akan pernah ketahuan kalau hanya
+ * salah satunya yang ditampilkan.
+ */
+export type EdgeTargetInfo = {
+  deviceId: number | null;
+  deviceCode: string | null;
+  deviceName: string | null;
+  plant: string | null;
+  host: string;
+};
+
 export type DeviceStatus = {
   online: boolean;
+  target: EdgeTargetInfo | null;
   deviceId: string | null;
   agentVersion: string | null;
   connectionState: "ready" | "disconnected" | "error" | null;
@@ -303,9 +321,17 @@ const DEVICE_STATUS_LOG_THROTTLE_MS = 60_000;
 let lastDeviceStatusLogKey: string | null = null;
 let lastDeviceStatusLogAt = 0;
 
-function createOfflineStatus(statusMessage: string): DeviceStatus {
+/**
+ * Target tetap dibawa meski offline.
+ *
+ * Justru saat sebuah alamat tidak menjawab, yang pertama ditanyakan orang
+ * adalah "alamat yang mana" -- mengosongkannya di jalur gagal berarti
+ * menyembunyikan keterangan itu tepat di saat ia paling dibutuhkan.
+ */
+function createOfflineStatus(statusMessage: string, target: EdgeTargetInfo | null): DeviceStatus {
   return {
     online: false,
+    target,
     deviceId: null,
     agentVersion: null,
     connectionState: null,
@@ -334,6 +360,24 @@ function describeOnlineStatus(data: {
   }
 
   return `${cameraLabel} terdeteksi, tetapi state koneksi masih ${data.connectionState ?? "unknown"}.`;
+}
+
+function describeTarget(target: {
+  deviceId: number | null;
+  deviceCode: string | null;
+  deviceName: string | null;
+  plant: string | null;
+  baseUrl: string;
+}): EdgeTargetInfo {
+  return {
+    deviceId: target.deviceId,
+    deviceCode: target.deviceCode,
+    deviceName: target.deviceName,
+    plant: target.plant,
+    // host:port saja, bukan URL utuh -- yang dicari orang saat memeriksa
+    // "ini nyambung ke mana" adalah mesin dan portnya, bukan skema dan path.
+    host: getEdgeTargetLabel(target.baseUrl),
+  };
 }
 
 function getEdgeTargetLabel(edgeBase: string) {
@@ -434,6 +478,7 @@ export const getDeviceStatus = createServerFn({ method: "GET" }).handler(
     if (!target.ok) {
       return {
         online: false,
+        target: null,
         deviceId: null,
         agentVersion: null,
         connectionState: null,
@@ -481,6 +526,7 @@ export const getDeviceStatus = createServerFn({ method: "GET" }).handler(
             : `Service edge kamera di ${edgeTarget} merespons ${res.status}${
                 edgeMessage ? ` (${edgeMessage})` : ""
               }. Periksa service edge API pada Mini PC.`,
+          describeTarget(target),
         );
       }
       const data = (await res.json()) as {
@@ -492,6 +538,7 @@ export const getDeviceStatus = createServerFn({ method: "GET" }).handler(
       };
       return {
         online: true,
+        target: describeTarget(target),
         deviceId: data.deviceId,
         agentVersion: data.agentVersion,
         connectionState: data.connectionState,
@@ -507,7 +554,7 @@ export const getDeviceStatus = createServerFn({ method: "GET" }).handler(
         logMessage: offlineStatus.logMessage,
         error,
       });
-      return createOfflineStatus(offlineStatus.statusMessage);
+      return createOfflineStatus(offlineStatus.statusMessage, describeTarget(target));
     }
   },
 );
