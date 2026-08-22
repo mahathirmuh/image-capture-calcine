@@ -48,7 +48,12 @@ const urlSchema = z
   );
 
 const saveSchema = z.object({ deviceId: z.number().int().positive(), url: urlSchema });
-const probeSchema = z.object({ deviceId: z.number().int().positive().optional() });
+// Boleh menguji lewat deviceId (device yang sudah terdaftar) atau lewat url
+// mentah (alamat yang baru diketik di wizard pendaftaran, sebelum devicenya ada).
+const probeSchema = z.object({
+  deviceId: z.number().int().positive().optional(),
+  url: urlSchema.optional(),
+});
 
 async function requireAdmin() {
   const [{ isCardDbConfigured }, { isSessionConfigured, getAppSession }] = await Promise.all([
@@ -164,7 +169,9 @@ export const testEdgeConnection = createServerFn({ method: "POST" })
     const env = getServerEnv();
 
     let url = env.CAMERA_API_URL;
-    if (data.deviceId != null) {
+    if (data.url) {
+      url = data.url;
+    } else if (data.deviceId != null) {
       const device = (await listEdgeDevices()).find((item) => item.id === data.deviceId);
       if (!device) return { ok: false, message: "Device tidak ditemukan di registry." };
       url = device.edgeApiUrl ?? env.CAMERA_API_URL;

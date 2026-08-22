@@ -48,6 +48,26 @@ const upsertRegisteredDeviceInputSchema = z.object({
   schedule: z.string().default(DEVICE_SCHEDULES[1]),
   timezone: z.string().default(DEVICE_TIMEZONES[0]),
   cameraSettings: cameraSettingsSchema,
+  // Alamat service kamera milik device ini. Kosong berarti pakai CAMERA_API_URL
+  // dari .env sebagai cadangan -- dipisahkan dari "alamat salah" dengan NULL di
+  // database, bukan string kosong.
+  edgeApiUrl: z
+    .string()
+    .trim()
+    .max(300)
+    .refine(
+      (value) => {
+        if (value === "") return true;
+        try {
+          const parsed = new URL(value);
+          return parsed.protocol === "http:" || parsed.protocol === "https:";
+        } catch {
+          return false;
+        }
+      },
+      { message: "Harus URL http:// atau https:// yang utuh, misalnya http://10.60.20.155:3000" },
+    )
+    .default(""),
 });
 
 export type UpsertRegisteredDeviceInput = z.infer<typeof upsertRegisteredDeviceInputSchema>;
@@ -167,6 +187,7 @@ export function toUpsertRegisteredDeviceInput(profile: DeviceProfile): UpsertReg
     schedule: profile.schedule,
     timezone: profile.timezone,
     cameraSettings: profile.cameraSettings,
+    edgeApiUrl: "",
   };
 }
 
@@ -240,7 +261,13 @@ export const upsertRegisteredDeviceProfile = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const [{ getCardDbPool, getCardDbSchema, isCardDbConfigured }, sql] = await Promise.all([
       import("./carddb"),
-      import("mssql"),
+      // `.default`, bukan namespace-nya. mssql itu CJS: `await import("mssql")`
+      // menghasilkan namespace ESM yang TIDAK mengekspos Transaction, Request,
+      // maupun NVarChar sebagai named export, sehingga `new sql.Transaction(...)`
+      // gagal dengan "is not a constructor". Berkas ini tidak bisa memakai import
+      // statis seperti carddb.ts karena rutenya mengimpornya dari sisi client --
+      // import statis akan menyeret mssql ke bundle browser.
+      import("mssql").then((m) => m.default),
     ]);
 
     if (!isCardDbConfigured()) {
@@ -303,6 +330,7 @@ export const upsertRegisteredDeviceProfile = createServerFn({ method: "POST" })
       deviceRequest.input("code", sql.NVarChar(50), data.deviceCode);
       deviceRequest.input("name", sql.NVarChar(150), data.deviceName);
       deviceRequest.input("notes", sql.NVarChar(500), data.description || null);
+      deviceRequest.input("edgeApiUrl", sql.NVarChar(300), data.edgeApiUrl || null);
 
       const deviceLookup = await deviceRequest.query(`
         SELECT TOP 1 id
@@ -317,19 +345,21 @@ export const upsertRegisteredDeviceProfile = createServerFn({ method: "POST" })
         await new sql.Request(transaction)
           .input("deviceId", sql.BigInt, deviceId)
           .input("name", sql.NVarChar(150), data.deviceName)
-          .input("notes", sql.NVarChar(500), data.description || null).query(`
+          .input("notes", sql.NVarChar(500), data.description || null)
+          .input("edgeApiUrl", sql.NVarChar(300), data.edgeApiUrl || null).query(`
             UPDATE ${schema}.devices
             SET name = @name,
                 notes = @notes,
+                edge_api_url = @edgeApiUrl,
                 is_active = 1,
                 updated_at = SYSUTCDATETIME()
             WHERE id = @deviceId;
           `);
       } else {
         const deviceInsert = await deviceRequest.query(`
-          INSERT INTO ${schema}.devices (code, name, notes, is_active, is_deleted)
+          INSERT INTO ${schema}.devices (code, name, notes, edge_api_url, is_active, is_deleted)
           OUTPUT INSERTED.id
-          VALUES (@code, @name, @notes, 1, 0);
+          VALUES (@code, @name, @notes, @edgeApiUrl, 1, 0);
         `);
         deviceId = Number(deviceInsert.recordset[0].id);
       }

@@ -14,6 +14,8 @@ import {
   MapPin,
   Package,
   Settings2,
+  Loader2,
+  Plug,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -49,6 +51,7 @@ import {
   type PresetFilter,
 } from "@/lib/device-config";
 import { upsertRegisteredDeviceProfile } from "@/lib/device-registry";
+import { testEdgeConnection } from "@/lib/edge-targets";
 import { PageTitle } from "@/components/page-shell";
 
 export const Route = createFileRoute("/devices/register")({
@@ -106,6 +109,9 @@ function RegisterDevicePage() {
   const [bin, setBin] = useState<string>(DEVICE_BINS[0]);
   const [station, setStation] = useState<string>(DEVICE_STATIONS[0]);
   const [description, setDescription] = useState("");
+  const [edgeApiUrl, setEdgeApiUrl] = useState("");
+  const [probe, setProbe] = useState<{ reachable: boolean; detail: string } | null>(null);
+  const [probing, setProbing] = useState(false);
   const [templateId, setTemplateId] = useState(DEVICE_TEMPLATES[0].id);
   const [templateFilter, setTemplateFilter] = useState<PresetFilter>(PRESET_FILTERS[0]);
   const [compareTemplateId, setCompareTemplateId] = useState(
@@ -160,6 +166,33 @@ function RegisterDevicePage() {
     setShowReview(true);
   }
 
+  /**
+   * Menguji alamat sebelum devicenya ada di registry.
+   *
+   * Menguji SETELAH menyimpan akan menyisakan baris device yang alamatnya
+   * salah di registry sampai ada yang membetulkannya -- dan sampai saat itu
+   * resolver akan mengarahkan operator ke mesin yang tidak menjawab.
+   */
+  async function handleProbe() {
+    setProbing(true);
+    setProbe(null);
+    try {
+      const result = await testEdgeConnection({ data: { url: edgeApiUrl.trim() } });
+      if (!result.ok) {
+        setProbe({ reachable: false, detail: result.message });
+        return;
+      }
+      setProbe({ reachable: result.reachable, detail: result.detail });
+    } catch (error) {
+      setProbe({
+        reachable: false,
+        detail: error instanceof Error ? error.message : "Uji koneksi gagal.",
+      });
+    } finally {
+      setProbing(false);
+    }
+  }
+
   async function handleRegister() {
     const existing = loadDeviceProfile();
     const profile = createProfileFromInput({
@@ -189,6 +222,7 @@ function RegisterDevicePage() {
         schedule: profile.schedule,
         timezone: profile.timezone,
         cameraSettings: profile.cameraSettings,
+        edgeApiUrl,
       },
     });
     setRegistering(false);
@@ -428,6 +462,47 @@ function RegisterDevicePage() {
                     </option>
                   ))}
                 </select>
+              </div>
+              <div className="sm:col-span-2">
+                <label className="mb-1 flex items-center gap-1 text-sm font-medium">
+                  <Plug className="h-3.5 w-3.5 text-muted-foreground" /> Alamat Edge API
+                </label>
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    value={edgeApiUrl}
+                    onChange={(e) => {
+                      setEdgeApiUrl(e.target.value);
+                      setProbe(null);
+                    }}
+                    spellCheck={false}
+                    placeholder="http://10.60.20.155:3000"
+                    className="min-w-[14rem] flex-1 rounded-md border border-input bg-background px-3 py-2 font-mono text-xs"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleProbe}
+                    disabled={probing || edgeApiUrl.trim() === ""}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
+                  >
+                    {probing ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Plug className="h-4 w-4" />
+                    )}
+                    Uji koneksi
+                  </button>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Alamat service kamera pada Mini PC ini, lengkap dengan portnya. Tiap device boleh
+                  memakai port berbeda. Kosongkan untuk memakai alamat cadangan dari server.
+                </p>
+                {probe && (
+                  <p
+                    className={`mt-1 text-xs ${probe.reachable ? "text-emerald-700" : "text-destructive"}`}
+                  >
+                    {probe.detail}
+                  </p>
+                )}
               </div>
               <div>
                 <label className="mb-1 flex items-center gap-1 text-sm font-medium">
