@@ -36,7 +36,7 @@ describe("guardUserUpdate", () => {
       otherActiveAdmins: 5,
     });
 
-    expect(blocked).toMatch(/melepas peran admin dari akun Anda sendiri/i);
+    expect(blocked).toMatch(/melepas peran Super Admin dari akun Anda sendiri/i);
   });
 
   it("refuses to demote the last active admin, even by another admin", () => {
@@ -47,7 +47,7 @@ describe("guardUserUpdate", () => {
       otherActiveAdmins: 0,
     });
 
-    expect(blocked).toMatch(/satu-satunya admin aktif/i);
+    expect(blocked).toMatch(/satu-satunya Super Admin aktif/i);
   });
 
   it("refuses to deactivate the last active admin", () => {
@@ -58,7 +58,7 @@ describe("guardUserUpdate", () => {
       otherActiveAdmins: 0,
     });
 
-    expect(blocked).toMatch(/satu-satunya admin aktif/i);
+    expect(blocked).toMatch(/satu-satunya Super Admin aktif/i);
   });
 
   it("allows demoting an admin once a second active admin exists", () => {
@@ -105,7 +105,7 @@ describe("guardUserDeletion", () => {
 
   it("refuses to delete the last active admin", () => {
     const blocked = guardUserDeletion({ actorId: 9, target: admin, otherActiveAdmins: 0 });
-    expect(blocked).toMatch(/satu-satunya admin aktif/i);
+    expect(blocked).toMatch(/satu-satunya Super Admin aktif/i);
   });
 
   it("allows deleting an operator", () => {

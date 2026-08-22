@@ -6,10 +6,20 @@ import type { SessionUser } from "./auth";
 export const USER_ROLES = ["admin", "operator"] as const;
 export type UserRole = (typeof USER_ROLES)[number];
 
+/**
+ * Label yang dibaca orang. Nilai yang tersimpan di kolom `role` tetap "admin"
+ * dan "operator" -- mengganti nilai tersimpan hanya demi sebutan berarti
+ * migrasi tabel dan menyentuh setiap pemeriksaan peran, tanpa menambah apa pun
+ * yang terlihat. Ganti sebutan cukup di sini.
+ */
 export const ROLE_LABELS: Record<UserRole, string> = {
-  admin: "Admin",
+  admin: "Super Admin",
   operator: "Operator",
 };
+
+// Dipakai di pesan penolakan supaya sebutannya tidak pernah berbeda dari label
+// yang tampil di tabel dan di sidebar.
+const ADMIN = ROLE_LABELS.admin;
 
 // Sama dengan ambang di scripts/create-user.mjs, supaya akun yang dibuat lewat
 // halaman ini dan lewat baris perintah tunduk pada aturan yang sama.
@@ -101,17 +111,17 @@ export function guardUserUpdate(input: {
   const { actorId, target, next, otherActiveAdmins } = input;
 
   if (target.id === actorId && !next.isActive) {
-    return "Anda tidak bisa menonaktifkan akun Anda sendiri. Minta admin lain yang melakukannya.";
+    return `Anda tidak bisa menonaktifkan akun Anda sendiri. Minta ${ADMIN} lain yang melakukannya.`;
   }
 
   if (target.id === actorId && next.role !== "admin") {
-    return "Anda tidak bisa melepas peran admin dari akun Anda sendiri. Minta admin lain yang melakukannya.";
+    return `Anda tidak bisa melepas peran ${ADMIN} dari akun Anda sendiri. Minta ${ADMIN} lain yang melakukannya.`;
   }
 
   const tadinyaAdminAktif = target.role === "admin" && target.isActive;
   const tetapAdminAktif = next.role === "admin" && next.isActive;
   if (tadinyaAdminAktif && !tetapAdminAktif && otherActiveAdmins === 0) {
-    return `"${target.username}" satu-satunya admin aktif. Angkat admin lain dulu, kalau tidak tidak ada yang bisa mengelola akun lagi.`;
+    return `"${target.username}" satu-satunya ${ADMIN} aktif. Angkat ${ADMIN} lain dulu, kalau tidak tidak ada yang bisa mengelola akun lagi.`;
   }
 
   return null;
@@ -129,7 +139,7 @@ export function guardUserDeletion(input: {
   }
 
   if (target.role === "admin" && target.isActive && otherActiveAdmins === 0) {
-    return `"${target.username}" satu-satunya admin aktif. Menghapusnya membuat sistem tidak punya admin sama sekali.`;
+    return `"${target.username}" satu-satunya ${ADMIN} aktif. Menghapusnya membuat sistem tidak punya ${ADMIN} sama sekali.`;
   }
 
   return null;
@@ -171,11 +181,11 @@ async function requireAdmin(): Promise<AdminGate> {
   const current = await findUserById(sessionUser.id);
 
   if (!current || !current.isActive) {
-    return { ok: false, message: "Akun Anda sudah tidak aktif. Hubungi admin lain." };
+    return { ok: false, message: `Akun Anda sudah tidak aktif. Hubungi ${ADMIN} lain.` };
   }
 
   if (current.role !== "admin") {
-    return { ok: false, message: "Hanya admin yang boleh mengelola akun." };
+    return { ok: false, message: `Hanya ${ADMIN} yang boleh mengelola akun.` };
   }
 
   return { ok: true, actor: { ...sessionUser, role: current.role } };

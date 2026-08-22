@@ -550,14 +550,14 @@ function HelpSection({ open, onToggle }: { open: boolean; onToggle: () => void }
         <div className="border-t border-brand-border px-4 py-3 text-[12.5px] leading-relaxed text-slate-600">
           <ul className="space-y-1.5">
             <li>
-              Pakai username operator yang didaftarkan admin, misalnya{" "}
+              Pakai username operator yang didaftarkan Super Admin, misalnya{" "}
               <code className="rounded bg-white px-1 py-0.5 text-[11.5px]">operator.bin1</code>.
               Email kantor juga diterima di kolom yang sama.
             </li>
-            <li>Password salah berulang kali? Berhenti menebak dan hubungi admin.</li>
+            <li>Password salah berulang kali? Berhenti menebak dan hubungi Super Admin.</li>
             <li>
-              Reset password dan pembuatan akun baru dilakukan admin lewat database Capture-Calcine,
-              bukan dari halaman ini.
+              Reset password dan pembuatan akun baru dilakukan Super Admin lewat menu Users di dalam
+              aplikasi, bukan dari halaman ini.
             </li>
             <li>
               Kalau muncul pesan database tidak bisa dihubungi, itu kendala server, bukan akun Anda.

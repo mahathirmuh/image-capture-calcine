@@ -19,6 +19,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { logout } from "@/lib/auth";
+import { ROLE_LABELS, type UserRole } from "@/lib/user-admin";
 import { loadGallery } from "@/lib/gallery-store";
 import { getDeviceStatus, type DeviceStatus } from "@/lib/camera-api";
 import { NAV_ITEMS } from "@/lib/nav-items";
@@ -171,7 +172,7 @@ function SessionCard() {
           {user.fullName}
         </span>
         <span className="truncate text-[10px] leading-tight text-sidebar-foreground/50">
-          {user.username} &middot; {user.role}
+          {user.username} &middot; {ROLE_LABELS[user.role as UserRole] ?? user.role}
         </span>
       </div>
       <Button

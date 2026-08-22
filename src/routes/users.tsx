@@ -80,7 +80,7 @@ export const Route = createFileRoute("/users")({
   head: () => ({
     meta: [
       { title: "Users — Capture App" },
-      { name: "description", content: "Kelola akun operator dan admin aplikasi." },
+      { name: "description", content: "Kelola akun operator dan Super Admin aplikasi." },
     ],
   }),
 });
@@ -244,7 +244,8 @@ function UsersPage() {
         </div>
         {users && (
           <p className="text-xs text-muted-foreground">
-            {terlihat.length} dari {users.length} akun · {jumlahAdminAktif} admin aktif
+            {terlihat.length} dari {users.length} akun · {jumlahAdminAktif} {ROLE_LABELS.admin}{" "}
+            aktif
           </p>
         )}
       </div>
@@ -299,10 +300,10 @@ function UsersPage() {
                       {user.role === "admin" ? (
                         <Badge className="gap-1">
                           <ShieldCheck className="h-3 w-3" />
-                          Admin
+                          {ROLE_LABELS.admin}
                         </Badge>
                       ) : (
-                        <Badge variant="secondary">Operator</Badge>
+                        <Badge variant="secondary">{ROLE_LABELS.operator}</Badge>
                       )}
                     </TableCell>
                     <TableCell>
@@ -611,7 +612,7 @@ function UserFormDialog({
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                Hanya admin yang bisa membuka halaman ini.
+                Hanya {ROLE_LABELS.admin} yang bisa membuka halaman ini.
               </p>
             </div>
 
@@ -711,7 +712,7 @@ function ResetPasswordDialog({ target, onClose }: { target: AppUser | null; onCl
           <DialogTitle>Reset password</DialogTitle>
           <DialogDescription>
             Password baru untuk &quot;{target?.username}&quot;. Password lama tidak bisa dibaca
-            siapa pun, termasuk admin &mdash; yang tersimpan cuma hash-nya.
+            siapa pun, termasuk Super Admin &mdash; yang tersimpan cuma hash-nya.
           </DialogDescription>
         </DialogHeader>
 
