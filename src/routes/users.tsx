@@ -44,6 +44,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { PageTitle } from "@/components/page-shell";
+import { PasswordStrengthMeter } from "@/components/password-strength-meter";
 import {
   Table,
   TableBody,
@@ -108,6 +109,7 @@ type FormState = {
   fullName: string;
   email: string;
   password: string;
+  confirmPassword: string;
   role: UserRole;
   isActive: boolean;
 };
@@ -117,6 +119,7 @@ const EMPTY_FORM: FormState = {
   fullName: "",
   email: "",
   password: "",
+  confirmPassword: "",
   role: "operator",
   isActive: true,
 };
@@ -442,6 +445,7 @@ function UserFormDialog({
             fullName: existing.fullName,
             email: existing.email ?? "",
             password: "",
+            confirmPassword: "",
             role: (existing.role === "admin" ? "admin" : "operator") as UserRole,
             isActive: existing.isActive,
           }
@@ -452,6 +456,15 @@ function UserFormDialog({
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (saving) return;
+
+    // Kecocokan dua kolom password diperiksa lebih dulu dari skema: skema tidak
+    // tahu-menahu soal kolom ulangi -- kolom itu tidak pernah dikirim ke server,
+    // gunanya semata menangkap salah ketik sebelum passwordnya tersimpan
+    // ter-hash dan tidak bisa dibaca siapa pun lagi.
+    if (!existing && form.password !== form.confirmPassword) {
+      setError("Dua kolom password belum sama.");
+      return;
+    }
 
     // Divalidasi lebih dulu dengan skema yang sama seperti serverFn-nya. Kalau
     // dibiarkan sampai server, ZodError kembali sebagai JSON mentah dan itulah
@@ -579,18 +592,48 @@ function UserFormDialog({
           </div>
 
           {mode === "create" && (
-            <div className="space-y-1.5">
-              <Label htmlFor="password">Password awal</Label>
-              <Input
-                id="password"
-                type="password"
-                value={form.password}
-                onChange={(event) => setForm((f) => ({ ...f, password: event.target.value }))}
-                disabled={saving}
-                autoComplete="new-password"
-                placeholder={`Minimal ${MIN_PASSWORD_LENGTH} karakter`}
-              />
-            </div>
+            <>
+              <div className="space-y-1.5">
+                <Label htmlFor="password">Password awal</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  value={form.password}
+                  onChange={(event) => setForm((f) => ({ ...f, password: event.target.value }))}
+                  disabled={saving}
+                  autoComplete="new-password"
+                  placeholder={`Minimal ${MIN_PASSWORD_LENGTH} karakter`}
+                />
+                <PasswordStrengthMeter
+                  password={form.password}
+                  username={form.username}
+                  fullName={form.fullName}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="confirmPassword">Ulangi password</Label>
+                <Input
+                  id="confirmPassword"
+                  type="password"
+                  value={form.confirmPassword}
+                  onChange={(event) =>
+                    setForm((f) => ({ ...f, confirmPassword: event.target.value }))
+                  }
+                  disabled={saving}
+                  autoComplete="new-password"
+                  placeholder="Ketik ulang password yang sama"
+                  aria-invalid={
+                    form.confirmPassword !== "" && form.confirmPassword !== form.password
+                      ? true
+                      : undefined
+                  }
+                />
+                {form.confirmPassword !== "" && form.confirmPassword !== form.password && (
+                  <p className="text-xs text-destructive">Belum sama dengan kolom di atas.</p>
+                )}
+              </div>
+            </>
           )}
 
           <div className="grid gap-4 sm:grid-cols-2">
@@ -729,6 +772,11 @@ function ResetPasswordDialog({ target, onClose }: { target: AppUser | null; onCl
               autoComplete="new-password"
               autoFocus
               placeholder={`Minimal ${MIN_PASSWORD_LENGTH} karakter`}
+            />
+            <PasswordStrengthMeter
+              password={password}
+              username={target?.username}
+              fullName={target?.fullName}
             />
           </div>
 
