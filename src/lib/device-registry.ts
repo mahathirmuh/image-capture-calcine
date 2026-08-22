@@ -48,9 +48,16 @@ const upsertRegisteredDeviceInputSchema = z.object({
   schedule: z.string().default(DEVICE_SCHEDULES[1]),
   timezone: z.string().default(DEVICE_TIMEZONES[0]),
   cameraSettings: cameraSettingsSchema,
-  // Alamat service kamera milik device ini. Kosong berarti pakai CAMERA_API_URL
-  // dari .env sebagai cadangan -- dipisahkan dari "alamat salah" dengan NULL di
-  // database, bukan string kosong.
+  // Alamat service kamera milik device ini.
+  //
+  // Tiga keadaan yang berbeda, dan ketiganya harus tetap bisa dibedakan:
+  //   tidak disebut (undefined) -> jangan sentuh alamat yang sudah tersimpan
+  //   string kosong             -> kosongkan, pakai CAMERA_API_URL sebagai cadangan
+  //   URL                       -> pakai alamat itu
+  //
+  // Kalau ketiganya dilebur, menyimpan profil device dari halaman Devices --
+  // yang tidak tahu-menahu soal alamat -- akan menghapus alamat yang sudah
+  // diisi dengan benar, tanpa ada yang meminta.
   edgeApiUrl: z
     .string()
     .trim()
@@ -67,7 +74,7 @@ const upsertRegisteredDeviceInputSchema = z.object({
       },
       { message: "Harus URL http:// atau https:// yang utuh, misalnya http://10.60.20.155:3000" },
     )
-    .default(""),
+    .optional(),
 });
 
 export type UpsertRegisteredDeviceInput = z.infer<typeof upsertRegisteredDeviceInputSchema>;
@@ -187,7 +194,9 @@ export function toUpsertRegisteredDeviceInput(profile: DeviceProfile): UpsertReg
     schedule: profile.schedule,
     timezone: profile.timezone,
     cameraSettings: profile.cameraSettings,
-    edgeApiUrl: "",
+    // edgeApiUrl sengaja TIDAK disertakan: DeviceProfile tidak menyimpannya,
+    // dan menyebutnya di sini akan menghapus alamat tersimpan setiap kali
+    // profil disimpan ulang dari halaman Devices.
   };
 }
 
@@ -331,6 +340,7 @@ export const upsertRegisteredDeviceProfile = createServerFn({ method: "POST" })
       deviceRequest.input("name", sql.NVarChar(150), data.deviceName);
       deviceRequest.input("notes", sql.NVarChar(500), data.description || null);
       deviceRequest.input("edgeApiUrl", sql.NVarChar(300), data.edgeApiUrl || null);
+      deviceRequest.input("setEdgeApiUrl", sql.Bit, data.edgeApiUrl === undefined ? 0 : 1);
 
       const deviceLookup = await deviceRequest.query(`
         SELECT TOP 1 id
@@ -346,11 +356,12 @@ export const upsertRegisteredDeviceProfile = createServerFn({ method: "POST" })
           .input("deviceId", sql.BigInt, deviceId)
           .input("name", sql.NVarChar(150), data.deviceName)
           .input("notes", sql.NVarChar(500), data.description || null)
-          .input("edgeApiUrl", sql.NVarChar(300), data.edgeApiUrl || null).query(`
+          .input("edgeApiUrl", sql.NVarChar(300), data.edgeApiUrl || null)
+          .input("setEdgeApiUrl", sql.Bit, data.edgeApiUrl === undefined ? 0 : 1).query(`
             UPDATE ${schema}.devices
             SET name = @name,
                 notes = @notes,
-                edge_api_url = @edgeApiUrl,
+                edge_api_url = CASE WHEN @setEdgeApiUrl = 1 THEN @edgeApiUrl ELSE edge_api_url END,
                 is_active = 1,
                 updated_at = SYSUTCDATETIME()
             WHERE id = @deviceId;

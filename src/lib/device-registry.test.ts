@@ -71,3 +71,15 @@ describe("device-registry helpers", () => {
     });
   });
 });
+
+describe("toUpsertRegisteredDeviceInput and edgeApiUrl", () => {
+  it("never mentions edgeApiUrl at all", () => {
+    // Halaman Devices menyimpan profil lewat konverter ini tanpa tahu-menahu
+    // soal alamat Edge API. Begitu konverternya menyebut edgeApiUrl -- entah
+    // sebagai "" atau null -- setiap penyimpanan profil akan menghapus alamat
+    // yang sudah diisi benar, tanpa ada yang meminta. Ketidakhadirannya di sini
+    // yang menjaga alamat itu tetap utuh.
+    const profile = buildDeviceProfileFromRegisteredDevice(registeredDevice);
+    expect("edgeApiUrl" in toUpsertRegisteredDeviceInput(profile)).toBe(false);
+  });
+});
