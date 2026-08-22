@@ -62,23 +62,51 @@ export const loginWithPassword = createServerFn({ method: "POST" })
       };
     }
 
+    const { recordActivity } = await import("./server/activity");
+
     if (!record) {
       // Tetap jalankan satu verifikasi buangan supaya username yang tidak ada
       // memakan waktu yang sama dengan username yang ada -- tanpa ini, selisih
       // waktu respons sudah cukup untuk memetakan daftar akun.
       await verifyPassword(data.password, DUMMY_HASH);
+
+      // Yang diketik SENGAJA tidak ikut dicatat saat akunnya tidak dikenal.
+      // Operator yang salah menaruh kursor mengetik passwordnya di kolom
+      // username, dan mencatat isian itu apa adanya berarti menyimpan password
+      // dalam bentuk terbaca di jejak audit -- persis tempat yang paling sering
+      // dibuka orang lain. Yang berguna untuk keamanan adalah percobaan
+      // terhadap akun yang benar-benar ada, dan itu tetap tercatat di bawah.
+      await recordActivity({
+        action: "login.failed",
+        severity: "warning",
+        detail: "Username atau email tidak dikenal",
+      });
       return { ok: false, message: INVALID_CREDENTIALS };
     }
 
     const passwordMatches = await verifyPassword(data.password, record.passwordHash);
     if (!passwordMatches) {
+      await recordActivity({
+        action: "login.failed",
+        severity: "warning",
+        actorId: record.user.id,
+        actorUsername: record.user.username,
+        detail: "Password salah",
+      });
       return { ok: false, message: INVALID_CREDENTIALS };
     }
 
     if (!record.isActive) {
+      await recordActivity({
+        action: "login.blocked",
+        severity: "warning",
+        actorId: record.user.id,
+        actorUsername: record.user.username,
+        detail: "Akun dinonaktifkan",
+      });
       return {
         ok: false,
-        message: "Akun ini dinonaktifkan. Hubungi admin untuk mengaktifkannya kembali.",
+        message: "Akun ini dinonaktifkan. Hubungi Super Admin untuk mengaktifkannya kembali.",
       };
     }
 
@@ -87,6 +115,11 @@ export const loginWithPassword = createServerFn({ method: "POST" })
 
     // Jam login hanya untuk audit; kalau UPDATE-nya gagal, operator tetap masuk.
     await markUserLogin(record.user.id).catch(() => undefined);
+    await recordActivity({
+      action: "login.success",
+      actorId: record.user.id,
+      actorUsername: record.user.username,
+    });
 
     return { ok: true, user: record.user };
   });
@@ -109,7 +142,15 @@ export const logout = createServerFn({ method: "POST" }).handler(async () => {
   try {
     const { getAppSession } = await import("./server/session");
     const session = await getAppSession();
+    // Identitasnya dibaca sebelum sesi dikosongkan -- setelah clear() tidak ada
+    // lagi yang bisa memberi tahu siapa yang barusan keluar.
+    const user = session.data.user;
     await session.clear();
+
+    if (user) {
+      const { recordActivity } = await import("./server/activity");
+      await recordActivity({ action: "logout", actorId: user.id, actorUsername: user.username });
+    }
   } catch {
     // Tidak ada sesi yang bisa dibersihkan berarti tujuannya sudah tercapai.
   }

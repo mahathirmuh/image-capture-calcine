@@ -238,6 +238,16 @@ export const createAppUser = createServerFn({ method: "POST" })
         isActive: data.isActive,
       });
 
+      const { recordActivity } = await import("./server/activity");
+      await recordActivity({
+        action: "user.created",
+        actorId: gate.actor.id,
+        actorUsername: gate.actor.username,
+        targetId: user.id,
+        targetUsername: user.username,
+        detail: `peran: ${ROLE_LABELS[data.role]}; status: ${data.isActive ? "aktif" : "nonaktif"}`,
+      });
+
       return { ok: true, user };
     } catch (error) {
       return { ok: false, message: `Akun gagal dibuat: ${messageOf(error)}` };
@@ -271,6 +281,26 @@ export const updateAppUser = createServerFn({ method: "POST" })
 
       const user = await updateUserProfile(data);
       if (!user) return { ok: false, message: "Akun tidak ditemukan. Muat ulang daftarnya." };
+
+      const { recordActivity } = await import("./server/activity");
+      const { describeUserChange } = await import("./activity-log");
+      const ringkasan = describeUserChange(
+        target,
+        user,
+        (role) => ROLE_LABELS[role as UserRole] ?? role,
+      );
+      // Perubahan yang tidak mengubah apa pun -- operator menekan Simpan tanpa
+      // menyentuh isian -- tidak perlu meninggalkan jejak.
+      if (ringkasan) {
+        await recordActivity({
+          action: "user.updated",
+          actorId: gate.actor.id,
+          actorUsername: gate.actor.username,
+          targetId: user.id,
+          targetUsername: user.username,
+          detail: ringkasan,
+        });
+      }
 
       // Sesi menyimpan salinan identitas dari saat login. Kalau admin mengubah
       // akunnya sendiri, salinan itu ikut disegarkan -- tanpa ini namanya di
@@ -313,6 +343,16 @@ export const resetAppUserPassword = createServerFn({ method: "POST" })
       const changed = await updateUserPassword(data.id, await hashPassword(data.password));
       if (!changed) return { ok: false, message: "Password gagal disimpan." };
 
+      const { recordActivity } = await import("./server/activity");
+      await recordActivity({
+        action: "user.password_reset",
+        severity: "warning",
+        actorId: gate.actor.id,
+        actorUsername: gate.actor.username,
+        targetId: target.id,
+        targetUsername: target.username,
+      });
+
       return { ok: true, username: target.username };
     } catch (error) {
       return { ok: false, message: `Password gagal direset: ${messageOf(error)}` };
@@ -340,6 +380,17 @@ export const deleteAppUser = createServerFn({ method: "POST" })
 
       const removed = await deleteUser(data.id);
       if (!removed) return { ok: false, message: "Akun tidak ditemukan. Muat ulang daftarnya." };
+
+      const { recordActivity } = await import("./server/activity");
+      await recordActivity({
+        action: "user.deleted",
+        severity: "warning",
+        actorId: gate.actor.id,
+        actorUsername: gate.actor.username,
+        targetId: target.id,
+        targetUsername: target.username,
+        detail: `peran terakhir: ${ROLE_LABELS[target.role as UserRole] ?? target.role}`,
+      });
 
       return { ok: true, username: target.username };
     } catch (error) {

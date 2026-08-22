@@ -4,6 +4,7 @@ import {
   Images,
   LayoutDashboard,
   Network,
+  ScrollText,
   Settings,
   UsersRound,
   type LucideIcon,
@@ -36,6 +37,7 @@ export const NAV_ITEMS: NavItem[] = [
   { title: "Devices", url: "/devices", icon: Network, group: "Infrastruktur" },
   { title: "Storage", url: "/storage", icon: HardDrive, group: "Infrastruktur" },
   { title: "Users", url: "/users", icon: UsersRound, group: "Pengaturan", adminOnly: true },
+  { title: "Log", url: "/log", icon: ScrollText, group: "Pengaturan", adminOnly: true },
   { title: "Settings", url: "/settings", icon: Settings, group: "Pengaturan" },
 ];
 
