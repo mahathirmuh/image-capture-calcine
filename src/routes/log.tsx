@@ -1,5 +1,8 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import {
+  Download,
+  FileJson,
+  FileSpreadsheet,
   Loader2,
   LogIn,
   LogOut,
@@ -13,10 +16,17 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 
 import { PageTitle } from "@/components/page-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -33,9 +43,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { csvBlob, downloadBlobFile, fileTimestamp, toCsv } from "@/lib/csv";
 import {
   ACTION_LABELS,
   ACTIVITY_ACTIONS,
+  ACTIVITY_EXPORT_LIMIT,
   ACTIVITY_PAGE_SIZES,
   listActivityLog,
   type ActivityAction,
@@ -129,6 +141,85 @@ function LogPage() {
     }
   }, [action, search, limit]);
 
+  const [exporting, setExporting] = useState(false);
+
+  /**
+   * Mengekspor seluruh baris yang cocok dengan penyaring, bukan hanya yang
+   * sedang tampil di layar -- berkas audit bertuliskan "500 dari 12.000" tanpa
+   * penjelasan justru menyesatkan pembacanya.
+   */
+  async function handleExport(format: "csv" | "json") {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const result = await listActivityLog({
+        data: {
+          action: action === SEMUA ? null : (action as ActivityAction),
+          search: search.trim() || null,
+          limit: ACTIVITY_EXPORT_LIMIT,
+        },
+      });
+
+      if (!result.ok) {
+        toast.error(result.message);
+        return;
+      }
+
+      if (result.entries.length === 0) {
+        toast.message("Tidak ada kejadian yang cocok dengan penyaring itu");
+        return;
+      }
+
+      const nama = `jejak-aktivitas_${fileTimestamp()}`;
+
+      if (format === "json") {
+        downloadBlobFile(
+          new Blob([JSON.stringify(result.entries, null, 2)], { type: "application/json" }),
+          `${nama}.json`,
+        );
+      } else {
+        const rows = [
+          [
+            "Waktu Lokal",
+            "Waktu UTC",
+            "Aksi",
+            "Kode Aksi",
+            "Tingkat",
+            "Pelaku",
+            "Sasaran",
+            "Detail",
+            "Alamat IP",
+          ],
+          ...result.entries.map((entry) => [
+            formatDateTime(entry.occurredAt),
+            entry.occurredAt,
+            ACTION_LABELS[entry.action] ?? entry.action,
+            entry.action,
+            entry.severity,
+            entry.actorUsername ?? "",
+            entry.targetUsername ?? "",
+            entry.detail ?? "",
+            entry.ipAddress ?? "",
+          ]),
+        ];
+        downloadBlobFile(csvBlob(toCsv(rows)), `${nama}.csv`);
+      }
+
+      // Pemotongan disebutkan terang-terangan. Berkas audit yang diam-diam
+      // kurang lengkap lebih berbahaya daripada tidak ada berkas sama sekali.
+      const terpotong = result.total > result.entries.length;
+      toast.success(`${result.entries.length} kejadian diekspor ke ${format.toUpperCase()}`, {
+        description: terpotong
+          ? `Terpotong di ${ACTIVITY_EXPORT_LIMIT.toLocaleString("id-ID")} baris teratas dari ${result.total.toLocaleString("id-ID")} yang cocok. Persempit penyaringnya untuk mengambil sisanya.`
+          : "Seluruh kejadian yang cocok dengan penyaring ikut terbawa.",
+      });
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "Ekspor gagal.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   // Penyaring aksi dan jumlah baris langsung memuat ulang, tapi kolom pencarian
   // diberi jeda: memanggil server pada setiap ketukan tombol berarti satu query
   // per huruf ke tabel yang akan terus tumbuh.
@@ -144,10 +235,34 @@ function LogPage() {
           title="Log"
           description="Jejak siapa masuk, siapa gagal masuk, dan siapa mengubah akun. Baris tidak bisa disunting atau dihapus dari halaman ini."
         />
-        <Button variant="outline" size="sm" onClick={refresh} disabled={loading}>
-          <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-          Muat ulang
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" onClick={refresh} disabled={loading}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            Muat ulang
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" disabled={exporting || !entries || entries.length === 0}>
+                {exporting ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="mr-2 h-4 w-4" />
+                )}
+                Ekspor
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuItem onSelect={() => handleExport("csv")}>
+                <FileSpreadsheet className="mr-2 h-4 w-4" />
+                CSV untuk Excel
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => handleExport("json")}>
+                <FileJson className="mr-2 h-4 w-4" />
+                JSON mentah
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </header>
 
       {loadError && (

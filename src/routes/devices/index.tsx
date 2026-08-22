@@ -47,6 +47,7 @@ import {
 import { loadGallery } from "@/lib/gallery-store";
 import { loadPrefs } from "@/lib/capture-prefs";
 import { PageTitle } from "@/components/page-shell";
+import { downloadBlobFile, escapeCsvValue } from "@/lib/csv";
 import {
   APERTURE_OPTIONS,
   APPLY_HISTORY_SAVED_VIEW_OPTIONS,
@@ -569,10 +570,6 @@ function formatDeviceEventGroupDate(date: Date) {
     month: "long",
     year: "numeric",
   });
-}
-
-function escapeCsvValue(value: string) {
-  return `"${value.replace(/"/g, '""')}"`;
 }
 
 function ReadinessCard({
@@ -3192,15 +3189,6 @@ function CameraSettingsTab({
       blob: new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" }),
       fileName: `${baseFileName}.csv`,
     };
-  }
-
-  function downloadBlobFile(blob: Blob, fileName: string) {
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = fileName;
-    anchor.click();
-    URL.revokeObjectURL(url);
   }
 
   function exportDeviceEvents(format: "json" | "csv") {

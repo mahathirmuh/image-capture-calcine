@@ -39,10 +39,16 @@ export type ActivityEntry = {
 
 export const ACTIVITY_PAGE_SIZES = [50, 100, 250, 500] as const;
 
+// Ekspor mengambil seluruh baris yang cocok dengan penyaring, bukan hanya yang
+// sedang tampil -- "500 dari 12.000" di dalam berkas audit menyesatkan. Tetap
+// dibatasi supaya satu klik tidak menarik tabel seumur hidup ke dalam memori
+// browser; kalau tersentuh, halamannya memberi tahu bahwa hasilnya terpotong.
+export const ACTIVITY_EXPORT_LIMIT = 10_000;
+
 const listInputSchema = z.object({
   action: z.enum(ACTIVITY_ACTIONS).nullable().default(null),
   search: z.string().trim().max(200).nullable().default(null),
-  limit: z.number().int().min(1).max(500).default(100),
+  limit: z.number().int().min(1).max(ACTIVITY_EXPORT_LIMIT).default(100),
 });
 
 export type ListActivityInput = z.input<typeof listInputSchema>;
