@@ -25,6 +25,7 @@ import {
   type Prefs,
 } from "@/lib/capture-prefs";
 import { PLANTS, toLocationToken } from "@/lib/locations";
+import { EdgeApiSettings } from "@/components/edge-api-settings";
 import { PageTitle } from "@/components/page-shell";
 
 export const Route = createFileRoute("/settings")({
@@ -547,6 +548,8 @@ function SettingsPage() {
               </button>
             </div>
           </div>
+
+          <EdgeApiSettings />
 
           <div className="rounded-xl border bg-card shadow-sm p-5">
             <div className="mb-4 flex items-center gap-2">

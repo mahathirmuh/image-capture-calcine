@@ -12,8 +12,16 @@ import { z } from "zod";
 import { toEdgeProfileSettings, type DeviceProfile } from "./device-config";
 import { getServerEnv } from "./env";
 
-function baseUrl() {
-  return getServerEnv().CAMERA_API_URL;
+/**
+ * Alamat edge dan hak akses ditentukan sekali di sini, lalu dipakai apa adanya
+ * oleh handler. Sengaja tidak dibungkus fungsi sinkron seperti sebelumnya:
+ * memilih device menuntut query dan pemeriksaan sesi, dan menyembunyikan itu di
+ * balik pemanggilan yang terlihat murah akan mengundang pemanggilan berulang di
+ * dalam satu handler.
+ */
+async function resolveTarget(deviceId?: number) {
+  const { resolveEdgeTarget } = await import("./server/edge-target");
+  return resolveEdgeTarget(deviceId);
 }
 
 function edgeHeaders(extra?: HeadersInit): Headers {
@@ -55,7 +63,14 @@ export type CameraSession = {
   expiresAt: string;
 };
 
-const sessionRefSchema = z.object({ sessionId: z.string(), leaseToken: z.string() });
+// deviceId opsional, bukan wajib: instalasi satu-device tidak perlu
+// menyebutkannya dan resolver akan memilihkannya sendiri. Begitu ada lebih dari
+// satu device aktif, resolver menolak menebak dan menuntut nilai ini.
+const deviceRefSchema = z.object({ deviceId: z.number().int().positive().optional() });
+
+const sessionRefSchema = z
+  .object({ sessionId: z.string(), leaseToken: z.string() })
+  .merge(deviceRefSchema);
 
 function createApiError(code: string, message: string): ErrorWithCode {
   const error = new Error(message) as ErrorWithCode;
@@ -64,11 +79,14 @@ function createApiError(code: string, message: string): ErrorWithCode {
 }
 
 export const createSession = createServerFn({ method: "POST" })
-  .validator(z.object({ ownerId: z.string(), leaseSeconds: z.number() }))
+  .validator(z.object({ ownerId: z.string(), leaseSeconds: z.number() }).merge(deviceRefSchema))
   .handler(async ({ data }): Promise<ApiSuccess<{ session: CameraSession }> | ApiFailure> => {
+    const target = await resolveTarget(data.deviceId);
+    if (!target.ok) return target;
+
     let res: Response;
     try {
-      res = await fetch(`${baseUrl()}/v1/sessions`, {
+      res = await fetch(`${target.baseUrl}/v1/sessions`, {
         method: "POST",
         headers: edgeHeaders({ "content-type": "application/json" }),
         body: JSON.stringify({
@@ -96,8 +114,12 @@ export const createSession = createServerFn({ method: "POST" })
 export const releaseSession = createServerFn({ method: "POST" })
   .validator(sessionRefSchema)
   .handler(async ({ data }) => {
+    const target = await resolveTarget(data.deviceId);
+    // Best-effort: lease-nya akan kedaluwarsa sendiri kalau ini tidak jalan.
+    if (!target.ok) return;
+
     try {
-      await fetch(`${baseUrl()}/v1/sessions/${data.sessionId}`, {
+      await fetch(`${target.baseUrl}/v1/sessions/${data.sessionId}`, {
         method: "DELETE",
         headers: edgeHeaders({ "X-Session-Token": data.leaseToken }),
       });
@@ -114,8 +136,11 @@ export const releaseSession = createServerFn({ method: "POST" })
 export const renewSession = createServerFn({ method: "POST" })
   .validator(sessionRefSchema.extend({ leaseSeconds: z.number().optional() }))
   .handler(async ({ data }): Promise<{ ok: true } | ApiFailure> => {
+    const target = await resolveTarget(data.deviceId);
+    if (!target.ok) return target;
+
     try {
-      const res = await fetch(`${baseUrl()}/v1/sessions/${data.sessionId}/renew`, {
+      const res = await fetch(`${target.baseUrl}/v1/sessions/${data.sessionId}/renew`, {
         method: "POST",
         headers: edgeHeaders({
           "content-type": "application/json",
@@ -135,7 +160,10 @@ export const renewSession = createServerFn({ method: "POST" })
 export const getPreviewFrame = createServerFn({ method: "GET" })
   .validator(sessionRefSchema)
   .handler(async ({ data }) => {
-    const res = await fetch(`${baseUrl()}/v1/camera/preview`, {
+    const target = await resolveTarget(data.deviceId);
+    if (!target.ok) throw createApiError(target.code, target.message);
+
+    const res = await fetch(`${target.baseUrl}/v1/camera/preview`, {
       headers: edgeHeaders({ "X-Session-Token": data.leaseToken }),
     });
     if (!res.ok) {
@@ -154,9 +182,12 @@ export type CaptureJob = { jobId: string; status: string; type: string };
 export const triggerCapture = createServerFn({ method: "POST" })
   .validator(sessionRefSchema)
   .handler(async ({ data }): Promise<ApiSuccess<{ job: CaptureJob }> | ApiFailure> => {
+    const target = await resolveTarget(data.deviceId);
+    if (!target.ok) return target;
+
     let res: Response;
     try {
-      res = await fetch(`${baseUrl()}/v1/captures`, {
+      res = await fetch(`${target.baseUrl}/v1/captures`, {
         method: "POST",
         headers: edgeHeaders({
           "content-type": "application/json",
@@ -187,6 +218,9 @@ export const triggerCapture = createServerFn({ method: "POST" })
 export const triggerAutofocus = createServerFn({ method: "POST" })
   .validator(sessionRefSchema)
   .handler(async ({ data }): Promise<ApiSuccess<{ job: CaptureJob }> | ApiFailure> => {
+    const target = await resolveTarget(data.deviceId);
+    if (!target.ok) return target;
+
     let res: Response;
     try {
       // No content-type header on purpose: this POST carries no body, and the
@@ -194,7 +228,7 @@ export const triggerAutofocus = createServerFn({ method: "POST" })
       // idempotency key headers alone. Declaring application/json without a
       // body makes Fastify reject the request outright with "Body cannot be
       // empty when content-type is set to 'application/json'".
-      res = await fetch(`${baseUrl()}/v1/camera/focus/autofocus`, {
+      res = await fetch(`${target.baseUrl}/v1/camera/focus/autofocus`, {
         method: "POST",
         headers: edgeHeaders({ "X-Session-Token": data.leaseToken }),
       });
@@ -220,11 +254,14 @@ export type JobResult = {
 };
 
 export const getJob = createServerFn({ method: "GET" })
-  .validator(z.object({ jobId: z.string() }))
+  .validator(z.object({ jobId: z.string() }).merge(deviceRefSchema))
   .handler(async ({ data }): Promise<ApiSuccess<{ job: JobResult }> | ApiFailure> => {
+    const target = await resolveTarget(data.deviceId);
+    if (!target.ok) return target;
+
     let res: Response;
     try {
-      res = await fetch(`${baseUrl()}/v1/jobs/${data.jobId}`, { headers: edgeHeaders() });
+      res = await fetch(`${target.baseUrl}/v1/jobs/${data.jobId}`, { headers: edgeHeaders() });
     } catch {
       return { ok: false, code: "UNREACHABLE", message: "Tidak bisa menjangkau service kamera" };
     }
@@ -299,16 +336,16 @@ function describeOnlineStatus(data: {
   return `${cameraLabel} terdeteksi, tetapi state koneksi masih ${data.connectionState ?? "unknown"}.`;
 }
 
-function getEdgeTargetLabel() {
+function getEdgeTargetLabel(edgeBase: string) {
   try {
-    return new URL(baseUrl()).host;
+    return new URL(edgeBase).host;
   } catch {
-    return baseUrl();
+    return edgeBase;
   }
 }
 
-function describeOfflineStatus(error: unknown) {
-  const edgeTarget = getEdgeTargetLabel();
+function describeOfflineStatus(error: unknown, edgeBase: string) {
+  const edgeTarget = getEdgeTargetLabel(edgeBase);
   const topLevelCode =
     typeof error === "object" && error !== null && "code" in error && typeof error.code === "string"
       ? error.code
@@ -390,10 +427,26 @@ function logDeviceStatusIssue({
 // capture/preview endpoints which need X-Session-Token.
 export const getDeviceStatus = createServerFn({ method: "GET" }).handler(
   async (): Promise<DeviceStatus> => {
+    // Tanpa parameter: pemanggilnya sidebar dan dashboard yang menanyakan
+    // "device saya" -- resolver yang menentukan device mana itu, dan menolak
+    // menebak kalau operatornya punya lebih dari satu.
+    const target = await resolveTarget();
+    if (!target.ok) {
+      return {
+        online: false,
+        deviceId: null,
+        agentVersion: null,
+        connectionState: null,
+        capabilities: [],
+        statusMessage: target.message,
+        camera: null,
+      };
+    }
+
     try {
-      const res = await fetch(`${baseUrl()}/v1/device`, { headers: edgeHeaders() });
+      const res = await fetch(`${target.baseUrl}/v1/device`, { headers: edgeHeaders() });
       if (!res.ok) {
-        const edgeTarget = getEdgeTargetLabel();
+        const edgeTarget = getEdgeTargetLabel(target.baseUrl);
         // The edge puts the real cause in the body -- for CAMERA_COMMAND_FAILED
         // that is gphoto2's own stderr. Reporting only the status number sent us
         // chasing a healthy edge service when the camera was the problem.
@@ -447,7 +500,7 @@ export const getDeviceStatus = createServerFn({ method: "GET" }).handler(
         camera: data.camera,
       };
     } catch (error) {
-      const offlineStatus = describeOfflineStatus(error);
+      const offlineStatus = describeOfflineStatus(error, target.baseUrl);
       logDeviceStatusIssue({
         key: offlineStatus.key,
         level: offlineStatus.level,
@@ -461,9 +514,12 @@ export const getDeviceStatus = createServerFn({ method: "GET" }).handler(
 
 export const listCameraConfigs = createServerFn({ method: "GET" }).handler(
   async (): Promise<ApiSuccess<{ items: CameraConfig[] }> | ApiFailure> => {
+    const target = await resolveTarget();
+    if (!target.ok) return target;
+
     let res: Response;
     try {
-      res = await fetch(`${baseUrl()}/v1/camera/configs`, { headers: edgeHeaders() });
+      res = await fetch(`${target.baseUrl}/v1/camera/configs`, { headers: edgeHeaders() });
     } catch {
       return { ok: false, code: "UNREACHABLE", message: "Tidak bisa menjangkau service kamera" };
     }
@@ -525,10 +581,12 @@ async function readFailure(
   };
 }
 
-async function listProfilesDirect(): Promise<ApiSuccess<{ items: CameraProfile[] }> | ApiFailure> {
+async function listProfilesDirect(
+  edgeBase: string,
+): Promise<ApiSuccess<{ items: CameraProfile[] }> | ApiFailure> {
   let res: Response;
   try {
-    res = await fetch(`${baseUrl()}/v1/profiles`, { headers: edgeHeaders() });
+    res = await fetch(`${edgeBase}/v1/profiles`, { headers: edgeHeaders() });
   } catch {
     return { ok: false, code: "UNREACHABLE", message: "Tidak bisa menjangkau service kamera" };
   }
@@ -540,11 +598,12 @@ async function listProfilesDirect(): Promise<ApiSuccess<{ items: CameraProfile[]
 }
 
 async function createTemporarySession(
+  edgeBase: string,
   ownerId: string,
 ): Promise<ApiSuccess<{ session: CameraSession }> | ApiFailure> {
   let res: Response;
   try {
-    res = await fetch(`${baseUrl()}/v1/sessions`, {
+    res = await fetch(`${edgeBase}/v1/sessions`, {
       method: "POST",
       headers: edgeHeaders({ "content-type": "application/json" }),
       body: JSON.stringify({
@@ -569,9 +628,9 @@ async function createTemporarySession(
   return { ok: true, session: (await res.json()) as CameraSession };
 }
 
-async function releaseTemporarySession(session: CameraSession): Promise<void> {
+async function releaseTemporarySession(edgeBase: string, session: CameraSession): Promise<void> {
   try {
-    await fetch(`${baseUrl()}/v1/sessions/${session.sessionId}`, {
+    await fetch(`${edgeBase}/v1/sessions/${session.sessionId}`, {
       method: "DELETE",
       headers: edgeHeaders({ "X-Session-Token": session.leaseToken }),
     });
@@ -580,9 +639,14 @@ async function releaseTemporarySession(session: CameraSession): Promise<void> {
   }
 }
 
-async function pollEdgeJob(jobId: string, intervalMs = 500, maxAttempts = 60): Promise<JobResult> {
+async function pollEdgeJob(
+  edgeBase: string,
+  jobId: string,
+  intervalMs = 500,
+  maxAttempts = 60,
+): Promise<JobResult> {
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    const res = await fetch(`${baseUrl()}/v1/jobs/${jobId}`, { headers: edgeHeaders() });
+    const res = await fetch(`${edgeBase}/v1/jobs/${jobId}`, { headers: edgeHeaders() });
     if (!res.ok) {
       throw new Error(`Gagal mengecek status apply preset (${res.status})`);
     }
@@ -596,7 +660,7 @@ async function pollEdgeJob(jobId: string, intervalMs = 500, maxAttempts = 60): P
 }
 
 export const upsertAndApplyEdgePreset = createServerFn({ method: "POST" })
-  .validator(applyEdgePresetProfileSchema)
+  .validator(applyEdgePresetProfileSchema.merge(deviceRefSchema))
   .handler(
     async ({
       data,
@@ -610,6 +674,9 @@ export const upsertAndApplyEdgePreset = createServerFn({ method: "POST" })
         }>
       | ApiFailure
     > => {
+      const target = await resolveTarget(data.deviceId);
+      if (!target.ok) return target;
+
       const device = await getDeviceStatus();
       if (!device.online) {
         return { ok: false, code: "UNREACHABLE", message: "Tidak bisa menjangkau service kamera" };
@@ -665,7 +732,7 @@ export const upsertAndApplyEdgePreset = createServerFn({ method: "POST" })
 
       const desiredName = buildEdgeProfileName(data);
       const desiredDescription = `Managed by Capture App (${data.templateId})`;
-      const listedProfiles = await listProfilesDirect();
+      const listedProfiles = await listProfilesDirect(target.baseUrl);
       if (!listedProfiles.ok) return listedProfiles;
 
       const existingProfile =
@@ -677,8 +744,8 @@ export const upsertAndApplyEdgePreset = createServerFn({ method: "POST" })
       try {
         profileRes = await fetch(
           existingProfile
-            ? `${baseUrl()}/v1/profiles/${existingProfile.profileId}`
-            : `${baseUrl()}/v1/profiles`,
+            ? `${target.baseUrl}/v1/profiles/${existingProfile.profileId}`
+            : `${target.baseUrl}/v1/profiles`,
           {
             method: existingProfile ? "PATCH" : "POST",
             headers: edgeHeaders({ "content-type": "application/json" }),
@@ -702,23 +769,27 @@ export const upsertAndApplyEdgePreset = createServerFn({ method: "POST" })
       const edgeProfile = (await profileRes.json()) as CameraProfile;
 
       const session = await createTemporarySession(
+        target.baseUrl,
         `preset:${data.deviceCode || data.deviceName || "capture-app"}`,
       );
       if (!session.ok) return session;
 
       try {
-        const applyRes = await fetch(`${baseUrl()}/v1/profiles/${edgeProfile.profileId}/apply`, {
-          method: "POST",
-          headers: edgeHeaders({
-            "X-Session-Token": session.session.leaseToken,
-          }),
-        });
+        const applyRes = await fetch(
+          `${target.baseUrl}/v1/profiles/${edgeProfile.profileId}/apply`,
+          {
+            method: "POST",
+            headers: edgeHeaders({
+              "X-Session-Token": session.session.leaseToken,
+            }),
+          },
+        );
         if (!applyRes.ok) {
           return readFailure(applyRes, "REQUEST_FAILED", "Gagal menerapkan preset");
         }
 
         const accepted = (await applyRes.json()) as CaptureJob;
-        const job = await pollEdgeJob(accepted.jobId);
+        const job = await pollEdgeJob(target.baseUrl, accepted.jobId);
         if (job.status === "failed") {
           return {
             ok: false,
@@ -739,15 +810,18 @@ export const upsertAndApplyEdgePreset = createServerFn({ method: "POST" })
           skippedKeys: uniqueSkippedKeys,
         };
       } finally {
-        await releaseTemporarySession(session.session);
+        await releaseTemporarySession(target.baseUrl, session.session);
       }
     },
   );
 
 export const getMediaContent = createServerFn({ method: "GET" })
-  .validator(z.object({ assetId: z.string() }))
+  .validator(z.object({ assetId: z.string() }).merge(deviceRefSchema))
   .handler(async ({ data }) => {
-    const res = await fetch(`${baseUrl()}/v1/media/${data.assetId}/content`, {
+    const target = await resolveTarget(data.deviceId);
+    if (!target.ok) throw createApiError(target.code, target.message);
+
+    const res = await fetch(`${target.baseUrl}/v1/media/${data.assetId}/content`, {
       headers: edgeHeaders(),
     });
     if (!res.ok) {
@@ -771,6 +845,9 @@ export const exportMediaToNetwork = createServerFn({ method: "POST" })
   .validator(sessionRefSchema.extend({ assetId: z.string(), relativePath: z.string() }))
   .handler(
     async ({ data }): Promise<ApiSuccess<{ savedTo: string; filename: string }> | ApiFailure> => {
+      const target = await resolveTarget(data.deviceId);
+      if (!target.ok) return target;
+
       const targetRoot = getServerEnv().NETWORK_SAVE_ROOT;
       if (!targetRoot) {
         return {
@@ -781,7 +858,7 @@ export const exportMediaToNetwork = createServerFn({ method: "POST" })
       }
       let res: Response;
       try {
-        res = await fetch(`${baseUrl()}/v1/media/${data.assetId}/export`, {
+        res = await fetch(`${target.baseUrl}/v1/media/${data.assetId}/export`, {
           method: "POST",
           headers: edgeHeaders({
             "content-type": "application/json",
