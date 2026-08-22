@@ -140,7 +140,23 @@ export function AppSidebar() {
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader className="gap-0 border-b border-sidebar-border px-3 py-3.5">
+      {/*
+        Watermark gunung di kaki sidebar.
+
+        Elemen ber-posisi selalu dilukis di atas saudara statis-nya, berapa pun
+        urutan DOM-nya -- jadi tiga bagian di bawah diberi `relative z-10` agar
+        menu tetap berada di depan gambar ini, bukan tertimpa olehnya.
+
+        Disembunyikan saat sidebar dilipat jadi mode ikon: di lebar 48px
+        gambarnya terpotong jadi guratan yang tidak terbaca sebagai apa pun.
+      */}
+      <img
+        src="/sidebar-watermark.png"
+        alt=""
+        aria-hidden="true"
+        className="pointer-events-none absolute bottom-0 left-0 z-0 w-full select-none group-data-[collapsible=icon]:hidden"
+      />
+      <SidebarHeader className="relative z-10 gap-0 border-b border-sidebar-border px-3 py-3.5">
         <div className="flex items-center gap-2.5">
           <img
             src="/app-logo.png"
@@ -159,7 +175,7 @@ export function AppSidebar() {
           </div>
         </div>
       </SidebarHeader>
-      <SidebarContent>
+      <SidebarContent className="relative z-10">
         {NAV_GROUPS.map((group) => {
           const anggota = items.filter((item) => item.group === group);
           // Grup yang seluruh isinya tersaring keluar -- misalnya Pengaturan
@@ -220,7 +236,7 @@ export function AppSidebar() {
           );
         })}
       </SidebarContent>
-      <SidebarFooter className="border-t border-sidebar-border">
+      <SidebarFooter className="relative z-10 border-t border-sidebar-border">
         <DeviceStatusCard />
       </SidebarFooter>
     </Sidebar>

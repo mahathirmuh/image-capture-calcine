@@ -1,6 +1,8 @@
-import { createFileRoute, redirect, useRouter } from "@tanstack/react-router";
+import { createFileRoute, redirect, useNavigate, useRouter } from "@tanstack/react-router";
 import {
+  AlertCircle,
   Camera,
+  Check,
   ChevronDown,
   ChevronRight,
   ClipboardCheck,
@@ -20,8 +22,7 @@ import {
   TriangleAlert,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useState, type FormEvent } from "react";
-import { toast } from "sonner";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { z } from "zod";
 
 import { Button } from "@/components/ui/button";
@@ -33,6 +34,9 @@ const loginSearchSchema = z.object({
   // `.catch` supaya query string yang diacak-acak tidak memunculkan error page
   // di depan operator -- redirect-nya cukup diabaikan.
   redirect: z.string().optional().catch(undefined),
+  // Dipasang saat operator menekan Keluar, dibaca sekali untuk memunculkan
+  // konfirmasi, lalu dibuang dari URL.
+  loggedOut: z.boolean().optional().catch(undefined),
 });
 
 export const Route = createFileRoute("/login")({
@@ -99,6 +103,23 @@ const BACKDROP_PHOTOS = ["/login-bg-ore.webp", "/login-bg-calcine.webp"];
 
 const SLIDE_INTERVAL_MS = 7000;
 
+// Verifikasi password sebenarnya cuma ~100 ms (scrypt) ditambah satu query.
+// Tanpa lantai waktu, overlay-nya cuma berkedip sekilas dan operator tidak
+// sempat membaca apa pun -- kedipan itu justru terbaca seperti gangguan, bukan
+// seperti proses. Kalau servernya memang lambat, overlay bertahan lebih lama
+// dengan sendirinya; ini lantai, bukan jeda tetap.
+const MIN_LOGIN_OVERLAY_MS = 700;
+
+// Jeda supaya konfirmasi berhasil sempat terbaca sebelum halaman berpindah.
+const SUCCESS_HOLD_MS = 1100;
+
+type LoginDialog =
+  | { kind: "progress" }
+  | { kind: "success"; name: string }
+  | { kind: "failed"; message: string }
+  | { kind: "loggedOut" }
+  | null;
+
 const PILLARS = [
   { icon: ShieldCheck, title: "Sampel Terekam", subtitle: "Tiap BIN Terdokumentasi" },
   { icon: ClipboardCheck, title: "Metadata Lengkap", subtitle: "Waktu, Plant, Station" },
@@ -108,6 +129,7 @@ const PILLARS = [
 
 function LoginPage() {
   const router = useRouter();
+  const navigate = useNavigate();
   const search = Route.useSearch();
 
   const [identifier, setIdentifier] = useState("");
@@ -117,10 +139,29 @@ function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
 
+  // Satu keadaan, bukan sekumpulan boolean: keempat kondisinya saling meniadakan
+  // -- tidak mungkin sedang masuk sekaligus gagal masuk -- dan boolean terpisah
+  // memungkinkan dua modal tampil bertumpuk kalau satu lupa dimatikan.
+  const [dialog, setDialog] = useState<LoginDialog>(
+    search.loggedOut === true ? { kind: "loggedOut" } : null,
+  );
+
+  // Penanda dibuang dari URL begitu konfirmasinya ditutup, supaya menyegarkan
+  // halaman atau menekan Back tidak memunculkan ucapan perpisahan yang sama
+  // untuk kedua kalinya.
+  function dismissLoggedOut() {
+    setDialog(null);
+    navigate({ to: "/login", search: {}, replace: true });
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (submitting) return;
 
+    // Isian yang belum lengkap dijawab di bawah kolomnya, bukan lewat modal:
+    // pesannya menunjuk ke kolom tertentu, dan menutupi kolom itu dengan modal
+    // justru menyembunyikan yang harus diperbaiki. Modal disimpan untuk jawaban
+    // dari server, yang bukan soal isian.
     const parsed = loginInputSchema.safeParse({ identifier, password });
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? "Lengkapi username dan password.");
@@ -129,37 +170,73 @@ function LoginPage() {
 
     setSubmitting(true);
     setError(null);
+    setDialog({ kind: "progress" });
 
+    const mulai = Date.now();
     try {
       const result = await loginWithPassword({ data: parsed.data });
 
+      const tersisa = MIN_LOGIN_OVERLAY_MS - (Date.now() - mulai);
+      if (tersisa > 0) await new Promise((resolve) => setTimeout(resolve, tersisa));
+
       if (!result.ok) {
-        setError(result.message);
         setPassword("");
+        setSubmitting(false);
+        setDialog({ kind: "failed", message: result.message });
         return;
       }
 
-      toast.success(`Selamat datang, ${result.user.fullName}`);
+      setDialog({ kind: "success", name: result.user.fullName });
+      await new Promise((resolve) => setTimeout(resolve, SUCCESS_HOLD_MS));
 
       // invalidate() dulu supaya beforeLoad di root membaca ulang sesi yang
       // baru dibuat; tanpa itu halaman tujuan masih melihat context.user null
       // dan langsung memantulkan balik ke sini.
       await router.invalidate();
       await router.navigate({ href: toSafeRedirect(search.redirect), replace: true });
+      // dialog dan submitting sengaja dibiarkan: keduanya menutup layar sampai
+      // halaman tujuan benar-benar terpasang. Mematikannya di sini memunculkan
+      // kembali form login sepersekian detik di tengah perpindahan.
     } catch (caught) {
-      setError(
-        caught instanceof Error
-          ? `Server aplikasi tidak merespons: ${caught.message}`
-          : "Server aplikasi tidak merespons.",
-      );
-    } finally {
       setSubmitting(false);
+      setDialog({
+        kind: "failed",
+        message:
+          caught instanceof Error
+            ? `Server aplikasi tidak merespons: ${caught.message}`
+            : "Server aplikasi tidak merespons.",
+      });
     }
   }
 
   return (
     <div className="relative min-h-svh w-full overflow-hidden bg-slate-100">
       <BackdropLayers />
+
+      {dialog?.kind === "progress" && <ProgressDialog title="Sedang masuk..." />}
+      {dialog?.kind === "success" && (
+        <StatusDialog
+          tone="success"
+          title="Berhasil Masuk"
+          message={`Selamat datang, ${dialog.name}. Anda akan dialihkan sebentar lagi.`}
+        />
+      )}
+      {dialog?.kind === "failed" && (
+        <StatusDialog
+          tone="failed"
+          title="Gagal Masuk"
+          message={dialog.message}
+          onDismiss={() => setDialog(null)}
+        />
+      )}
+      {dialog?.kind === "loggedOut" && (
+        <StatusDialog
+          tone="success"
+          title="Berhasil Keluar"
+          message="Sampai jumpa!"
+          onDismiss={dismissLoggedOut}
+        />
+      )}
 
       <div className="relative z-10 flex min-h-svh w-full flex-col gap-10 px-5 py-8 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(360px,430px)] lg:items-stretch lg:gap-14 lg:px-12 lg:py-10">
         <BrandPanel />
@@ -291,6 +368,116 @@ function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+/** Selubung gelap + kartu terpusat, dipakai bersama keempat keadaan modal. */
+function ModalShell({
+  children,
+  onDismiss,
+  label,
+  busy,
+}: {
+  children: ReactNode;
+  onDismiss?: () => void;
+  label: string;
+  busy?: boolean;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[1px]"
+      onClick={onDismiss}
+    >
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-label={label}
+        aria-busy={busy}
+        className="w-full max-w-[510px] rounded-lg bg-white px-8 py-10 text-center shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Selubung selama proses masuk berjalan.
+ *
+ * Sengaja tidak bisa ditutup: selama permintaan melayang, menekan Masuk untuk
+ * kedua kalinya mengirim percobaan login kedua yang tidak ada gunanya, dan
+ * mengubah isian di baliknya membuat yang terkirim berbeda dari yang terbaca.
+ */
+function ProgressDialog({ title }: { title: string }) {
+  return (
+    <ModalShell label={title} busy>
+      <p className="text-2xl font-semibold tracking-tight text-slate-900">{title}</p>
+      <Loader2 className="mx-auto mt-5 h-8 w-8 animate-spin text-brand" aria-hidden="true" />
+    </ModalShell>
+  );
+}
+
+/**
+ * Jawaban akhir sebuah proses: berhasil atau gagal.
+ *
+ * Tanpa `onDismiss`, modalnya tidak punya tombol tutup -- dipakai untuk keadaan
+ * yang memang lanjut sendiri, seperti berhasil masuk yang disusul perpindahan
+ * halaman. Menaruh tombol OK di sana hanya memberi operator sesuatu untuk
+ * ditekan yang tidak mengubah apa pun.
+ */
+function StatusDialog({
+  tone,
+  title,
+  message,
+  onDismiss,
+}: {
+  tone: "success" | "failed";
+  title: string;
+  message: string;
+  onDismiss?: () => void;
+}) {
+  const okRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!onDismiss) return;
+    okRef.current?.focus();
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") onDismiss?.();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onDismiss]);
+
+  const berhasil = tone === "success";
+
+  return (
+    <ModalShell label={title} onDismiss={onDismiss}>
+      <span
+        className={`mx-auto flex h-20 w-20 items-center justify-center rounded-full border-2 ${
+          berhasil ? "border-emerald-400/70" : "border-destructive/50"
+        }`}
+      >
+        {berhasil ? (
+          <Check className="h-10 w-10 text-emerald-500" strokeWidth={2.5} aria-hidden="true" />
+        ) : (
+          <AlertCircle className="h-11 w-11 text-destructive" strokeWidth={2} aria-hidden="true" />
+        )}
+      </span>
+      <h2 className="mt-6 text-3xl font-semibold tracking-tight text-slate-900">{title}</h2>
+      <p className="mx-auto mt-2 max-w-[26rem] text-base leading-relaxed text-slate-500">
+        {message}
+      </p>
+      {onDismiss && (
+        <Button
+          ref={okRef}
+          onClick={onDismiss}
+          className="mt-7 h-10 w-24 bg-brand text-brand-foreground hover:bg-brand-strong"
+        >
+          OK
+        </Button>
+      )}
+    </ModalShell>
   );
 }
 

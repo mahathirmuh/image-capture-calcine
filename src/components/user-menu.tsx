@@ -46,7 +46,11 @@ export function UserMenu() {
       // dan menendang ke /login sendiri. Kalau urutannya dibalik, /login masih
       // melihat context.user lama dan memantulkan balik ke dashboard.
       await router.invalidate();
-      await router.navigate({ to: "/login", replace: true });
+      // invalidate() sendiri sudah menendang ke /login lewat beforeLoad di root,
+      // tapi dengan membawa ?redirect=<halaman tadi>. Navigasi ini menimpanya:
+      // penandanya diganti loggedOut, dan redirect lama dibuang supaya operator
+      // berikutnya yang login tidak ikut terlempar ke halaman milik orang tadi.
+      await router.navigate({ to: "/login", search: { loggedOut: true }, replace: true });
     } catch (error) {
       toast.error(
         error instanceof Error ? `Gagal keluar: ${error.message}` : "Gagal keluar dari sesi.",
