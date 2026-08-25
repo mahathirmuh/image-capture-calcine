@@ -55,6 +55,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { getOperatorPlant, type OperatorPlant } from "@/lib/operator-plant";
 import { PageTitle } from "@/components/page-shell";
 
 export const Route = createFileRoute("/capture")({
@@ -264,11 +265,21 @@ function CapturePage() {
   const [dirHandle, setDirHandle] = useState<DirHandle | null>(null);
   const [dirName, setDirName] = useState<string>("");
   const [location, setLocation] = useState<string>(DEFAULT_PREFS.location);
-  // Sebutan slot mengikuti plant yang sedang dipilih di dropdown Lokasi, bukan
-  // plant akun yang login. Dropdown itulah yang juga menentukan token lokasi di
-  // nama berkas dan kolom `plant` di registry, jadi label di layar tidak akan
-  // pernah berbeda dari apa yang benar-benar tersimpan.
-  const binLabel = (slot: BinSlot) => toBinLabel(location, slot);
+  const [operatorPlant, setOperatorPlant] = useState<OperatorPlant | null>(null);
+
+  // Plant yang benar-benar dipakai capture ini. Operator yang terikat satu
+  // plant memakai plant itu apa pun isi dropdown-nya; Super Admin memakai
+  // pilihannya sendiri.
+  //
+  // Diturunkan, bukan disimpan ke state `location`, supaya tidak ada balapan
+  // dengan pemuatan prefs -- prefs boleh menang atau kalah, hasilnya tetap
+  // sama, dan nilai pilihan operator tidak ikut tertimpa di localStorage.
+  const activePlant = operatorPlant?.locked && operatorPlant.plant ? operatorPlant.plant : location;
+  const plantLocked = !!operatorPlant?.locked;
+
+  // Satu sumber untuk label slot: apa yang dibaca operator, yang masuk ke nama
+  // berkas, dan yang tersimpan sebagai captureBin semuanya turun dari sini.
+  const binLabel = (slot: BinSlot) => toBinLabel(activePlant, slot);
   const [pattern, setPattern] = useState<string>(DEFAULT_PREFS.pattern);
   const [ext, setExt] = useState<"jpg">(DEFAULT_PREFS.ext);
   const [counter, setCounter] = useState<number>(DEFAULT_PREFS.counter);
@@ -324,7 +335,7 @@ function CapturePage() {
           source: "capture-page",
           deviceName: context.deviceName,
           station: context.station,
-          plant: location,
+          plant: activePlant,
           sessionId: sessionId ?? null,
           hasLeaseToken: !!leaseToken,
           connectionState: deviceStatus?.connectionState ?? null,
@@ -340,6 +351,13 @@ function CapturePage() {
     setHydrated(true);
     const supports = "showDirectoryPicker" in window;
     setSupportsFS(supports);
+
+    // Plant pengikat dibaca dari server, bukan dari cookie sesi -- lihat
+    // operator-plant.ts. Kegagalannya sengaja dibiarkan senyap: hasilnya
+    // dropdown tetap bebas seperti sebelumnya, bukan halaman yang macet.
+    void getOperatorPlant()
+      .then(setOperatorPlant)
+      .catch(() => setOperatorPlant(null));
 
     const prefs = loadPrefs();
     setLocation(prefs.location);
@@ -559,8 +577,8 @@ function CapturePage() {
     savingRef.current = true;
     setSavingBin(bin);
     setError(null);
-    const source = toBinToken(location, bin);
-    const base = formatFilename(pattern, counter, toLocationToken(location), source);
+    const source = toBinToken(activePlant, bin);
+    const base = formatFilename(pattern, counter, toLocationToken(activePlant), source);
     // Resolved to the actual on-disk name below (may gain a " (2)" suffix if a
     // same-minute capture already claimed the plain name).
     let filename = `${base}.${ext}`;
@@ -704,7 +722,7 @@ function CapturePage() {
         data: {
           deviceCode: profile?.deviceCode || deviceStatus?.deviceId || "edge-camera-01",
           deviceName: profile?.deviceName || deviceStatus?.deviceId || null,
-          plant: location,
+          plant: activePlant,
           captureBin: binLabel(bin),
           station: profile?.station ?? null,
           fileName: filename,
@@ -740,7 +758,7 @@ function CapturePage() {
         name: filename,
         url: URL.createObjectURL(previewItem.blob),
         blob: previewItem.blob,
-        folder: location,
+        folder: activePlant,
         bin: binLabel(bin),
         fileHandle,
         parentDir,
@@ -769,7 +787,7 @@ function CapturePage() {
     setCounter(1);
   }
 
-  const nextFilename = `${formatFilename(pattern, counter, toLocationToken(location), toBinToken(location, lastSource))}.${ext}`;
+  const nextFilename = `${formatFilename(pattern, counter, toLocationToken(activePlant), toBinToken(activePlant, lastSource))}.${ext}`;
   const fsUnsupportedNote = hydrated && !supportsFS;
   const currentOperationRunning =
     capturingBin !== null || autofocusing || savingBin !== null || previewFetching;
@@ -908,11 +926,13 @@ function CapturePage() {
           <MapPin className="h-4 w-4 text-muted-foreground" />
           <span className="text-muted-foreground">Lokasi:</span>
           <select
-            value={location}
+            value={activePlant}
             onChange={(e) => setLocation(e.target.value)}
-            className="bg-transparent font-semibold outline-none"
+            disabled={plantLocked}
+            title={plantLocked ? "Akun Anda terpasang di plant ini" : undefined}
+            className="bg-transparent font-semibold outline-none disabled:cursor-not-allowed disabled:opacity-100"
           >
-            {PLANTS.map((plant) => (
+            {(plantLocked ? [activePlant] : PLANTS).map((plant) => (
               <option key={plant} value={plant}>
                 {plant}
               </option>
@@ -1277,25 +1297,28 @@ function CapturePage() {
           <div>
             <label className="mb-1 block text-sm font-medium">Lokasi</label>
             <select
-              value={location}
+              value={activePlant}
               onChange={(e) => setLocation(e.target.value)}
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              disabled={plantLocked}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {PLANTS.map((plant) => (
+              {(plantLocked ? [activePlant] : PLANTS).map((plant) => (
                 <option key={plant} value={plant}>
                   {plant}
                 </option>
               ))}
             </select>
             <p className="mt-1 text-xs text-muted-foreground">
-              Menentukan capture ini berasal dari plant yang mana.
+              {plantLocked
+                ? `Akun Anda terpasang di ${activePlant}, jadi lokasinya tidak bisa diubah dari sini.`
+                : "Menentukan capture ini berasal dari plant yang mana."}
             </p>
           </div>
 
           <div>
             <label className="mb-1 block text-sm font-medium">Sumber</label>
             <div className="rounded-md border border-input bg-muted px-3 py-2 text-sm">
-              BIN 1 / BIN 2
+              {binLabel(1)} / {binLabel(2)}
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
               Ditentukan otomatis dari tombol Capture BIN yang dipakai.
@@ -1379,12 +1402,12 @@ function CapturePage() {
                 </p>
                 <p className="rounded-md bg-muted px-3 py-2 font-mono text-xs break-all text-foreground">
                   {confirmSaveBin
-                    ? `${formatFilename(pattern, counter, toLocationToken(location), toBinToken(location, confirmSaveBin))}.${ext}`
+                    ? `${formatFilename(pattern, counter, toLocationToken(activePlant), toBinToken(activePlant, confirmSaveBin))}.${ext}`
                     : "—"}
                 </p>
                 <p>
-                  Lokasi: {location}. Kalau folder jaringan sedang tidak bisa dipakai, hasil capture
-                  diunduh lokal supaya tidak hilang.
+                  Lokasi: {activePlant}. Kalau folder jaringan sedang tidak bisa dipakai, hasil
+                  capture diunduh lokal supaya tidak hilang.
                 </p>
               </div>
             </AlertDialogDescription>
