@@ -36,7 +36,7 @@ export function describeCameraRuntimeIssue(
     case "UNREACHABLE":
       return {
         code,
-        title: "Edge API tidak terjangkau",
+        title: "Edge API tidak terhubung",
         detail:
           fallbackMessage || "Aplikasi tidak bisa menjangkau service kamera pada edge device.",
         nextAction: "Periksa koneksi jaringan, status Mini PC, dan service edge camera API.",
@@ -151,7 +151,7 @@ export function getCaptureActionHint({
     return "Aplikasi sedang membuat session kamera ke edge device.";
   }
   if (!deviceStatus?.online) {
-    return "Edge API belum terjangkau, jadi capture belum bisa dimulai.";
+    return "Edge API belum terhubung, jadi capture belum bisa dimulai.";
   }
   if (!deviceStatus.camera?.connected) {
     return "Hubungkan kamera USB ke edge device sebelum capture atau autofocus.";

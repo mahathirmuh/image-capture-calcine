@@ -24,6 +24,8 @@ import {
 } from "lucide-react";
 import { type GalleryItem, loadGallery, saveGallery, removeGalleryItem } from "@/lib/gallery-store";
 import { getDeviceStatus, type DeviceStatus } from "@/lib/camera-api";
+import { toBinLabel, toBinSlot, type BinSlot } from "@/lib/locations";
+import { getOperatorPlant, type OperatorPlant } from "@/lib/operator-plant";
 import {
   deleteCaptureRecord,
   listCaptureRecords,
@@ -251,6 +253,14 @@ function GalleryPage() {
   const [deviceStatusCheckedAt, setDeviceStatusCheckedAt] = useState<Date | null>(null);
   const [captureRecords, setCaptureRecords] = useState<CaptureRecordView[]>([]);
   const [captureRecordsError, setCaptureRecordsError] = useState<string | null>(null);
+  const [operatorPlant, setOperatorPlant] = useState<OperatorPlant | null>(null);
+
+  // Istilah slot mengikuti plant si PENONTON, bukan plant tiap record. Satu
+  // galeri bisa memuat record dari beberapa plant sekaligus; menamai filternya
+  // per record akan menghasilkan dua tombol yang menyaring hal yang sama.
+  // Super Admin (tidak terkunci) jatuh ke istilah default.
+  const viewerPlant = operatorPlant?.locked ? (operatorPlant.plant ?? "") : "";
+  const binLabel = (slot: BinSlot) => toBinLabel(viewerPlant, slot);
 
   const [detailItem, setDetailItem] = useState<GalleryItem | null>(null);
   const [detailDimensions, setDetailDimensions] = useState<{
@@ -575,7 +585,7 @@ function GalleryPage() {
     const matchesDate =
       filterDate === "" || new Date(item.createdAt).toISOString().slice(0, 10) === filterDate;
     const matchesLocation = filterLocation === "" || item.folder === filterLocation;
-    const matchesBin = filterBin === "" || item.bin === filterBin;
+    const matchesBin = filterBin === "" || toBinSlot(item.bin) === toBinSlot(filterBin);
     return matchesSearch && matchesDate && matchesLocation && matchesBin;
   });
   const filteredCaptureRecords = captureRecords.filter((item) => {
@@ -584,7 +594,10 @@ function GalleryPage() {
       item.fileName.toLowerCase().includes(searchQuery.trim().toLowerCase());
     const matchesDate = filterDate === "" || item.capturedAt.slice(0, 10) === filterDate;
     const matchesLocation = filterLocation === "" || item.plant === filterLocation;
-    const matchesBin = filterBin === "" || formatBin(item.captureBin) === formatBin(filterBin);
+    // Dibandingkan sebagai slot, bukan teks: "TRAIN 1" (Acid) dan "BIN 1"
+    // (Chloride) adalah slot yang sama, dan record Acid Plant lama masih
+    // tersimpan sebagai "BIN 1" dari sebelum istilahnya ditukar.
+    const matchesBin = filterBin === "" || toBinSlot(item.captureBin) === toBinSlot(filterBin);
     return matchesSearch && matchesDate && matchesLocation && matchesBin;
   });
   const recentCaptureRecords = filteredCaptureRecords.slice(0, 8);
@@ -618,11 +631,11 @@ function GalleryPage() {
       ? deviceStatus.camera?.connected
         ? "Siap capture"
         : "Edge aktif"
-      : "Tidak terjangkau";
+      : "Tidak terhubung";
   const deviceStatusDetail = deviceStatus?.online
     ? deviceStatus.camera?.connected
       ? `Kamera ${[deviceStatus.camera.manufacturer, deviceStatus.camera.model].filter(Boolean).join(" ") || "aktif"} terhubung ke edge device.`
-      : "Edge device terjangkau, tetapi kamera USB belum siap dipakai untuk capture."
+      : "Edge device terhubung, tetapi kamera USB belum siap dipakai untuk capture."
     : cameraStateHint;
   const deviceCheckedAtLabel = deviceStatusCheckedAt
     ? formatDateTime(deviceStatusCheckedAt.getTime())
@@ -638,7 +651,7 @@ function GalleryPage() {
     filterBin
       ? {
           key: "bin",
-          label: `Bin: ${formatBin(filterBin)}`,
+          label: `Bin: ${binLabel(filterBin === "BIN2" ? 2 : 1)}`,
           clear: () => setFilterBin(""),
         }
       : null,
@@ -927,7 +940,9 @@ ${storage.path ?? "—"}`}
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-semibold">{savedView.label}</span>
+                    <span className="text-sm font-semibold">
+                      {savedView.slot ? `${binLabel(savedView.slot)} review` : savedView.label}
+                    </span>
                     <span
                       className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
                         isActive
@@ -980,8 +995,8 @@ ${storage.path ?? "—"}`}
               className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-xs"
             >
               <option value="">Semua Bin</option>
-              <option value="BIN1">BIN 1</option>
-              <option value="BIN2">BIN 2</option>
+              <option value="BIN1">{binLabel(1)}</option>
+              <option value="BIN2">{binLabel(2)}</option>
             </select>
           </div>
           <div>

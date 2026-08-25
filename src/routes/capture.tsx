@@ -883,11 +883,7 @@ function CapturePage() {
   const runtimeCards = [
     {
       title: "Edge API",
-      status: !deviceStatusLoaded
-        ? "Sinkronisasi"
-        : deviceStatus?.online
-          ? "Terjangkau"
-          : "Offline",
+      status: !deviceStatusLoaded ? "Sinkronisasi" : deviceStatus?.online ? "Terhubung" : "Offline",
       detail: !deviceStatusLoaded
         ? "Status edge device sedang dimuat dari service kamera."
         : deviceStatus?.online

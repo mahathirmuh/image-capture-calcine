@@ -410,7 +410,7 @@ function StoragePage() {
         />
         <StatusCard
           title="Reachability Edge"
-          value={deviceLoading ? "Mengecek..." : deviceStatus?.online ? "Terjangkau" : "Offline"}
+          value={deviceLoading ? "Mengecek..." : deviceStatus?.online ? "Terhubung" : "Offline"}
           description={
             deviceStatus?.online
               ? (config?.cameraApiUrl ?? "Belum ada CAMERA_API_URL yang termuat.")
@@ -482,8 +482,8 @@ function StoragePage() {
             {deviceLoading
               ? "Mengecek..."
               : deviceStatus?.online
-                ? "Terjangkau"
-                : "Offline / tidak terjangkau"}
+                ? "Terhubung"
+                : "Offline / tidak terhubung"}
           </div>
           <p className="mt-2 text-xs text-muted-foreground">
             {deviceStatus?.online

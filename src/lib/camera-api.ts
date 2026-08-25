@@ -348,8 +348,8 @@ function describeOnlineStatus(data: {
 }) {
   if (!data.camera?.connected) {
     return data.deviceId
-      ? `Edge device ${data.deviceId} terjangkau, tetapi kamera USB belum terdeteksi atau belum siap.`
-      : "Edge device terjangkau, tetapi kamera USB belum terdeteksi atau belum siap.";
+      ? `Edge device ${data.deviceId} terhubung, tetapi kamera USB belum terdeteksi atau belum siap.`
+      : "Edge device terhubung, tetapi kamera USB belum terdeteksi atau belum siap.";
   }
 
   const cameraLabel =

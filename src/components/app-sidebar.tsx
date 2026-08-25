@@ -88,7 +88,7 @@ function DeviceStatusCard() {
     status?.statusMessage ??
     (status?.online
       ? "Edge device aktif. Status kamera dan jaringan terus disegarkan otomatis."
-      : "Edge camera service belum terjangkau. Periksa Mini PC, LAN, atau service edge API.");
+      : "Edge camera service belum terhubung. Periksa Mini PC, LAN, atau service edge API.");
 
   return (
     <div className="rounded-md border bg-sidebar-accent/40 p-3 text-xs group-data-[collapsible=icon]:hidden">
@@ -130,7 +130,7 @@ function DeviceStatusCard() {
         <div className="flex items-center justify-between gap-2">
           <dt>Jaringan</dt>
           <dd className="font-medium text-sidebar-foreground">
-            {status?.online ? "Terhubung" : "Tidak terjangkau"}
+            {status?.online ? "Terhubung" : "Tidak terhubung"}
           </dd>
         </div>
       </dl>

@@ -673,7 +673,7 @@ function DashboardPage() {
     },
     {
       title: "Edge device",
-      status: status?.online ? "Terjangkau" : "Offline",
+      status: status?.online ? "Terhubung" : "Offline",
       description: status?.online
         ? `Status terakhir diperbarui ${formatRelativeTime(lastRefreshed)}.`
         : (status?.statusMessage ??
@@ -738,8 +738,7 @@ function DashboardPage() {
     status?.online && !cameraConnected
       ? {
           title: "Sesi kamera perlu perhatian",
-          detail:
-            "Edge API terjangkau, tetapi kamera belum terhubung atau belum siap untuk capture baru.",
+          detail: "Edge API terhubung, tetapi kamera belum siap untuk capture baru.",
           to: "/devices",
           cta: "Cek Status Kamera",
         }

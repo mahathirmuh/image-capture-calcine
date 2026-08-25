@@ -1120,7 +1120,7 @@ function DevicesPage() {
   const readinessCards = [
     {
       title: "Edge API",
-      status: status?.online ? "Terjangkau" : "Offline",
+      status: status?.online ? "Terhubung" : "Offline",
       detail: status?.online
         ? `Terakhir sinkron ${lastSync ? formatRelativeTime(lastSync.getTime()) : "baru saja"}.`
         : (status?.statusMessage ?? "App belum bisa menjangkau edge API pada refresh terakhir."),
@@ -1740,7 +1740,7 @@ function DevicesPage() {
             const isActiveRuntime = profile?.deviceCode === device.deviceCode;
             const cardStatus = isActiveRuntime
               ? status?.online
-                ? "Terjangkau"
+                ? "Terhubung"
                 : "Offline"
               : "Terdaftar";
             const cardTone = isActiveRuntime
@@ -1939,7 +1939,7 @@ function DevicesPage() {
                     <dd
                       className={`text-right font-medium ${status?.online ? "text-emerald-600" : ""}`}
                     >
-                      {status?.online ? "Terjangkau" : "Tidak terjangkau"}
+                      {status?.online ? "Terhubung" : "Tidak terhubung"}
                     </dd>
                     <dt className="text-muted-foreground">Kamera (USB)</dt>
                     <dd
