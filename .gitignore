@@ -38,3 +38,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Claude Code: preferensi mesin ini saja (memuat hook auto-commit).
+# Skrip .claude/auto-commit-push.sh sengaja ikut ter-commit; tanpa berkas
+# di bawah ini skrip itu tidak pernah dipanggil, jadi clone orang lain
+# tidak tiba-tiba auto-push.
+.claude/settings.local.json
