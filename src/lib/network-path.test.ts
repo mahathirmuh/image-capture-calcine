@@ -35,6 +35,22 @@ describe("normalizeRelativeSegments", () => {
     ]);
   });
 
+  // Segmen plant ("Acid Plant", "Chloride Plant") jadi folder pertama di bawah
+  // targetRoot, dan namanya mengandung spasi. Spasi harus lolos apa adanya --
+  // kalau ikut tersaring, seluruh capture mendarat di folder yang salah.
+  it("mempertahankan spasi pada nama folder plant", () => {
+    expect(normalizeRelativeSegments("Chloride Plant/2026/08/25/foto.jpg")).toEqual([
+      "Chloride Plant",
+      "2026",
+      "08",
+      "25",
+      "foto.jpg",
+    ]);
+    expect(
+      joinNetworkPath("/mnt/mti/ML/MTI/Foto Sampling", ["Acid Plant", "2026", "foto.jpg"]),
+    ).toBe("/mnt/mti/ML/MTI/Foto Sampling/Acid Plant/2026/foto.jpg");
+  });
+
   it("menerima backslash dan separator berulang", () => {
     expect(normalizeRelativeSegments("2026\\08//25\\foto.jpg")).toEqual([
       "2026",

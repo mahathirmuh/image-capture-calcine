@@ -25,7 +25,7 @@ services:
       # Where captures land. Read INSIDE the container, so it must be a path
       # the container can see -- i.e. the mount below, not a UNC path and not
       # a path that only exists on the edge device.
-      NETWORK_SAVE_ROOT: ${NETWORK_SAVE_ROOT:-/mnt/mti/ML/MTI}
+      NETWORK_SAVE_ROOT: ${NETWORK_SAVE_ROOT:-/mnt/mti/ML/MTI/Calcine Project/Calcine Sample Foto/Foto Sampling}
     # Reads CAMERA_API_URL/CAMERA_API_TOKEN/NETWORK_SAVE_ROOT from a local .env
     # if present, otherwise the defaults above apply.
     env_file:

@@ -607,7 +607,20 @@ function CapturePage() {
       // ask for a session token, and a lapsed lease is no reason to push a
       // capture down to a browser download.
       {
-        const relativePath = `${datedPathSegment()}/${base}.${ext}`;
+        // Plant jadi folder pertama di bawah NETWORK_SAVE_ROOT, baru YYYY/MM/DD:
+        //
+        //   <NETWORK_SAVE_ROOT>/Chloride Plant/2026/08/25/<nama berkas>
+        //
+        // Nama plantnya sengaja tidak ikut masuk ke env. Satu nilai
+        // NETWORK_SAVE_ROOT melayani semua plant dan berhenti di folder induk
+        // bersama ("Foto Sampling"); kalau plantnya ikut di env, setiap plant
+        // menuntut variabel dan deployment sendiri, padahal satu app server
+        // melayani operator dari plant mana pun.
+        //
+        // Folder plant dan tanggalnya dibuat sendiri oleh saveMediaToNetwork --
+        // hanya root-nya yang wajib sudah ada, karena root yang hilang adalah
+        // tanda share tidak ter-mount.
+        const relativePath = `${activePlant}/${datedPathSegment()}/${base}.${ext}`;
         const saved = await saveMediaToNetwork({
           data: { assetId: previewItem.assetId, relativePath },
         });
