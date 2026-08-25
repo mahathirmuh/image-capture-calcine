@@ -15,7 +15,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { loadGallery } from "@/lib/gallery-store";
+import { loadGallery, subscribeGalleryChange } from "@/lib/gallery-store";
 import { getDeviceStatus, type DeviceStatus } from "@/lib/camera-api";
 import { NAV_GROUPS, NAV_ITEMS } from "@/lib/nav-items";
 import { useIsAdmin } from "@/lib/use-session-user";
@@ -164,8 +164,23 @@ export function AppSidebar() {
 
   const items = NAV_ITEMS.filter((item) => !item.adminOnly || isAdmin);
 
+  // Angka di sidebar menghitung isi galeri LOKAL browser ini (IndexedDB),
+  // bukan capture_records di database. Dibaca ulang setiap galeri berubah --
+  // sidebar tidak pernah di-mount ulang saat berpindah halaman, jadi tanpa
+  // langganan ini angkanya membeku pada nilai saat tab dibuka.
   useEffect(() => {
-    loadGallery().then((items) => setCaptureCount(items.length));
+    let aktif = true;
+    const baca = () => {
+      void loadGallery().then((items) => {
+        if (aktif) setCaptureCount(items.length);
+      });
+    };
+    baca();
+    const berhenti = subscribeGalleryChange(baca);
+    return () => {
+      aktif = false;
+      berhenti();
+    };
   }, []);
 
   const isActive = (path: string) => currentPath === path;

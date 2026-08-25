@@ -56,6 +56,28 @@ function openDB(): Promise<IDBDatabase> {
   });
 }
 
+// Pemberitahuan perubahan isi galeri.
+//
+// Sidebar menampilkan jumlah capture, tapi ia hidup di layout dan tidak pernah
+// di-mount ulang saat operator berpindah halaman -- tanpa ini angkanya membeku
+// pada nilai saat tab dibuka, dan capture baru baru terlihat setelah reload.
+//
+// Sengaja sesederhana ini: satu set callback, tanpa pustaka state global.
+// Yang perlu diketahui pelanggannya hanya "isinya berubah, baca ulang".
+type GalleryChangeListener = () => void;
+
+const galleryListeners = new Set<GalleryChangeListener>();
+
+/** Mengembalikan fungsi untuk berhenti berlangganan. */
+export function subscribeGalleryChange(listener: GalleryChangeListener): () => void {
+  galleryListeners.add(listener);
+  return () => galleryListeners.delete(listener);
+}
+
+function notifyGalleryChange() {
+  for (const listener of galleryListeners) listener();
+}
+
 export async function loadGallery(): Promise<GalleryItem[]> {
   if (typeof window === "undefined" || !("indexedDB" in window)) return [];
   try {
@@ -127,6 +149,7 @@ export async function saveGallery(items: GalleryItem[]): Promise<void> {
       tx.onerror = () => reject(tx.error);
     });
     db.close();
+    notifyGalleryChange();
   } catch {
     /* ignore */
   }
@@ -155,6 +178,7 @@ export async function addGalleryItem(item: GalleryItem): Promise<void> {
       tx.onerror = () => reject(tx.error);
     });
     db.close();
+    notifyGalleryChange();
   } catch {
     /* ignore */
   }
@@ -172,6 +196,7 @@ export async function removeGalleryItem(id: string): Promise<void> {
       tx.onerror = () => reject(tx.error);
     });
     db.close();
+    notifyGalleryChange();
   } catch {
     /* ignore */
   }
