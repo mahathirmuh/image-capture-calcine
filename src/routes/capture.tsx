@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { toast } from "sonner";
 import { useEffect, useRef, useState } from "react";
 import {
   Activity,
@@ -701,8 +702,29 @@ function CapturePage() {
         }
       }
 
+      // Konfirmasi lewat toast, bukan hanya banner. Bannernya ada di puncak
+      // halaman sedangkan tombol Simpan jauh di bawah panel bin, jadi setelah
+      // diklik konfirmasinya sering berada di luar layar -- operator tidak
+      // tahu apakah tersimpan atau tidak.
+      //
+      // Nadanya sengaja dibedakan, bukan "berhasil" untuk semua: hanya jalur
+      // jaringan yang benar-benar menaruh berkas di share. Dua jalur lainnya
+      // tetap menyelamatkan foto, tapi masih menyisakan pekerjaan manual, dan
+      // menyebut itu "berhasil" membuat orang berhenti memeriksanya.
       if (savedNetworkPath) {
-        setStatus(`Tersimpan ke ${savedNetworkPath}`);
+        if (saveMethod === "app-network") {
+          setStatus(`${binLabel(bin)} tersimpan ke folder jaringan: ${savedNetworkPath}`);
+          toast.success(`${binLabel(bin)} tersimpan ke folder jaringan`, {
+            description: savedNetworkPath,
+            duration: 6000,
+          });
+        } else {
+          setStatus(`${binLabel(bin)} tersimpan ke folder browser: ${savedNetworkPath}`);
+          toast.warning(`${binLabel(bin)} tersimpan ke folder browser`, {
+            description: `${savedNetworkPath} — belum masuk folder jaringan.`,
+            duration: 8000,
+          });
+        }
       } else {
         const url = URL.createObjectURL(previewItem.blob);
         const a = document.createElement("a");
@@ -710,9 +732,11 @@ function CapturePage() {
         a.download = filename;
         a.click();
         URL.revokeObjectURL(url);
-        const downloadStatus =
-          dirHandle && supportsFS ? `${filename} diunduh lokal` : `${filename} berhasil diunduh`;
-        setStatus(downloadStatus);
+        setStatus(`${binLabel(bin)} diunduh lokal: ${filename} — belum masuk folder jaringan.`);
+        toast.warning(`${binLabel(bin)} diunduh lokal`, {
+          description: `${filename} belum masuk folder jaringan. Pindahkan manual bila diperlukan.`,
+          duration: 8000,
+        });
         persistedPath = `browser-download/${filename}`;
         if (fallbackReasons.length > 0 || dirHandle || !supportsFS) {
           void logOperationalEvent(
