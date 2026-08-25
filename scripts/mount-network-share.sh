@@ -96,6 +96,14 @@ else
   mount -t cifs "$SHARE" "$MOUNTPOINT" -o "$OPTS"
 fi
 
+# Propagasi mount. Dibutuhkan oleh bind `propagation: rslave` di
+# docker-compose.yml: tanpa sisi host bersifat shared, Docker MENOLAK start
+# container -- bukan diam-diam kembali ke perilaku lama. systemd membuat /
+# rshared saat boot sehingga mount di bawah /mnt biasanya mewarisinya, tapi itu
+# asumsi tentang mesin orang lain, jadi ditegaskan saja di sini. Aman diulang.
+mount --make-rshared "$MOUNTPOINT"
+echo "==> propagasi ${MOUNTPOINT}: $(findmnt -no PROPAGATION "$MOUNTPOINT")"
+
 TARGET="${MOUNTPOINT}/${SUBDIR}"
 echo
 echo "==> verifikasi tulis di ${TARGET} sebagai uid=${MOUNT_UID}"

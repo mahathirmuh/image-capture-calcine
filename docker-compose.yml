@@ -35,16 +35,33 @@ services:
       # \\10.1.1.44\Data Analytics, mounted over CIFS on the HOST first (see
       # scripts/mount-network-share.sh) and passed straight through here.
       #
-      # The host mount has to exist BEFORE this container starts. Docker
-      # creates an empty directory for a missing bind source rather than
-      # refusing, so a container started ahead of the mount would write to the
-      # host's local disk instead of the share. `scripts/mount-network-share.sh`
-      # adds the fstab entry that makes the mount come back on boot, and
-      # `saveMediaToNetwork` refuses to write when NETWORK_SAVE_ROOT is absent,
-      # which is what catches the case where the share is simply unreachable.
-      #
       # Mount it on the host with uid=1000,gid=1000: CIFS fixes ownership at
       # mount time, and 1000 is the `node` user this image runs as (see the
       # Dockerfile's USER line). Any other uid and the container gets a
       # read-only view of a share it is nominally allowed to write.
-      - /mnt/mti:/mnt/mti
+      #
+      # propagation: rslave is what makes this survive the share going away and
+      # coming back. A default bind is resolved once, at container start: if
+      # /mnt/mti is remounted on the host afterwards, the container keeps
+      # looking at the old, now-empty directory and auto-save stays dead until
+      # someone restarts the container by hand. rslave subscribes the container
+      # to the host's mount events, so a remount shows up inside a running
+      # container. "slave" not "shared" on purpose -- events travel host to
+      # container only, and nothing the container does can alter host mounts.
+      #
+      # It needs the host side to have shared propagation. systemd makes / an
+      # rshared mount at boot, so a fstab mount under /mnt normally inherits it;
+      # the setup script asserts it anyway with `mount --make-rshared`, because
+      # when the assumption does not hold Docker refuses to start the container
+      # rather than quietly falling back.
+      #
+      # Docker still creates an empty directory for a missing bind source
+      # instead of refusing, so an unreachable share at start time is caught by
+      # `saveMediaToNetwork` refusing to write into a NETWORK_SAVE_ROOT that
+      # is not there -- captures fall back to a browser download rather than
+      # piling up on the container's own disk.
+      - type: bind
+        source: /mnt/mti
+        target: /mnt/mti
+        bind:
+          propagation: rslave
