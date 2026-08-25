@@ -3,7 +3,7 @@
 // Halaman Capture punya dropdown Lokasi sendiri, dan itu cukup untuk Super
 // Admin yang memang berkeliling plant. Tapi operator yang terpasang di satu
 // plant tidak boleh menyimpan capture atas nama plant lain -- dan yang lebih
-// halus, ia tidak boleh melihat istilah plant lain: Chloride Plant menyebut
+// halus, ia tidak boleh melihat istilah plant lain: Acid Plant menyebut
 // slotnya TRAIN, dan menampilkan BIN di sana salah walau berkasnya tersimpan
 // di folder yang benar.
 //

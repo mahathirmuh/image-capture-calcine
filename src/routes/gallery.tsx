@@ -108,8 +108,8 @@ function getFileFormat(name: string): string {
   return ext ? ext.toUpperCase() : "—";
 }
 
-// Merapikan spasi saja, tidak menyeragamkan istilah: capture Chloride Plant
-// memang tersimpan sebagai TRAIN dan harus tetap tampil begitu. Bentuk tanpa
+// Merapikan spasi saja, tidak menyeragamkan istilah: capture Acid Plant memang
+// tersimpan sebagai TRAIN dan harus tetap tampil begitu. Bentuk tanpa
 // spasi ("BIN1", "TRAIN1") berasal dari record lama yang menyimpan token nama
 // berkas, bukan labelnya.
 function formatBin(bin?: string): string {

@@ -3,11 +3,11 @@ import { describe, expect, it } from "vitest";
 import { BIN_SLOTS, PLANTS, toBinLabel, toBinToken, toLocationToken } from "./locations";
 
 describe("toBinLabel", () => {
-  it("memakai BIN di Acid Plant dan TRAIN di Chloride Plant", () => {
-    expect(toBinLabel("Acid Plant", 1)).toBe("BIN 1");
-    expect(toBinLabel("Acid Plant", 2)).toBe("BIN 2");
-    expect(toBinLabel("Chloride Plant", 1)).toBe("TRAIN 1");
-    expect(toBinLabel("Chloride Plant", 2)).toBe("TRAIN 2");
+  it("memakai TRAIN di Acid Plant dan BIN di Chloride Plant", () => {
+    expect(toBinLabel("Acid Plant", 1)).toBe("TRAIN 1");
+    expect(toBinLabel("Acid Plant", 2)).toBe("TRAIN 2");
+    expect(toBinLabel("Chloride Plant", 1)).toBe("BIN 1");
+    expect(toBinLabel("Chloride Plant", 2)).toBe("BIN 2");
   });
 
   it("memakai BIN untuk plant yang belum punya sebutan sendiri", () => {
@@ -25,8 +25,8 @@ describe("toBinLabel", () => {
 
 describe("toBinToken", () => {
   it("membuang spasi supaya aman dipakai di nama berkas", () => {
-    expect(toBinToken("Acid Plant", 1)).toBe("BIN1");
-    expect(toBinToken("Chloride Plant", 2)).toBe("TRAIN2");
+    expect(toBinToken("Acid Plant", 1)).toBe("TRAIN1");
+    expect(toBinToken("Chloride Plant", 2)).toBe("BIN2");
   });
 
   it("tidak pernah menghasilkan spasi untuk plant mana pun", () => {

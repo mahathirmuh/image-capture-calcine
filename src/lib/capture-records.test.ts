@@ -31,10 +31,10 @@ describe("capture-records helpers", () => {
     expect(normalizeCaptureBinLabel("UNKNOWN")).toBeNull();
   });
 
-  // Chloride Plant menyebut slotnya TRAIN, tapi kolom locations.bin tetap
-  // memakai "Bin N" untuk semua plant. Tanpa pemetaan ini preferredBin jadi
-  // null dan resolveLocationId kehilangan penyaring binnya.
-  it("maps Chloride TRAIN slots onto the same DB bin vocabulary", () => {
+  // Acid Plant menyebut slotnya TRAIN, tapi kolom locations.bin tetap memakai
+  // "Bin N" untuk semua plant. Tanpa pemetaan ini preferredBin jadi null dan
+  // resolveLocationId kehilangan penyaring binnya.
+  it("maps Acid Plant TRAIN slots onto the same DB bin vocabulary", () => {
     expect(normalizeCaptureBinLabel("TRAIN 1")).toBe("Bin 1");
     expect(normalizeCaptureBinLabel("train2")).toBe("Bin 2");
   });

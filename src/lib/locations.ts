@@ -27,15 +27,15 @@ const LOCATION_CODES: Record<Plant, string> = {
 };
 
 // Sebutan untuk dua slot capture, berbeda per plant. Acid Plant menyebutnya
-// BIN, Chloride Plant menyebutnya TRAIN -- itu istilah lapangan masing-masing
+// TRAIN, Chloride Plant menyebutnya BIN -- itu istilah lapangan masing-masing
 // plant, bukan sinonim yang boleh dipertukarkan di layar operator.
 //
 // Plant yang belum punya sebutan sendiri tetap memakai BIN. Ditulis eksplisit
 // per plant, bukan lewat default diam-diam, supaya menambah plant baru memaksa
 // keputusan sadar tentang istilah mana yang dipakai di sana.
 const BIN_TERMS: Record<Plant, string> = {
-  "Acid Plant": "BIN",
-  "Chloride Plant": "TRAIN",
+  "Acid Plant": "TRAIN",
+  "Chloride Plant": "BIN",
   "Pyrite Plant": "BIN",
   "Copper Cathode Plant": "BIN",
 };
@@ -51,7 +51,7 @@ function toBinTerm(plant: string): string {
 
 /**
  * Label yang dilihat operator dan yang tersimpan sebagai `captureBin`:
- * "BIN 1" di Acid Plant, "TRAIN 1" di Chloride Plant.
+ * "TRAIN 1" di Acid Plant, "BIN 1" di Chloride Plant.
  */
 export function toBinLabel(plant: string, slot: BinSlot): string {
   return `${toBinTerm(plant)} ${slot}`;
