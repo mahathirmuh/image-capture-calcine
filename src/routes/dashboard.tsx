@@ -25,6 +25,7 @@ import {
   type DeviceEventView,
 } from "@/lib/capture-records";
 import { PLANTS } from "@/lib/locations";
+import { isAdminOnlyPath } from "@/lib/nav-items";
 import { useIsAdmin } from "@/lib/use-session-user";
 import { getStorageConfigSummary } from "@/lib/storage-diagnostics";
 import { PageTitle } from "@/components/page-shell";
@@ -276,16 +277,16 @@ function InsightCard({
   status: string;
   description: string;
   detail: string;
-  to: string;
-  cta: string;
+  // Null berarti pembacanya tidak berhak membuka halaman tujuannya. Kartunya
+  // tetap tampil -- "edge device offline" perlu diketahui operator juga -- yang
+  // hilang cuma ajakan menuju halaman yang akan menolaknya.
+  to: string | null;
+  cta: string | null;
   icon: React.ComponentType<{ className?: string }>;
   tone: "success" | "warning" | "muted";
 }) {
-  return (
-    <Link
-      to={to}
-      className="group rounded-xl border bg-card shadow-sm p-4 transition-colors hover:border-primary/40 hover:bg-accent/20"
-    >
+  const isi = (
+    <>
       <div className="mb-3 flex items-start justify-between gap-3">
         <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
           <Icon className="h-4 w-4" />
@@ -295,11 +296,25 @@ function InsightCard({
       <div className="text-sm font-semibold">{title}</div>
       <p className="mt-1 text-xs text-muted-foreground">{description}</p>
       <p className="mt-3 text-[11px] text-muted-foreground/80">{detail}</p>
-      <div className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary">
-        <span>{cta}</span>
-        <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
-      </div>
+      {to && cta && (
+        <div className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary">
+          <span>{cta}</span>
+          <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+        </div>
+      )}
+    </>
+  );
+
+  const kelas =
+    "rounded-xl border bg-card shadow-sm p-4 transition-colors" +
+    (to ? " group hover:border-primary/40 hover:bg-accent/20" : "");
+
+  return to ? (
+    <Link to={to} className={`group ${kelas}`}>
+      {isi}
     </Link>
+  ) : (
+    <div className={kelas}>{isi}</div>
   );
 }
 
@@ -425,6 +440,16 @@ function WeekTrendChart({ days }: { days: DayBucket[] }) {
 
 function DashboardPage() {
   const isAdmin = useIsAdmin();
+
+  /**
+   * Tujuan tautan, atau null kalau pembacanya tidak berhak membukanya.
+   *
+   * Kartu peringatan di halaman ini menunjuk ke Devices dan Storage, dan
+   * keduanya kini khusus Super Admin. Membiarkan tautannya berarti operator
+   * menekan "Buka Devices" lalu dipantulkan kembali ke sini tanpa penjelasan --
+   * isi peringatannya tetap berguna baginya, ajakan menekannya tidak.
+   */
+  const jalur = (to: string) => (isAdmin || !isAdminOnlyPath(to) ? to : null);
   const [gallery, setGallery] = useState<GalleryItem[]>([]);
   const [status, setStatus] = useState<DeviceStatus | null>(null);
   const [storageConfig, setStorageConfig] = useState<StorageConfigSummary | null>(null);
@@ -826,12 +851,14 @@ function DashboardPage() {
               description="Audit hasil capture, compare, rename, atau download batch."
               icon={Images}
             />
-            <ActionCard
-              to="/storage"
-              title="Cek Storage"
-              description="Verifikasi share path, edge reachability, dan fallback save."
-              icon={FolderOpen}
-            />
+            {isAdmin && (
+              <ActionCard
+                to="/storage"
+                title="Cek Storage"
+                description="Verifikasi share path, edge reachability, dan fallback save."
+                icon={FolderOpen}
+              />
+            )}
             {isAdmin && (
               <ActionCard
                 to="/settings"
@@ -850,25 +877,40 @@ function DashboardPage() {
           </div>
           {attentionItems.length > 0 ? (
             <div className="space-y-3">
-              {attentionItems.map((item) => (
-                <Link
-                  key={item.title}
-                  to={item.to}
-                  className="group block rounded-lg border bg-background p-3 transition-colors hover:border-primary/40 hover:bg-accent/20"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-medium text-foreground">{item.title}</div>
-                      <div className="mt-1 text-sm text-muted-foreground">{item.detail}</div>
+              {attentionItems.map((item) => {
+                const tujuan = jalur(item.to);
+                const isi = (
+                  <>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-medium text-foreground">{item.title}</div>
+                        <div className="mt-1 text-sm text-muted-foreground">{item.detail}</div>
+                      </div>
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
                     </div>
-                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                    {tujuan && (
+                      <div className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary">
+                        <span>{item.cta}</span>
+                        <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+                      </div>
+                    )}
+                  </>
+                );
+
+                return tujuan ? (
+                  <Link
+                    key={item.title}
+                    to={tujuan}
+                    className="group block rounded-lg border bg-background p-3 transition-colors hover:border-primary/40 hover:bg-accent/20"
+                  >
+                    {isi}
+                  </Link>
+                ) : (
+                  <div key={item.title} className="block rounded-lg border bg-background p-3">
+                    {isi}
                   </div>
-                  <div className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary">
-                    <span>{item.cta}</span>
-                    <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
-                  </div>
-                </Link>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3">
@@ -902,9 +944,12 @@ function DashboardPage() {
       </section>
 
       <section className="mb-6 grid gap-4 lg:grid-cols-4">
-        {freshnessCards.map((card) => (
-          <InsightCard key={card.title} {...card} />
-        ))}
+        {freshnessCards.map((card) => {
+          const tujuan = jalur(card.to);
+          return (
+            <InsightCard key={card.title} {...card} to={tujuan} cta={tujuan ? card.cta : null} />
+          );
+        })}
       </section>
 
       {/* KPI row */}
@@ -1117,9 +1162,11 @@ function DashboardPage() {
         <section className="rounded-xl border bg-card shadow-sm p-4">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-semibold">Event Device Terbaru</h2>
-            <Link to="/devices" className="text-xs font-medium text-primary hover:underline">
-              Buka Devices
-            </Link>
+            {isAdmin && (
+              <Link to="/devices" className="text-xs font-medium text-primary hover:underline">
+                Buka Devices
+              </Link>
+            )}
           </div>
           {deviceEventsError ? (
             <p className="py-6 text-center text-sm text-muted-foreground">{deviceEventsError}</p>
@@ -1168,9 +1215,11 @@ function DashboardPage() {
         <section className="rounded-xl border bg-card shadow-sm p-4">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-semibold">Kesehatan Device</h2>
-            <Link to="/devices" className="text-xs font-medium text-primary hover:underline">
-              Kelola
-            </Link>
+            {isAdmin && (
+              <Link to="/devices" className="text-xs font-medium text-primary hover:underline">
+                Kelola
+              </Link>
+            )}
           </div>
           <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 text-xs">
             <dt className="text-muted-foreground">Mini PC</dt>

@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Activity,
@@ -103,6 +103,14 @@ import {
 } from "@/lib/capture-records";
 
 export const Route = createFileRoute("/devices/")({
+  // Registry kamera dan tujuan simpan itu konfigurasi yang berlaku untuk semua
+  // orang, bukan pengaturan per operator. Penjaga tampilan; entri sidebarnya
+  // ikut disaring, tapi keduanya tidak menghalangi siapa pun mengetik URL-nya.
+  beforeLoad: ({ context }) => {
+    if (context.user && context.user.role !== "admin") {
+      throw redirect({ to: "/dashboard" });
+    }
+  },
   component: DevicesPage,
   head: () => ({
     meta: [

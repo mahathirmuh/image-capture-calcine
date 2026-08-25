@@ -34,8 +34,8 @@ export const NAV_ITEMS: NavItem[] = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard, group: "Operasional" },
   { title: "Capture", url: "/capture", icon: Camera, group: "Operasional" },
   { title: "Gallery", url: "/gallery", icon: Images, group: "Operasional" },
-  { title: "Devices", url: "/devices", icon: Network, group: "Infrastruktur" },
-  { title: "Storage", url: "/storage", icon: HardDrive, group: "Infrastruktur" },
+  { title: "Devices", url: "/devices", icon: Network, group: "Infrastruktur", adminOnly: true },
+  { title: "Storage", url: "/storage", icon: HardDrive, group: "Infrastruktur", adminOnly: true },
   { title: "Users", url: "/users", icon: UsersRound, group: "Pengaturan", adminOnly: true },
   { title: "Log", url: "/log", icon: ScrollText, group: "Pengaturan", adminOnly: true },
   { title: "Settings", url: "/settings", icon: Settings, group: "Pengaturan", adminOnly: true },
@@ -46,6 +46,17 @@ export const NAV_ITEMS: NavItem[] = [
 export const SUB_PAGE_TITLES: Record<string, string> = {
   "/devices/register": "Daftarkan Device",
 };
+
+/**
+ * Apakah sebuah path hanya boleh dibuka Super Admin.
+ *
+ * Diturunkan dari NAV_ITEMS, bukan daftar terpisah: menandai sebuah menu
+ * adminOnly langsung membuat setiap tautan menujunya ikut disembunyikan, tanpa
+ * ada daftar kedua yang bisa lupa diperbarui.
+ */
+export function isAdminOnlyPath(pathname: string): boolean {
+  return findNavItem(pathname)?.adminOnly === true;
+}
 
 /** Entri NAV_ITEMS yang memuat sebuah path, termasuk sub-halamannya. */
 export function findNavItem(pathname: string): NavItem | undefined {

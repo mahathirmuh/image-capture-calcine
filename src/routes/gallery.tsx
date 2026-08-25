@@ -46,6 +46,7 @@ import {
 } from "@/lib/gallery-preferences";
 import { getImageDimensions, computeHistogram, type Histogram } from "@/lib/image-analysis";
 import { PageTitle } from "@/components/page-shell";
+import { useIsAdmin } from "@/lib/use-session-user";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -205,6 +206,7 @@ function OverviewCard({
 }
 
 function GalleryPage() {
+  const isAdmin = useIsAdmin();
   const [gallery, setGallery] = useState<GalleryItem[]>([]);
   const [hydrated, setHydrated] = useState(false);
   const [deviceStatus, setDeviceStatus] = useState<DeviceStatus | null>(null);
@@ -738,12 +740,14 @@ function GalleryPage() {
                 <RefreshCw className={`h-3.5 w-3.5 ${deviceStatusLoading ? "animate-spin" : ""}`} />
                 {deviceStatusLoading ? "Menyegarkan..." : "Refresh Device"}
               </button>
-              <Link
-                to="/devices"
-                className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent"
-              >
-                Buka Devices
-              </Link>
+              {isAdmin && (
+                <Link
+                  to="/devices"
+                  className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent"
+                >
+                  Buka Devices
+                </Link>
+              )}
             </div>
           </div>
         </section>
@@ -1104,12 +1108,14 @@ function GalleryPage() {
               >
                 Buka Capture
               </Link>
-              <Link
-                to="/storage"
-                className="inline-flex items-center rounded-md border border-input bg-background px-3 py-2 text-xs font-medium text-foreground hover:bg-accent"
-              >
-                Cek Alur Storage
-              </Link>
+              {isAdmin && (
+                <Link
+                  to="/storage"
+                  className="inline-flex items-center rounded-md border border-input bg-background px-3 py-2 text-xs font-medium text-foreground hover:bg-accent"
+                >
+                  Cek Alur Storage
+                </Link>
+              )}
             </div>
           </div>
         ) : filteredGallery.length === 0 ? (

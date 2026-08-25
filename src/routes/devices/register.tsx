@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import {
   ArrowRight,
@@ -55,6 +55,14 @@ import { testEdgeConnection } from "@/lib/edge-targets";
 import { PageTitle } from "@/components/page-shell";
 
 export const Route = createFileRoute("/devices/register")({
+  // Registry kamera dan tujuan simpan itu konfigurasi yang berlaku untuk semua
+  // orang, bukan pengaturan per operator. Penjaga tampilan; entri sidebarnya
+  // ikut disaring, tapi keduanya tidak menghalangi siapa pun mengetik URL-nya.
+  beforeLoad: ({ context }) => {
+    if (context.user && context.user.role !== "admin") {
+      throw redirect({ to: "/dashboard" });
+    }
+  },
   component: RegisterDevicePage,
   head: () => ({
     meta: [
