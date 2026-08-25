@@ -113,6 +113,43 @@ if setpriv --reuid="$MOUNT_UID" --regid="$MOUNT_GID" --clear-groups \
   touch "$PROBE" 2>/dev/null; then
   rm -f "$PROBE"
   echo "OK: uid=${MOUNT_UID} bisa menulis ke ${TARGET}"
+
+  # --- Urutan boot: Docker vs mount ------------------------------------------
+  # Tanpa ini ada balapan saat server reboot. docker.service tidak tahu apa-apa
+  # soal mount CIFS, jadi ia bisa start lebih dulu dan container mem-bind
+  # /mnt/mti yang saat itu masih direktori kosong. Mount menyusul beberapa detik
+  # kemudian, tapi container TIDAK akan pernah melihatnya -- bind sudah terikat
+  # ke keadaan lama. Auto-save mati diam-diam sampai ada yang restart container.
+  #
+  # Sengaja Wants= + After=, BUKAN RequiresMountsFor=. RequiresMountsFor
+  # menambahkan Requires=, yang berarti kalau 10.1.1.44 sedang mati saat boot,
+  # docker.service gagal start dan SELURUH aplikasi ikut mati. Itu terlalu mahal:
+  # app punya fallback yang benar (menolak menulis, capture jatuh ke unduhan
+  # browser), jadi share yang mati seharusnya menurunkan fungsi, bukan
+  # mematikan layanan. Wants= memberi urutan tanpa menyandera.
+  if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files docker.service >/dev/null 2>&1; then
+    MOUNT_UNIT=$(systemd-escape -p --suffix=mount "$MOUNTPOINT")
+    DROPIN_DIR=/etc/systemd/system/docker.service.d
+    DROPIN="${DROPIN_DIR}/wait-for-network-share.conf"
+    echo
+    if [[ -f "$DROPIN" ]]; then
+      echo "==> ${DROPIN} sudah ada, tidak diubah"
+    else
+      echo "==> menahan docker.service sampai ${MOUNT_UNIT} selesai dicoba"
+      mkdir -p "$DROPIN_DIR"
+      cat >"$DROPIN" <<EOF
+# Dipasang oleh scripts/mount-network-share.sh.
+# Ordering saja: Docker menunggu giliran mount, tapi mount yang gagal tidak
+# ikut menjatuhkan Docker. Jangan diganti RequiresMountsFor -- itu membuat
+# share yang mati mematikan seluruh aplikasi.
+[Unit]
+Wants=${MOUNT_UNIT}
+After=${MOUNT_UNIT}
+EOF
+      systemctl daemon-reload
+    fi
+  fi
+
   echo
   echo "Selesai. Langkah berikutnya di ${PWD}:"
   echo "  grep NETWORK_SAVE_ROOT .env   # harus /mnt/mti/ML/MTI, bukan bentuk UNC"
