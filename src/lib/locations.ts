@@ -58,6 +58,23 @@ export function toBinLabel(plant: string, slot: BinSlot): string {
 }
 
 /**
+ * Nomor slot dari label apa pun: "BIN 1", "BIN1", "TRAIN 1", "train2".
+ *
+ * Dipakai untuk membandingkan capture lintas plant. Satu galeri bisa memuat
+ * record Acid Plant ("TRAIN 1") dan Chloride Plant ("BIN 1") sekaligus, dan
+ * keduanya menunjuk slot yang sama -- membandingkan teksnya akan memisahkan
+ * yang seharusnya satu kelompok. Mengembalikan null kalau tidak dikenali.
+ */
+export function toBinSlot(value: string | null | undefined): BinSlot | null {
+  if (!value) return null;
+  const match = value
+    .trim()
+    .toUpperCase()
+    .match(/^(?:BIN|TRAIN)\s*([12])$/);
+  return match ? (Number(match[1]) as BinSlot) : null;
+}
+
+/**
  * Bentuk tanpa spasi untuk token `{SOURCE}` di nama berkas: "BIN1", "TRAIN1".
  * Sengaja dipisah dari label supaya nama berkas tidak pernah mengandung spasi
  * yang tidak disengaja.

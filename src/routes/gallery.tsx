@@ -290,6 +290,13 @@ function GalleryPage() {
   useEffect(() => {
     let cancelled = false;
     setHydrated(true);
+    // Plant penonton menentukan istilah slot di filter dan preset. Gagal
+    // diam-diam: hasilnya istilah default, bukan halaman yang macet.
+    void getOperatorPlant()
+      .then((plant) => {
+        if (!cancelled) setOperatorPlant(plant);
+      })
+      .catch(() => {});
     const savedViewState = loadGalleryViewState();
     const savedView = loadGallerySavedViewPreference();
     setSortOption(savedViewState.sortOption);

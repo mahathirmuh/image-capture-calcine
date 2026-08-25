@@ -19,6 +19,11 @@ export type GalleryViewState = {
   searchQuery: string;
   filterDate: string;
   filterLocation: string;
+  // Penanda SLOT, bukan teks yang ditampilkan. Namanya warisan dari masa
+  // semua plant menyebutnya BIN; nilainya tersimpan di localStorage dan
+  // divalidasi zod, jadi menggantinya akan membatalkan preferensi setiap
+  // operator tanpa memberi apa pun -- teks yang dilihat operator diturunkan
+  // dari plantnya lewat toBinLabel(), bukan dari nilai ini.
   filterBin: "" | "BIN1" | "BIN2";
 };
 
@@ -42,8 +47,15 @@ export type GallerySavedViewPreference = (typeof GALLERY_SAVED_VIEW_OPTIONS)[num
 
 export type GallerySavedViewDefinition = {
   id: GallerySavedViewPreference;
+  /** Dipakai apa adanya kecuali `slot` terisi -- lihat di bawah. */
   label: string;
   description: string;
+  /**
+   * Slot yang disorot view ini, kalau ada. Judul dan deskripsinya dirakit saat
+   * render memakai istilah plant si penonton, karena "BIN 1 review" salah di
+   * Acid Plant dan "TRAIN 1 review" salah di Chloride Plant.
+   */
+  slot?: 1 | 2;
   state: GalleryViewState;
 };
 
@@ -56,8 +68,9 @@ export const GALLERY_SAVED_VIEWS: GallerySavedViewDefinition[] = [
   },
   {
     id: "bin-1-review",
-    label: "BIN 1 review",
-    description: "Fokus audit capture dari BIN 1.",
+    label: "Slot 1 review",
+    description: "Fokus audit capture dari slot 1.",
+    slot: 1,
     state: {
       ...DEFAULT_GALLERY_VIEW_STATE,
       filterBin: "BIN1",
@@ -65,8 +78,9 @@ export const GALLERY_SAVED_VIEWS: GallerySavedViewDefinition[] = [
   },
   {
     id: "bin-2-review",
-    label: "BIN 2 review",
-    description: "Fokus audit capture dari BIN 2.",
+    label: "Slot 2 review",
+    description: "Fokus audit capture dari slot 2.",
+    slot: 2,
     state: {
       ...DEFAULT_GALLERY_VIEW_STATE,
       filterBin: "BIN2",

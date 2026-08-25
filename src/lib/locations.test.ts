@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { BIN_SLOTS, PLANTS, toBinLabel, toBinToken, toLocationToken } from "./locations";
+import { BIN_SLOTS, PLANTS, toBinLabel, toBinSlot, toBinToken, toLocationToken } from "./locations";
 
 describe("toBinLabel", () => {
   it("memakai TRAIN di Acid Plant dan BIN di Chloride Plant", () => {
@@ -35,6 +35,29 @@ describe("toBinToken", () => {
         expect(toBinToken(plant, slot)).not.toContain(" ");
       }
     }
+  });
+});
+
+describe("toBinSlot", () => {
+  // Inti gunanya: menyamakan capture lintas plant, dan lintas masa. Record
+  // Acid Plant dari sebelum istilahnya ditukar masih tersimpan sebagai "BIN 1"
+  // sementara yang baru "TRAIN 1" -- keduanya slot 1 dan harus tersaring
+  // bersama, bukan jadi dua kelompok terpisah.
+  it("membaca nomor slot dari kedua istilah", () => {
+    expect(toBinSlot("BIN 1")).toBe(1);
+    expect(toBinSlot("TRAIN 1")).toBe(1);
+    expect(toBinSlot("BIN2")).toBe(2);
+    expect(toBinSlot("train2")).toBe(2);
+    expect(toBinSlot("  bin 2  ")).toBe(2);
+  });
+
+  it("mengembalikan null untuk nilai yang tidak dikenali", () => {
+    expect(toBinSlot("BIN 1 / BIN 2")).toBeNull();
+    expect(toBinSlot("SLOT 1")).toBeNull();
+    expect(toBinSlot("BIN 3")).toBeNull();
+    expect(toBinSlot("")).toBeNull();
+    expect(toBinSlot(null)).toBeNull();
+    expect(toBinSlot(undefined)).toBeNull();
   });
 });
 
