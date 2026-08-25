@@ -22,8 +22,29 @@ services:
       CAMERA_API_URL: ${CAMERA_API_URL:-http://10.60.20.196:3000}
       # Optional bearer token; leave unset if the edge API needs no auth.
       CAMERA_API_TOKEN: ${CAMERA_API_TOKEN:-}
-    # Reads CAMERA_API_URL/CAMERA_API_TOKEN from a local .env if present,
-    # otherwise the defaults above apply.
+      # Where captures land. Read INSIDE the container, so it must be a path
+      # the container can see -- i.e. the mount below, not a UNC path and not
+      # a path that only exists on the edge device.
+      NETWORK_SAVE_ROOT: ${NETWORK_SAVE_ROOT:-/mnt/mti/ML/MTI}
+    # Reads CAMERA_API_URL/CAMERA_API_TOKEN/NETWORK_SAVE_ROOT from a local .env
+    # if present, otherwise the defaults above apply.
     env_file:
       - path: .env
         required: false
+    volumes:
+      # \\10.1.1.44\Data Analytics, mounted over CIFS on the HOST first (see
+      # scripts/mount-network-share.sh) and passed straight through here.
+      #
+      # The host mount has to exist BEFORE this container starts. Docker
+      # creates an empty directory for a missing bind source rather than
+      # refusing, so a container started ahead of the mount would write to the
+      # host's local disk instead of the share. `scripts/mount-network-share.sh`
+      # adds the fstab entry that makes the mount come back on boot, and
+      # `saveMediaToNetwork` refuses to write when NETWORK_SAVE_ROOT is absent,
+      # which is what catches the case where the share is simply unreachable.
+      #
+      # Mount it on the host with uid=1000,gid=1000: CIFS fixes ownership at
+      # mount time, and 1000 is the `node` user this image runs as (see the
+      # Dockerfile's USER line). Any other uid and the container gets a
+      # read-only view of a share it is nominally allowed to write.
+      - /mnt/mti:/mnt/mti

@@ -21,13 +21,8 @@ import {
   DEFAULT_PREFS,
 } from "@/lib/capture-prefs";
 import { addGalleryItem } from "@/lib/gallery-store";
-import {
-  triggerCapture,
-  triggerAutofocus,
-  pollJob,
-  getMediaContent,
-  exportMediaToNetwork,
-} from "@/lib/camera-api";
+import { triggerCapture, triggerAutofocus, pollJob, getMediaContent } from "@/lib/camera-api";
+import { saveMediaToNetwork } from "@/lib/network-save";
 import {
   logDeviceEvent,
   recordCaptureResult,
@@ -556,45 +551,49 @@ function CapturePage() {
       let permissionAlreadyReported = false;
       const fallbackReasons: string[] = [];
 
-      // Tier 1: ask the edge device to export the asset it already has to the
-      // network share configured here (NETWORK_SAVE_ROOT, this app's own
-      // env) -- zero-click, no File System Access picker involved, since the
-      // edge device is a native process doing a plain fs write, not the
-      // browser. This is the primary path whenever NETWORK_SAVE_ROOT is set;
-      // ok:false (not configured, unreachable, or the write itself failed)
-      // falls through to the browser's own save flow below instead of
-      // failing the capture outright.
-      if (sessionId && leaseToken) {
+      // Tier 1: this app's own server pulls the asset bytes from the edge
+      // device and writes them to NETWORK_SAVE_ROOT itself -- zero-click, no
+      // File System Access picker involved, since a Node process on the app
+      // server is doing a plain fs write, not the browser. This is the primary
+      // path whenever NETWORK_SAVE_ROOT is set; ok:false (not configured,
+      // unreachable, or the write itself failed) falls through to the
+      // browser's own save flow below instead of failing the capture outright.
+      //
+      // No camera session is needed here, so this deliberately runs even when
+      // the lease has already expired -- the edge's /content endpoint doesn't
+      // ask for a session token, and a lapsed lease is no reason to push a
+      // capture down to a browser download.
+      {
         const relativePath = `${datedPathSegment()}/${base}.${ext}`;
-        const exported = await exportMediaToNetwork({
-          data: { sessionId, leaseToken, assetId: previewItem.assetId, relativePath },
+        const saved = await saveMediaToNetwork({
+          data: { assetId: previewItem.assetId, relativePath },
         });
-        if (exported.ok) {
-          filename = exported.filename;
-          savedNetworkPath = exported.savedTo;
-          persistedPath = exported.savedTo;
-          saveMethod = "edge-network";
+        if (saved.ok) {
+          filename = saved.filename;
+          savedNetworkPath = saved.savedTo;
+          persistedPath = saved.savedTo;
+          saveMethod = "app-network";
           saveConfirmed = true;
-        } else if (exported.code !== "NETWORK_SAVE_NOT_CONFIGURED") {
-          // NOT_CONFIGURED is the expected/common case (not every edge device
+        } else if (saved.code !== "NETWORK_SAVE_NOT_CONFIGURED") {
+          // NOT_CONFIGURED is the expected/common case (not every deployment
           // has a network share set up) and not worth alarming anyone about.
           // Anything else (unreachable, write failed) is a genuine anomaly --
           // still fall through to the folder/download tiers below so the
           // capture isn't lost, but say so, the same way the folder tier's
           // own failure gets a banner rather than failing silently.
           setError(
-            `Network save dari edge device gagal (${exported.message}) — mencoba jalur simpan fallback.`,
+            `Network save dari app server gagal (${saved.message}) — mencoba jalur simpan fallback.`,
           );
-          fallbackReasons.push(`edge-network:${exported.code}`);
+          fallbackReasons.push(`app-network:${saved.code}`);
           void logOperationalEvent(
             "network-save-fallback",
             "warning",
-            `Network save dari edge device gagal: ${exported.message}`,
+            `Network save dari app server gagal: ${saved.message}`,
             {
               bin,
               assetId: previewItem.assetId,
               fallbackTo: "browser-folder-or-download",
-              edgeErrorCode: exported.code,
+              saveErrorCode: saved.code,
             },
           );
         }

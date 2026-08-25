@@ -888,6 +888,15 @@ export const getMediaContent = createServerFn({ method: "GET" })
 // change here, with no edge-device redeploy needed. `ok:false` with code
 // NETWORK_SAVE_NOT_CONFIGURED means this app itself has no NETWORK_SAVE_ROOT
 // set; the caller should fall back to the browser-side save flow.
+//
+// NOT the path the capture page takes any more -- `saveMediaToNetwork` in
+// `network-save.ts` is, and it writes from the app server instead. The
+// difference that matters is WHICH machine has to have the share mounted:
+// this one needs it on the edge device, that one needs it on the app server.
+// Kept because the two are drop-in swappable at the one call site in
+// capture.tsx, so if the app server ever turns out not to have a route to the
+// share, moving the write back to the edge is a one-line revert rather than a
+// rewrite.
 export const exportMediaToNetwork = createServerFn({ method: "POST" })
   .validator(sessionRefSchema.extend({ assetId: z.string(), relativePath: z.string() }))
   .handler(

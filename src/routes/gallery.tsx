@@ -126,13 +126,15 @@ function formatCaptureRecordStatus(status: string): string {
 }
 
 function formatSaveMethodLabel(method: CaptureRecordView["saveMethod"]): string {
-  return method === "edge-network"
-    ? "Edge -> network"
-    : method === "browser-folder"
-      ? "Browser -> folder"
-      : method === "browser-download"
-        ? "Browser download"
-        : "—";
+  return method === "app-network"
+    ? "App -> network"
+    : method === "edge-network"
+      ? "Edge -> network"
+      : method === "browser-folder"
+        ? "Browser -> folder"
+        : method === "browser-download"
+          ? "Browser download"
+          : "—";
 }
 
 function HistogramChart({ histogram }: { histogram: Histogram }) {

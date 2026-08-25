@@ -266,15 +266,15 @@ function StoragePage() {
       ? `Perbaiki akses tulis app server ke target root. Error terakhir: ${probeResult.code}.`
       : null,
     liveCaptureSaveReady && lastProbeOk
-      ? "Lanjutkan tes end-to-end dari halaman Capture untuk memverifikasi export final dari edge service."
+      ? "Lanjutkan tes end-to-end dari halaman Capture untuk memverifikasi penulisan final oleh app server."
       : null,
   ].filter(Boolean) as string[];
   const saveFlowSteps = [
     {
-      title: "Network export",
+      title: "Network save",
       state: liveCaptureSaveReady ? "active" : "pending",
       description:
-        "Aplikasi akan mencoba export ke NETWORK_SAVE_ROOT lewat edge service terlebih dulu.",
+        "App server menarik gambar dari edge lalu menulisnya sendiri ke NETWORK_SAVE_ROOT. Probe di halaman ini menguji mesin yang sama, jadi hasilnya mewakili jalur sebenarnya.",
     },
     {
       title: "Folder handle",

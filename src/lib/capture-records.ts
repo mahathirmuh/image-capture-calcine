@@ -4,7 +4,17 @@ import { z } from "zod";
 
 import { getCardDbPool, getCardDbSchema, isCardDbConfigured } from "./carddb";
 
-export const CAPTURE_SAVE_METHODS = ["edge-network", "browser-folder", "browser-download"] as const;
+// "app-network" adalah jalur utama sekarang: app server menarik byte dari edge
+// lalu menulis sendiri ke share. "edge-network" ditahan supaya record lama --
+// dari masa edge yang menyalin -- tetap terbaca, bukan jatuh jadi null.
+// Nilainya tersimpan di dalam metadata_json, bukan kolom ber-CHECK, jadi
+// menambah anggota di sini tidak menuntut migrasi skema.
+export const CAPTURE_SAVE_METHODS = [
+  "app-network",
+  "edge-network",
+  "browser-folder",
+  "browser-download",
+] as const;
 export type CaptureSaveMethod = (typeof CAPTURE_SAVE_METHODS)[number];
 
 const captureSaveMethodSchema = z.enum(CAPTURE_SAVE_METHODS);
