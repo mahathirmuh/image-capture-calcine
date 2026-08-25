@@ -115,7 +115,9 @@ if setpriv --reuid="$MOUNT_UID" --regid="$MOUNT_GID" --clear-groups \
   echo "OK: uid=${MOUNT_UID} bisa menulis ke ${TARGET}"
   echo
   echo "Selesai. Langkah berikutnya di ${PWD}:"
-  echo "  docker compose up -d          # container mengambil bind /mnt/mti"
+  echo "  grep NETWORK_SAVE_ROOT .env   # harus /mnt/mti/ML/MTI, bukan bentuk UNC"
+  echo "  docker compose up -d --build  # --build wajib: tanpa itu image lama"
+  echo "                                # dipakai ulang dan kode barunya tidak jalan"
   echo "  # lalu buka halaman Storage -- probe-nya sekarang menguji mesin ini,"
   echo "  # jadi hasilnya mewakili jalur simpan yang sebenarnya."
 else
