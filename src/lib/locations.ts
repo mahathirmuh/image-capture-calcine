@@ -26,6 +26,46 @@ const LOCATION_CODES: Record<Plant, string> = {
   "Copper Cathode Plant": "CC",
 };
 
+// Sebutan untuk dua slot capture, berbeda per plant. Acid Plant menyebutnya
+// BIN, Chloride Plant menyebutnya TRAIN -- itu istilah lapangan masing-masing
+// plant, bukan sinonim yang boleh dipertukarkan di layar operator.
+//
+// Plant yang belum punya sebutan sendiri tetap memakai BIN. Ditulis eksplisit
+// per plant, bukan lewat default diam-diam, supaya menambah plant baru memaksa
+// keputusan sadar tentang istilah mana yang dipakai di sana.
+const BIN_TERMS: Record<Plant, string> = {
+  "Acid Plant": "BIN",
+  "Chloride Plant": "TRAIN",
+  "Pyrite Plant": "BIN",
+  "Copper Cathode Plant": "BIN",
+};
+
+/** Slot capture: dua per plant, dibedakan hanya oleh nomornya. */
+export type BinSlot = 1 | 2;
+
+export const BIN_SLOTS: readonly BinSlot[] = [1, 2];
+
+function toBinTerm(plant: string): string {
+  return plant in BIN_TERMS ? BIN_TERMS[plant as Plant] : "BIN";
+}
+
+/**
+ * Label yang dilihat operator dan yang tersimpan sebagai `captureBin`:
+ * "BIN 1" di Acid Plant, "TRAIN 1" di Chloride Plant.
+ */
+export function toBinLabel(plant: string, slot: BinSlot): string {
+  return `${toBinTerm(plant)} ${slot}`;
+}
+
+/**
+ * Bentuk tanpa spasi untuk token `{SOURCE}` di nama berkas: "BIN1", "TRAIN1".
+ * Sengaja dipisah dari label supaya nama berkas tidak pernah mengandung spasi
+ * yang tidak disengaja.
+ */
+export function toBinToken(plant: string, slot: BinSlot): string {
+  return `${toBinTerm(plant)}${slot}`;
+}
+
 export function toLocationToken(plant: string): string {
   if (plant in LOCATION_CODES) return LOCATION_CODES[plant as Plant];
   // Fallback for any unexpected value: initials of each word (e.g. "Acid

@@ -108,11 +108,17 @@ function getFileFormat(name: string): string {
   return ext ? ext.toUpperCase() : "—";
 }
 
+// Merapikan spasi saja, tidak menyeragamkan istilah: capture Chloride Plant
+// memang tersimpan sebagai TRAIN dan harus tetap tampil begitu. Bentuk tanpa
+// spasi ("BIN1", "TRAIN1") berasal dari record lama yang menyimpan token nama
+// berkas, bukan labelnya.
 function formatBin(bin?: string): string {
   if (!bin) return "—";
   const normalized = bin.trim().toUpperCase();
   if (normalized === "BIN1" || normalized === "BIN 1") return "BIN 1";
   if (normalized === "BIN2" || normalized === "BIN 2") return "BIN 2";
+  if (normalized === "TRAIN1" || normalized === "TRAIN 1") return "TRAIN 1";
+  if (normalized === "TRAIN2" || normalized === "TRAIN 2") return "TRAIN 2";
   if (normalized === "BIN 1 / BIN 2" || normalized === "BIN1/BIN2") return "BIN 1 / BIN 2";
   return bin;
 }

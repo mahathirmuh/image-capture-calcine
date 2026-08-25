@@ -106,7 +106,7 @@ export function analyzeFilenamePattern(pattern: string): FilenamePatternAnalysis
   }
   if (!hasSource) {
     suggestions.push(
-      "Tambahkan `{SOURCE}` agar operator bisa membedakan BIN 1 dan BIN 2 dari nama file.",
+      "Tambahkan `{SOURCE}` agar operator bisa membedakan kedua slot capture dari nama file.",
     );
   }
   if (hasCollisionRisk) {

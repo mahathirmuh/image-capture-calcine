@@ -220,10 +220,21 @@ export function replaceFileNameInPath(
   return filePath;
 }
 
+// Menerjemahkan sebutan slot apa pun ke kosakata kolom `locations.bin`, yang
+// memakai "Bin 1"/"Bin 2" untuk SEMUA plant. Chloride Plant menyebut slotnya
+// TRAIN di layar dan di nama berkas, tapi barisnya di tabel locations tetap
+// "Bin N" -- memetakannya di sini membuat resolveLocationId() terus menemukan
+// lokasi yang benar tanpa menuntut migrasi tabel itu.
+//
+// Nilai yang dilihat operator tidak lewat sini: Gallery membaca `captureBin`
+// apa adanya dari metadata, jadi capture Chloride tetap tampil sebagai
+// "TRAIN 1". Fungsi ini murni untuk pencocokan ke database.
 export function normalizeCaptureBinLabel(value: string): string | null {
   const normalized = value.trim().toUpperCase();
   if (normalized === "BIN 1" || normalized === "BIN1") return "Bin 1";
   if (normalized === "BIN 2" || normalized === "BIN2") return "Bin 2";
+  if (normalized === "TRAIN 1" || normalized === "TRAIN1") return "Bin 1";
+  if (normalized === "TRAIN 2" || normalized === "TRAIN2") return "Bin 2";
   if (normalized === "BIN 1 / BIN 2" || normalized === "BIN1/BIN2") return "Bin 1 / Bin 2";
   return null;
 }

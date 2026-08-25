@@ -37,7 +37,14 @@ import {
   getCaptureSessionSummary,
   getRuntimeErrorCode,
 } from "@/lib/camera-runtime";
-import { PLANTS, toLocationToken } from "@/lib/locations";
+import {
+  BIN_SLOTS,
+  PLANTS,
+  toBinLabel,
+  toBinToken,
+  toLocationToken,
+  type BinSlot,
+} from "@/lib/locations";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -72,15 +79,14 @@ export const Route = createFileRoute("/capture")({
 
 type DirHandle = FileSystemDirectoryHandle;
 type FileHandle = FileSystemFileHandle;
-type Bin = "BIN 1" | "BIN 2";
+// Slot capture, disimpan sebagai angka. Teksnya ("BIN 1" / "TRAIN 1")
+// diturunkan dari plant yang sedang dipilih lewat toBinLabel(), jadi tidak ada
+// tempat di komponen ini yang membandingkan slot dengan kata "BIN".
+type Bin = BinSlot;
 // assetId is kept around so Save can later ask the edge device to export the
 // already-captured asset straight to its network share, without the browser
 // re-uploading the bytes it already downloaded once for the preview.
 type BinPreview = { blob: Blob; url: string; assetId: string; capturedAt: number };
-
-function binToken(bin: Bin) {
-  return bin.replace(" ", "");
-}
 
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
@@ -242,7 +248,7 @@ function CapturePage() {
 
   const [bin1, setBin1] = useState<BinPreview | null>(null);
   const [bin2, setBin2] = useState<BinPreview | null>(null);
-  const [lastSource, setLastSource] = useState<Bin>("BIN 1");
+  const [lastSource, setLastSource] = useState<Bin>(1);
   const [savingBin, setSavingBin] = useState<Bin | null>(null);
   // Bin yang sedang menunggu konfirmasi simpan. Dipisahkan dari `savingBin`
   // karena keduanya menandai fase berbeda: yang ini "operator belum memutuskan",
@@ -258,6 +264,11 @@ function CapturePage() {
   const [dirHandle, setDirHandle] = useState<DirHandle | null>(null);
   const [dirName, setDirName] = useState<string>("");
   const [location, setLocation] = useState<string>(DEFAULT_PREFS.location);
+  // Sebutan slot mengikuti plant yang sedang dipilih di dropdown Lokasi, bukan
+  // plant akun yang login. Dropdown itulah yang juga menentukan token lokasi di
+  // nama berkas dan kolom `plant` di registry, jadi label di layar tidak akan
+  // pernah berbeda dari apa yang benar-benar tersimpan.
+  const binLabel = (slot: BinSlot) => toBinLabel(location, slot);
   const [pattern, setPattern] = useState<string>(DEFAULT_PREFS.pattern);
   const [ext, setExt] = useState<"jpg">(DEFAULT_PREFS.ext);
   const [counter, setCounter] = useState<number>(DEFAULT_PREFS.counter);
@@ -429,7 +440,7 @@ function CapturePage() {
       const res = await getMediaContent({ data: { assetId } });
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
-      const setBin = bin === "BIN 1" ? setBin1 : setBin2;
+      const setBin = bin === 1 ? setBin1 : setBin2;
       setBin((prev) => {
         if (prev) URL.revokeObjectURL(prev.url);
         return { blob, url, assetId, capturedAt };
@@ -535,7 +546,7 @@ function CapturePage() {
   }
 
   function clearBin(bin: Bin) {
-    const setBin = bin === "BIN 1" ? setBin1 : setBin2;
+    const setBin = bin === 1 ? setBin1 : setBin2;
     setBin((prev) => {
       if (prev) URL.revokeObjectURL(prev.url);
       return null;
@@ -543,12 +554,12 @@ function CapturePage() {
   }
 
   async function saveBin(bin: Bin) {
-    const previewItem = bin === "BIN 1" ? bin1 : bin2;
+    const previewItem = bin === 1 ? bin1 : bin2;
     if (!previewItem || savingRef.current) return;
     savingRef.current = true;
     setSavingBin(bin);
     setError(null);
-    const source = binToken(bin);
+    const source = toBinToken(location, bin);
     const base = formatFilename(pattern, counter, toLocationToken(location), source);
     // Resolved to the actual on-disk name below (may gain a " (2)" suffix if a
     // same-minute capture already claimed the plain name).
@@ -694,7 +705,7 @@ function CapturePage() {
           deviceCode: profile?.deviceCode || deviceStatus?.deviceId || "edge-camera-01",
           deviceName: profile?.deviceName || deviceStatus?.deviceId || null,
           plant: location,
-          captureBin: bin,
+          captureBin: binLabel(bin),
           station: profile?.station ?? null,
           fileName: filename,
           filePath: persistedPath ?? savedNetworkPath ?? `browser-download/${filename}`,
@@ -730,7 +741,7 @@ function CapturePage() {
         url: URL.createObjectURL(previewItem.blob),
         blob: previewItem.blob,
         folder: location,
-        bin: source,
+        bin: binLabel(bin),
         fileHandle,
         parentDir,
         createdAt: previewItem.capturedAt,
@@ -758,7 +769,7 @@ function CapturePage() {
     setCounter(1);
   }
 
-  const nextFilename = `${formatFilename(pattern, counter, toLocationToken(location), binToken(lastSource))}.${ext}`;
+  const nextFilename = `${formatFilename(pattern, counter, toLocationToken(location), toBinToken(location, lastSource))}.${ext}`;
   const fsUnsupportedNote = hydrated && !supportsFS;
   const currentOperationRunning =
     capturingBin !== null || autofocusing || savingBin !== null || previewFetching;
@@ -1018,8 +1029,8 @@ function CapturePage() {
       </section>
 
       <div className="grid gap-6 md:grid-cols-2">
-        {(["BIN 1", "BIN 2"] as Bin[]).map((bin) => {
-          const preview = bin === "BIN 1" ? bin1 : bin2;
+        {BIN_SLOTS.map((bin) => {
+          const preview = bin === 1 ? bin1 : bin2;
           const isCapturing = capturingBin === bin;
           const isSaving = savingBin === bin;
           // Once this bin has a captured still, its panel freezes on that
@@ -1052,7 +1063,7 @@ function CapturePage() {
           return (
             <section key={bin} className="rounded-xl border bg-card shadow-sm p-4">
               <div className="mb-3 flex items-center justify-between">
-                <h2 className="text-lg font-semibold">{bin}</h2>
+                <h2 className="text-lg font-semibold">{binLabel(bin)}</h2>
                 <span
                   className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium ${tone.pill}`}
                 >
@@ -1066,7 +1077,7 @@ function CapturePage() {
                   <>
                     <img
                       src={preview.url}
-                      alt={`${bin} hasil capture`}
+                      alt={`${binLabel(bin)} hasil capture`}
                       className="h-full w-full object-cover"
                     />
                     <span className="absolute left-2 top-2 rounded bg-black/60 px-2 py-0.5 text-xs font-medium text-white">
@@ -1076,7 +1087,7 @@ function CapturePage() {
                 ) : cameraFrame ? (
                   <img
                     src={cameraFrame}
-                    alt={`${bin} preview live`}
+                    alt={`${binLabel(bin)} preview live`}
                     className={`h-full w-full object-cover transition-opacity duration-150 ${previewFetching ? "opacity-70" : "opacity-100"}`}
                   />
                 ) : (
@@ -1118,15 +1129,15 @@ function CapturePage() {
                   {isCapturing
                     ? "Mengambil…"
                     : showFrozen
-                      ? `Ambil ulang ${bin}`
-                      : `Capture ${bin}`}
+                      ? `Ambil ulang ${binLabel(bin)}`
+                      : `Capture ${binLabel(bin)}`}
                 </button>
                 <button
                   onClick={() => setConfirmSaveBin(bin)}
                   disabled={!preview || isSaving}
                   className="rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
                 >
-                  {isSaving ? "Menyimpan…" : `Simpan ${bin}`}
+                  {isSaving ? "Menyimpan…" : `Simpan ${binLabel(bin)}`}
                 </button>
                 {showFrozen && (
                   <button
@@ -1357,7 +1368,9 @@ function CapturePage() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Simpan hasil capture {confirmSaveBin}?</AlertDialogTitle>
+            <AlertDialogTitle>
+              Simpan hasil capture {confirmSaveBin ? binLabel(confirmSaveBin) : ""}?
+            </AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-2">
                 <p>
@@ -1366,7 +1379,7 @@ function CapturePage() {
                 </p>
                 <p className="rounded-md bg-muted px-3 py-2 font-mono text-xs break-all text-foreground">
                   {confirmSaveBin
-                    ? `${formatFilename(pattern, counter, toLocationToken(location), binToken(confirmSaveBin))}.${ext}`
+                    ? `${formatFilename(pattern, counter, toLocationToken(location), toBinToken(location, confirmSaveBin))}.${ext}`
                     : "—"}
                 </p>
                 <p>
@@ -1386,7 +1399,7 @@ function CapturePage() {
                 if (bin) void saveBin(bin);
               }}
             >
-              Simpan {confirmSaveBin}
+              Simpan {confirmSaveBin ? binLabel(confirmSaveBin) : ""}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
