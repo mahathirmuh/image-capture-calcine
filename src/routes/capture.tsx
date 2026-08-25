@@ -38,6 +38,16 @@ import {
   getRuntimeErrorCode,
 } from "@/lib/camera-runtime";
 import { PLANTS, toLocationToken } from "@/lib/locations";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { PageTitle } from "@/components/page-shell";
 
 export const Route = createFileRoute("/capture")({
@@ -234,6 +244,10 @@ function CapturePage() {
   const [bin2, setBin2] = useState<BinPreview | null>(null);
   const [lastSource, setLastSource] = useState<Bin>("BIN 1");
   const [savingBin, setSavingBin] = useState<Bin | null>(null);
+  // Bin yang sedang menunggu konfirmasi simpan. Dipisahkan dari `savingBin`
+  // karena keduanya menandai fase berbeda: yang ini "operator belum memutuskan",
+  // yang itu "penulisan sedang berjalan".
+  const [confirmSaveBin, setConfirmSaveBin] = useState<Bin | null>(null);
   const [autofocusing, setAutofocusing] = useState(false);
   // Synchronous re-entrancy guard for saves. `savingBin` is state (async), so a
   // fast double-click could pass its check twice before re-render; this ref
@@ -1108,7 +1122,7 @@ function CapturePage() {
                       : `Capture ${bin}`}
                 </button>
                 <button
-                  onClick={() => saveBin(bin)}
+                  onClick={() => setConfirmSaveBin(bin)}
                   disabled={!preview || isSaving}
                   className="rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
                 >
@@ -1331,6 +1345,52 @@ function CapturePage() {
           File berikutnya akan disimpan sebagai: {hydrated ? nextFilename : "—"}
         </div>
       </section>
+
+      {/* Konfirmasi sebelum menulis. Simpan tidak bisa dibatalkan dari sini --
+          berkasnya langsung mendarat di folder jaringan dan indeks gambar ikut
+          maju -- jadi nama berkas yang akan dipakai ditampilkan sekalian,
+          supaya salah lokasi atau salah indeks ketahuan sebelum ditulis,
+          bukan sesudah. */}
+      <AlertDialog
+        open={confirmSaveBin !== null}
+        onOpenChange={(open) => !open && setConfirmSaveBin(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Simpan hasil capture {confirmSaveBin}?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                <p>
+                  Hasil capture dikirim ke folder jaringan dan dicatat ke registry. Setelah
+                  tersimpan, berkasnya tidak bisa ditarik kembali dari halaman ini.
+                </p>
+                <p className="rounded-md bg-muted px-3 py-2 font-mono text-xs break-all text-foreground">
+                  {confirmSaveBin
+                    ? `${formatFilename(pattern, counter, toLocationToken(location), binToken(confirmSaveBin))}.${ext}`
+                    : "—"}
+                </p>
+                <p>
+                  Lokasi: {location}. Kalau folder jaringan sedang tidak bisa dipakai, hasil capture
+                  diunduh lokal supaya tidak hilang.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault();
+                const bin = confirmSaveBin;
+                setConfirmSaveBin(null);
+                if (bin) void saveBin(bin);
+              }}
+            >
+              Simpan {confirmSaveBin}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
