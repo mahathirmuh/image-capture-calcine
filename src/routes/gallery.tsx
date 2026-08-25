@@ -131,6 +131,35 @@ function formatCaptureRecordStatus(status: string): string {
       : status || "—";
 }
 
+// Menerjemahkan path tersimpan jadi keterangan yang bisa dibaca operator.
+//
+// Nilai mentahnya berbeda bentuk per jalur simpan, dan yang paling menyesatkan
+// adalah "browser-download/<nama>": itu bukan folder yang bisa dibuka, hanya
+// penanda bahwa berkasnya turun ke folder Unduhan browser dan BELUM masuk
+// share. Menampilkannya apa adanya membuat orang mengira file-nya sudah aman
+// di jaringan.
+//
+// Path jalur jaringan ditampilkan seperti yang dilihat app server (mis.
+// /mnt/mti/...), bukan bentuk UNC-nya -- itu memang yang tercatat di registry.
+function describeStorage(
+  rawPath?: string | null,
+  saveMethod?: CaptureRecordView["saveMethod"],
+): { label: string; path: string | null; network: boolean } {
+  if (!rawPath) return { label: "Belum diketahui", path: null, network: false };
+  const DOWNLOAD_PREFIX = "browser-download/";
+  if (rawPath.startsWith(DOWNLOAD_PREFIX)) {
+    return {
+      label: "Folder Unduhan browser - belum masuk share",
+      path: rawPath.slice(DOWNLOAD_PREFIX.length),
+      network: false,
+    };
+  }
+  if (saveMethod === "app-network" || saveMethod === "edge-network") {
+    return { label: "Folder jaringan", path: rawPath, network: true };
+  }
+  return { label: "Folder pilihan di browser", path: rawPath, network: false };
+}
+
 function formatSaveMethodLabel(method: CaptureRecordView["saveMethod"]): string {
   return method === "app-network"
     ? "App -> network"
@@ -795,6 +824,7 @@ function GalleryPage() {
                     <th className="p-2">Bin</th>
                     <th className="p-2">Status</th>
                     <th className="p-2">Metode</th>
+                    <th className="p-2">Path Simpan</th>
                     <th className="p-2">Device</th>
                   </tr>
                 </thead>
@@ -816,6 +846,20 @@ function GalleryPage() {
                       </td>
                       <td className="p-2 text-xs text-muted-foreground">
                         {formatSaveMethodLabel(record.saveMethod)}
+                      </td>
+                      <td className="max-w-sm p-2 text-xs text-muted-foreground">
+                        {(() => {
+                          const storage = describeStorage(record.filePath, record.saveMethod);
+                          return (
+                            <span
+                              className="block truncate font-mono"
+                              title={`${storage.label}
+${storage.path ?? "—"}`}
+                            >
+                              {storage.path ?? "—"}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="p-2 text-xs text-muted-foreground">
                         {record.deviceName ?? record.deviceCode ?? "—"}
@@ -1173,6 +1217,23 @@ function GalleryPage() {
                     <div className="flex items-center gap-1">
                       <User className="h-2.5 w-2.5" /> —
                     </div>
+                    {(() => {
+                      const storage = describeStorage(item.persistedPath, item.saveMethod);
+                      return (
+                        <div
+                          className="flex items-start gap-1"
+                          title={`${storage.label}
+${storage.path ?? "—"}`}
+                        >
+                          <HardDrive
+                            className={`mt-px h-2.5 w-2.5 shrink-0 ${
+                              storage.network ? "text-emerald-600" : "text-amber-600"
+                            }`}
+                          />
+                          <span className="truncate font-mono">{storage.path ?? "—"}</span>
+                        </div>
+                      );
+                    })()}
                   </div>
                   <div className="mt-2 flex justify-end">
                     <DropdownMenu>
@@ -1212,6 +1273,7 @@ function GalleryPage() {
                   <th className="p-2">Waktu Capture</th>
                   <th className="p-2">Lokasi</th>
                   <th className="p-2">Bin</th>
+                  <th className="p-2">Path Simpan</th>
                   <th className="p-2">QC</th>
                   <th className="w-8 p-2"></th>
                 </tr>
@@ -1245,6 +1307,20 @@ function GalleryPage() {
                     </td>
                     <td className="p-2 text-xs text-muted-foreground">{item.folder || "—"}</td>
                     <td className="p-2 text-xs text-muted-foreground">{formatBin(item.bin)}</td>
+                    <td className="max-w-sm p-2 text-xs text-muted-foreground">
+                      {(() => {
+                        const storage = describeStorage(item.persistedPath, item.saveMethod);
+                        return (
+                          <span
+                            className="block truncate font-mono"
+                            title={`${storage.label}
+${storage.path ?? "—"}`}
+                          >
+                            {storage.path ?? "—"}
+                          </span>
+                        );
+                      })()}
+                    </td>
                     <td className="p-2">
                       <QcBadge />
                     </td>
@@ -1390,9 +1466,14 @@ function GalleryPage() {
               </dd>
               <dt className="text-muted-foreground">Ukuran File</dt>
               <dd className="text-right font-medium">{formatBytes(detailItem.blob.size)}</dd>
-              <dt className="text-muted-foreground">Path Simpan</dt>
-              <dd className="truncate text-right font-medium" title={detailRecord?.filePath ?? "—"}>
-                {detailRecord?.filePath ?? "—"}
+              <dt className="text-muted-foreground">Tersimpan di</dt>
+              <dd className="text-right font-medium">
+                {
+                  describeStorage(
+                    detailRecord?.filePath ?? detailItem.persistedPath,
+                    detailRecord?.saveMethod ?? detailItem.saveMethod,
+                  ).label
+                }
               </dd>
               <dt className="text-muted-foreground">Ukuran Gambar</dt>
               <dd className="text-right font-medium">
@@ -1401,6 +1482,43 @@ function GalleryPage() {
               <dt className="text-muted-foreground">Format File</dt>
               <dd className="text-right font-medium">{getFileFormat(detailItem.name)}</dd>
             </dl>
+
+            {(() => {
+              const storage = describeStorage(
+                detailRecord?.filePath ?? detailItem.persistedPath,
+                detailRecord?.saveMethod ?? detailItem.saveMethod,
+              );
+              if (!storage.path) return null;
+              return (
+                <div className="mt-3">
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-semibold text-muted-foreground">
+                      Path lengkap
+                    </span>
+                    <button
+                      onClick={() => void navigator.clipboard?.writeText(storage.path ?? "")}
+                      className="inline-flex items-center gap-1 rounded-md border border-input px-2 py-0.5 text-[11px] hover:bg-accent"
+                    >
+                      Salin
+                    </button>
+                  </div>
+                  <p
+                    className={`rounded-md px-2 py-1.5 font-mono text-[11px] break-all ${
+                      storage.network
+                        ? "bg-emerald-500/10 text-emerald-800"
+                        : "bg-amber-500/10 text-amber-800"
+                    }`}
+                  >
+                    {storage.path}
+                  </p>
+                  {!storage.network && (
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      Belum berada di folder jaringan. Pindahkan manual bila diperlukan.
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
           </div>
 
           <div className="mb-4">
