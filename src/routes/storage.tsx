@@ -112,6 +112,42 @@ function getPathKind(targetRoot: string | null | undefined) {
   return targetRoot.startsWith("\\\\") ? "UNC share" : "Path lokal";
 }
 
+// Bentuk path harus cocok dengan OS app server, dan ketidakcocokannya adalah
+// kesalahan yang paling mudah terjadi: nilai dari mesin dev Windows tinggal
+// tersalin ke server produksi yang Linux. Gejalanya menyesatkan -- env-nya
+// terisi, kartunya tampak beres, tapi container mengunyah backslash-nya jadi
+// satu nama berkas lalu gagal ENOENT. Probe akan menangkapnya juga, tapi
+// menyebut sebabnya di sini jauh lebih cepat dibaca daripada kode errornya.
+function getPathFormMismatch(config: StorageConfigSummary | null): string | null {
+  if (!config?.targetRoot) return null;
+  const isUnc = config.targetRoot.startsWith("\\\\");
+  if (isUnc && config.platform !== "win32") {
+    return `Path UNC tidak berlaku di app server ${config.platform}. Pakai path mount, misalnya /mnt/mti/ML/MTI.`;
+  }
+  if (!isUnc && config.platform === "win32" && config.targetRoot.startsWith("/")) {
+    return "Path bergaya POSIX di app server Windows. Pakai bentuk UNC, misalnya \\\\host\\share\\folder.";
+  }
+  return null;
+}
+
+// Ringkasan satu baris untuk kartu. "Sudah diisi" sengaja tidak dipakai lagi:
+// itu hanya berarti env var-nya tidak kosong, dan kartunya jadi terlihat sehat
+// padahal folder tujuannya belum tentu bisa disentuh sama sekali.
+function getSaveRootStatus(
+  config: StorageConfigSummary | null,
+  configLoading: boolean,
+  probeResult: StorageProbeResult | null,
+  probeLoading: boolean,
+): { label: string; tone: string } {
+  if (configLoading) return { label: "Mengecek...", tone: "text-muted-foreground" };
+  if (!config?.configured) return { label: "Belum dikonfigurasi", tone: "text-destructive" };
+  if (probeLoading) return { label: "Menguji koneksi...", tone: "text-muted-foreground" };
+  if (!probeResult) return { label: "Belum diuji", tone: "text-muted-foreground" };
+  return probeResult.ok
+    ? { label: "Terhubung, bisa ditulis", tone: "text-emerald-700" }
+    : { label: "Tidak bisa diakses", tone: "text-destructive" };
+}
+
 function getProbeGuidance(result: StorageProbeResult): {
   headline: string;
   causes: string[];
@@ -251,10 +287,19 @@ function StoragePage() {
   useEffect(() => {
     void refreshConfig();
     void refreshDeviceStatus();
+    // Probe ikut jalan saat halaman dibuka. Sebelumnya ia hanya berjalan kalau
+    // ada yang menekan tombolnya di bagian bawah halaman, sehingga kartu di
+    // atas melaporkan "sudah diisi" tanpa pernah benar-benar menyentuh folder
+    // tujuan -- pertanyaan yang justru ingin dijawab orang saat membuka
+    // halaman ini. Probe menulis lalu menghapus satu file uji; cukup murah
+    // untuk dijalankan tiap kali halaman dibuka.
+    void runProbe();
   }, []);
 
   const liveCaptureSaveReady = !!config?.configured && !!deviceStatus?.online;
   const lastProbeOk = probeResult?.ok ?? null;
+  const saveRootStatus = getSaveRootStatus(config, configLoading, probeResult, probeLoading);
+  const pathFormMismatch = getPathFormMismatch(config);
   const recommendedSteps = [
     !config?.configured
       ? "Set `NETWORK_SAVE_ROOT` di environment app agar export otomatis punya target path."
@@ -399,20 +444,33 @@ function StoragePage() {
             <HardDrive className="h-4 w-4 text-primary" />
             <h2 className="font-semibold">Network Save Root</h2>
           </div>
-          <div className="text-sm font-medium">
-            {configLoading
-              ? "Mengecek..."
-              : config?.configured
-                ? "Sudah diisi"
-                : "Belum dikonfigurasi"}
-          </div>
+          <div className={`text-sm font-medium ${saveRootStatus.tone}`}>{saveRootStatus.label}</div>
           <p className="mt-2 break-all text-xs text-muted-foreground">
             {config?.targetRoot ??
               "Isi NETWORK_SAVE_ROOT di .env untuk mengaktifkan network save otomatis."}
           </p>
+          {pathFormMismatch && (
+            <p className="mt-2 rounded-md bg-amber-500/10 px-2 py-1.5 text-xs text-amber-700">
+              {pathFormMismatch}
+            </p>
+          )}
+          {probeResult && !probeResult.ok && (
+            <p className="mt-2 break-all text-xs text-destructive">
+              {probeResult.code}: {probeResult.message}
+            </p>
+          )}
           <p className="mt-2 text-xs text-muted-foreground">
             Jenis path: {getPathKind(config?.targetRoot)}
+            {config?.platform ? ` · app server: ${config.platform}` : ""}
           </p>
+          <button
+            onClick={() => void runProbe()}
+            disabled={probeLoading || !config?.configured}
+            className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-2.5 py-1.5 text-xs font-medium hover:bg-accent disabled:opacity-50"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${probeLoading ? "animate-spin" : ""}`} />
+            {probeLoading ? "Menguji..." : "Uji koneksi"}
+          </button>
         </div>
 
         <div className="rounded-xl border bg-card shadow-sm p-4">
