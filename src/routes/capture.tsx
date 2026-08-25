@@ -986,9 +986,16 @@ function CapturePage() {
       )}
       {hydrated && supportsFS && !dirName && (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm">
+          {/* Banner ini muncul hanya karena folder browser belum dipilih, dan
+              tidak tahu apa-apa soal kondisi folder jaringan. Kalimat lamanya
+              ("hasil capture akan diunduh") membuat operator mengira semua
+              capture berakhir di Downloads, padahal jalur utamanya folder
+              jaringan dan biasanya berhasil. Yang disebut sekarang hanya
+              perannya: cadangan kedua, dipakai kalau yang utama gagal. */}
           <span>
-            Belum ada folder simpan yang dipilih. Hasil capture akan diunduh ke folder `Downloads`
-            browser sebagai fallback.
+            Folder simpan di browser belum dipilih. Ini cuma cadangan — dipakai kalau folder
+            jaringan sedang tidak bisa diakses. Tanpa folder ini, capture yang gagal masuk jaringan
+            akan diunduh ke folder `Downloads` dan harus dipindahkan manual.
           </span>
           <button
             onClick={pickDirectory}
