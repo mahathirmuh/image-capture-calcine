@@ -52,10 +52,21 @@ describe("capture-records helpers", () => {
       deviceName: "EDGE-CAMERA-01",
       plant: "Acid Plant",
       captureBin: "BIN 1",
+      // Capture dari sebelum skema sesi tidak mengirim nilai ini, dan metadata
+      // tetap harus terbentuk -- bukan gagal atau kehilangan kunci lain.
+      captureSession: null,
       station: "Main Area",
       saveMethod: "edge-network",
       assetId: "asset-123",
     });
+  });
+
+  // Sesi disimpan sebagai data supaya "sesi 14.00 sudah ada belum?" bisa
+  // dijawab dari registry, bukan dengan mengurai nama berkas yang bisa
+  // bersuffix "(2)" atau sudah di-rename orang.
+  it("carries the sampling session into metadata", () => {
+    const metadata = buildCaptureRecordMetadata({ ...captureInput, captureSession: "02.00" });
+    expect(metadata.captureSession).toBe("02.00");
   });
 
   it("treats non-download save methods as saved", () => {

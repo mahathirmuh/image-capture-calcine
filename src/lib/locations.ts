@@ -58,6 +58,19 @@ export function toBinLabel(plant: string, slot: BinSlot): string {
 }
 
 /**
+ * Bentuk berkapital judul untuk nama berkas: "Train 1", "Bin 1".
+ *
+ * Berbeda dari toBinLabel() yang huruf besar semua ("TRAIN 1"). Label huruf
+ * besar cocok sebagai badge di layar, tapi nama berkas dibaca berdampingan
+ * dengan tanggal dan jam -- huruf besar semua di sana terbaca seperti kode,
+ * bukan nama.
+ */
+export function toBinTitle(plant: string, slot: BinSlot): string {
+  const term = toBinTerm(plant);
+  return `${term.charAt(0)}${term.slice(1).toLowerCase()} ${slot}`;
+}
+
+/**
  * Nomor slot dari label apa pun: "BIN 1", "BIN1", "TRAIN 1", "train2".
  *
  * Dipakai untuk membandingkan capture lintas plant. Satu galeri bisa memuat

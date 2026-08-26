@@ -23,15 +23,25 @@ export type Prefs = {
 
 export const DEFAULT_PREFS: Prefs = {
   location: PLANTS[0],
-  // e.g. "02 July 2026 17.00 CP BIN1" -> day, full month name, year, HH.mm,
-  // location code (AP/CP), and the bin.
-  pattern: "{DD} {MMMM} {YYYY} {HH}.{mm} {LOCATION} {SOURCE}",
+  // e.g. "02.00 Train 1" -> jam sesi sampling, lalu slotnya.
+  //
+  // Tanggal dan plant sengaja TIDAK ikut: keduanya sudah menjadi folder
+  // (.../Acid Plant/2026/08/25/), jadi mengulanginya di nama berkas hanya
+  // memanjangkan tanpa menambah keterangan. Waktu capture yang sebenarnya
+  // tetap tersimpan di kolom captured_at, bukan di nama berkas.
+  pattern: "{SESSION} {SLOT}",
   ext: "jpg",
   counter: 1,
   livePreview: false,
 };
 
+// Pola bawaan sebelum skema sesi dipakai. Disimpan supaya migrasi di
+// loadPrefs() bisa mengenali operator yang tidak pernah menyesuaikan polanya.
+const LEGACY_DEFAULT_PATTERN = "{DD} {MMMM} {YYYY} {HH}.{mm} {LOCATION} {SOURCE}";
+
 export const FILENAME_PATTERN_TOKENS = [
+  "SESSION",
+  "SLOT",
   "DD",
   "MMMM",
   "MM",
@@ -96,20 +106,34 @@ export function analyzeFilenamePattern(pattern: string): FilenamePatternAnalysis
   }
 
   const hasLocation = recognizedTokens.includes("LOCATION");
-  const hasSource = recognizedTokens.includes("SOURCE");
+  const hasSession = recognizedTokens.includes("SESSION");
+  // {SLOT} dan {SOURCE} sama-sama membedakan kedua slot; yang pertama berbentuk
+  // "Train 1", yang kedua "TRAIN1". Cukup salah satu.
+  const hasSource = recognizedTokens.includes("SOURCE") || recognizedTokens.includes("SLOT");
   const hasIndex = recognizedTokens.includes("INDEX");
   const hasTimestamp = recognizedTokens.some((token) => token === "TS" || token === "ss");
   const hasCollisionRisk = !hasIndex && !hasTimestamp;
 
-  if (!hasLocation) {
+  // Plant sudah menjadi folder tersendiri di tujuan simpan, jadi {LOCATION}
+  // hanya perlu disarankan untuk pola yang tidak memakai skema sesi -- pada
+  // pola sesi ia cuma pengulangan yang memanjangkan nama.
+  if (!hasLocation && !hasSession) {
     suggestions.push("Tambahkan `{LOCATION}` agar file mudah diaudit per plant.");
   }
   if (!hasSource) {
     suggestions.push(
-      "Tambahkan `{SOURCE}` agar operator bisa membedakan kedua slot capture dari nama file.",
+      "Tambahkan `{SLOT}` agar operator bisa membedakan kedua slot capture dari nama file.",
     );
   }
-  if (hasCollisionRisk) {
+  if (hasCollisionRisk && hasSession && hasSource) {
+    // Pada skema sesi, nama ganda itu DISENGAJA: satu sesi memang hanya punya
+    // satu berkas per slot. Capture ulang untuk sesi yang sama akan menjadi
+    // "(2)" -- keduanya tersimpan, dan yang mana yang dipakai ditentukan dari
+    // waktu capture di Gallery, bukan dari nama berkas.
+    warnings.push(
+      "Capture ulang pada sesi dan slot yang sama akan tersimpan sebagai `(2)`; keduanya disimpan, tidak ada yang tertimpa.",
+    );
+  } else if (hasCollisionRisk) {
     warnings.push(
       "Pattern ini berisiko menghasilkan nama ganda untuk capture yang berdekatan; aplikasi akan menambahkan suffix seperti `(2)` bila perlu.",
     );
@@ -135,7 +159,20 @@ export function loadPrefs(): Prefs {
   try {
     const raw = localStorage.getItem(PREFS_KEY);
     if (!raw) return DEFAULT_PREFS;
-    return { ...DEFAULT_PREFS, ...JSON.parse(raw) };
+    const stored = { ...DEFAULT_PREFS, ...JSON.parse(raw) } as Prefs;
+
+    // Naikkan pola bawaan lama ke skema sesi. Preferensi tersimpan per browser,
+    // jadi mengganti DEFAULT_PREFS saja tidak menyentuh operator yang sudah
+    // pernah membuka halaman Capture -- mereka akan tetap memakai pola lama
+    // tanpa pernah tahu ada yang berubah.
+    //
+    // Hanya pola yang PERSIS bawaan lama yang diganti. Pola yang pernah
+    // disesuaikan sendiri dibiarkan: itu pilihan sadar seseorang, dan
+    // menimpanya diam-diam lebih buruk daripada tidak seragam.
+    if (stored.pattern === LEGACY_DEFAULT_PATTERN) {
+      return { ...stored, pattern: DEFAULT_PREFS.pattern };
+    }
+    return stored;
   } catch {
     return DEFAULT_PREFS;
   }

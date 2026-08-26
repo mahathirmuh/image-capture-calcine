@@ -24,6 +24,11 @@ const recordCaptureSchema = z.object({
   deviceName: z.string().trim().nullable().optional(),
   plant: z.string().trim().min(1, "Plant wajib diisi"),
   captureBin: z.string().trim().min(1, "Bin capture wajib diisi"),
+  // Label sesi sampling ("02.00"). Disimpan sebagai DATA, bukan cuma tercetak
+  // di nama berkas: pertanyaan "sesi 14.00 hari ini sudah ada belum?" harus
+  // bisa dijawab dari registry, bukan dengan mengurai nama berkas yang bisa
+  // bersuffix "(2)" atau sudah di-rename orang.
+  captureSession: z.string().trim().max(20).nullable().optional(),
   station: z.string().trim().nullable().optional(),
   fileName: z.string().trim().min(1, "Nama file wajib diisi"),
   filePath: z.string().trim().min(1, "Path file wajib diisi"),
@@ -134,6 +139,7 @@ export type CaptureRecordView = {
   deviceName: string | null;
   plant: string | null;
   captureBin: string | null;
+  captureSession: string | null;
   station: string | null;
   fileName: string;
   filePath: string;
@@ -250,6 +256,7 @@ export function buildCaptureRecordMetadata(input: RecordCaptureInput) {
     deviceName: input.deviceName ?? null,
     plant: input.plant,
     captureBin: input.captureBin,
+    captureSession: input.captureSession ?? null,
     station: input.station ?? null,
     saveMethod: input.saveMethod,
     assetId: input.assetId ?? null,
@@ -261,6 +268,9 @@ function parseCaptureRecordMetadata(raw: unknown): {
   deviceName: string | null;
   plant: string | null;
   captureBin: string | null;
+  // Record dari sebelum skema sesi dipakai tidak punya kunci ini, jadi nullable
+  // bukan kelalaian -- Gallery menampilkannya sebagai "—" untuk capture lama.
+  captureSession: string | null;
   station: string | null;
   saveMethod: CaptureSaveMethod | null;
   assetId: string | null;
@@ -285,6 +295,7 @@ function parseCaptureRecordMetadata(raw: unknown): {
     deviceName: typeof parsed.deviceName === "string" ? parsed.deviceName : null,
     plant: typeof parsed.plant === "string" ? parsed.plant : null,
     captureBin: typeof parsed.captureBin === "string" ? parsed.captureBin : null,
+    captureSession: typeof parsed.captureSession === "string" ? parsed.captureSession : null,
     station: typeof parsed.station === "string" ? parsed.station : null,
     saveMethod,
     assetId: typeof parsed.assetId === "string" ? parsed.assetId : null,
@@ -299,6 +310,7 @@ function mapCaptureRecordRow(row: Record<string, unknown>): CaptureRecordView {
     deviceName: metadata.deviceName,
     plant: metadata.plant ?? (typeof row.plant === "string" ? row.plant : null),
     captureBin: metadata.captureBin,
+    captureSession: metadata.captureSession,
     station: metadata.station ?? (typeof row.station === "string" ? row.station : null),
     fileName: String(row.file_name ?? ""),
     filePath: String(row.file_path ?? ""),

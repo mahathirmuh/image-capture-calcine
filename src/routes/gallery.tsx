@@ -842,6 +842,7 @@ function GalleryPage() {
                     <th className="p-2">Waktu</th>
                     <th className="p-2">Lokasi</th>
                     <th className="p-2">Bin</th>
+                    <th className="p-2">Sesi</th>
                     <th className="p-2">Status</th>
                     <th className="p-2">Metode</th>
                     <th className="p-2">Path Simpan</th>
@@ -860,6 +861,9 @@ function GalleryPage() {
                       <td className="p-2 text-xs text-muted-foreground">{record.plant ?? "—"}</td>
                       <td className="p-2 text-xs text-muted-foreground">
                         {formatBin(record.captureBin ?? undefined)}
+                      </td>
+                      <td className="p-2 text-xs text-muted-foreground">
+                        {record.captureSession ?? "—"}
                       </td>
                       <td className="p-2 text-xs text-muted-foreground">
                         {formatCaptureRecordStatus(record.status)}

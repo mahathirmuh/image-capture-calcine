@@ -1,11 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   AlertTriangle,
   Camera,
   CheckCircle2,
+  Clock,
   Crosshair,
   MapPin,
   RotateCcw,
@@ -42,10 +43,19 @@ import {
   BIN_SLOTS,
   PLANTS,
   toBinLabel,
+  toBinTitle,
   toBinToken,
   toLocationToken,
   type BinSlot,
 } from "@/lib/locations";
+import {
+  formatSessionLabel,
+  isSessionOnAnotherDay,
+  listSelectableSessions,
+  resolveNearestSession,
+  sessionPathSegment,
+  type CaptureSession,
+} from "@/lib/capture-session";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -123,7 +133,22 @@ const MONTH_NAMES = [
   "December",
 ];
 
-function formatFilename(pattern: string, index: number, location: string, source: string) {
+type FilenameValues = {
+  index: number;
+  /** Kode dua huruf plant, mis. "AP". */
+  location: string;
+  /** Bentuk tanpa spasi, mis. "TRAIN1". */
+  source: string;
+  /** Bentuk berkapital judul, mis. "Train 1". */
+  slot: string;
+  /** Label sesi, mis. "02.00". */
+  session: string;
+};
+
+// Objek, bukan deretan argumen posisional: nilainya sudah lima dan tiga di
+// antaranya bertipe string -- tertukar urutannya tidak akan ditangkap compiler,
+// dan akibatnya baru terlihat sebagai nama berkas yang salah di share.
+function formatFilename(pattern: string, values: FilenameValues) {
   const now = new Date();
   const pad = (n: number, l = 2) => String(n).padStart(l, "0");
   const map: Record<string, string> = {
@@ -134,10 +159,12 @@ function formatFilename(pattern: string, index: number, location: string, source
     HH: pad(now.getHours()),
     mm: pad(now.getMinutes()),
     ss: pad(now.getSeconds()),
-    INDEX: pad(index, 3),
+    INDEX: pad(values.index, 3),
     TS: String(Date.now()),
-    LOCATION: location || "UNKNOWN",
-    SOURCE: source,
+    LOCATION: values.location || "UNKNOWN",
+    SOURCE: values.source,
+    SLOT: values.slot,
+    SESSION: values.session,
   };
   let out = pattern;
   for (const [k, v] of Object.entries(map)) out = out.replaceAll(`{${k}}`, v);
@@ -281,6 +308,35 @@ function CapturePage() {
   // Satu sumber untuk label slot: apa yang dibaca operator, yang masuk ke nama
   // berkas, dan yang tersimpan sebagai captureBin semuanya turun dari sini.
   const binLabel = (slot: BinSlot) => toBinLabel(activePlant, slot);
+
+  // Jam dinding yang berdetak pelan. Dipakai hanya untuk menentukan sesi
+  // terdekat; sekali per menit sudah jauh lebih halus daripada jarak antar
+  // sesi yang tiga jam.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Sesi yang dipilih operator, disimpan sebagai ISO. Selama null, sesi
+  // mengikuti yang terdekat dan ikut berpindah sendiri saat jam berganti --
+  // itulah "default ke sesi terdekat". Begitu operator memilih sendiri,
+  // pilihannya dipertahankan dan tidak digeser oleh jam.
+  const [selectedSessionIso, setSelectedSessionIso] = useState<string | null>(null);
+  const sessionOptions = useMemo(() => listSelectableSessions(now), [now]);
+  const activeSession = useMemo<CaptureSession>(() => {
+    if (selectedSessionIso) {
+      const startsAt = new Date(selectedSessionIso);
+      if (!Number.isNaN(startsAt.getTime())) {
+        return {
+          hour: startsAt.getHours(),
+          label: formatSessionLabel(startsAt.getHours()),
+          startsAt,
+        };
+      }
+    }
+    return resolveNearestSession(now);
+  }, [selectedSessionIso, now]);
   const [pattern, setPattern] = useState<string>(DEFAULT_PREFS.pattern);
   const [ext, setExt] = useState<"jpg">(DEFAULT_PREFS.ext);
   const [counter, setCounter] = useState<number>(DEFAULT_PREFS.counter);
@@ -579,7 +635,13 @@ function CapturePage() {
     setSavingBin(bin);
     setError(null);
     const source = toBinToken(activePlant, bin);
-    const base = formatFilename(pattern, counter, toLocationToken(activePlant), source);
+    const base = formatFilename(pattern, {
+      index: counter,
+      location: toLocationToken(activePlant),
+      source,
+      slot: toBinTitle(activePlant, bin),
+      session: activeSession.label,
+    });
     // Resolved to the actual on-disk name below (may gain a " (2)" suffix if a
     // same-minute capture already claimed the plain name).
     let filename = `${base}.${ext}`;
@@ -621,7 +683,7 @@ function CapturePage() {
         // Folder plant dan tanggalnya dibuat sendiri oleh saveMediaToNetwork --
         // hanya root-nya yang wajib sudah ada, karena root yang hilang adalah
         // tanda share tidak ter-mount.
-        const relativePath = `${activePlant}/${datedPathSegment()}/${base}.${ext}`;
+        const relativePath = `${activePlant}/${sessionPathSegment(activeSession)}/${base}.${ext}`;
         const saved = await saveMediaToNetwork({
           data: { assetId: previewItem.assetId, relativePath },
         });
@@ -666,7 +728,10 @@ function CapturePage() {
             fallbackReasons.push("browser-folder:permission-not-granted");
             throw new Error("Folder permission not granted");
           }
-          const { dir: dayDir, path: datedPath } = await getDatedDirHandle(dirHandle);
+          const { dir: dayDir, path: datedPath } = await getDatedDirHandle(
+            dirHandle,
+            activeSession.startsAt,
+          );
           filename = await resolveUniqueName(dayDir, base, ext);
           fileHandle = await dayDir.getFileHandle(filename, { create: true });
           const writable = await fileHandle.createWritable();
@@ -761,6 +826,7 @@ function CapturePage() {
           deviceName: profile?.deviceName || deviceStatus?.deviceId || null,
           plant: activePlant,
           captureBin: binLabel(bin),
+          captureSession: activeSession.label,
           station: profile?.station ?? null,
           fileName: filename,
           filePath: persistedPath ?? savedNetworkPath ?? `browser-download/${filename}`,
@@ -824,7 +890,13 @@ function CapturePage() {
     setCounter(1);
   }
 
-  const nextFilename = `${formatFilename(pattern, counter, toLocationToken(activePlant), toBinToken(activePlant, lastSource))}.${ext}`;
+  const nextFilename = `${formatFilename(pattern, {
+    index: counter,
+    location: toLocationToken(activePlant),
+    source: toBinToken(activePlant, lastSource),
+    slot: toBinTitle(activePlant, lastSource),
+    session: activeSession.label,
+  })}.${ext}`;
   const fsUnsupportedNote = hydrated && !supportsFS;
   const currentOperationRunning =
     capturingBin !== null || autofocusing || savingBin !== null || previewFetching;
@@ -968,6 +1040,31 @@ function CapturePage() {
             {(plantLocked ? [activePlant] : PLANTS).map((plant) => (
               <option key={plant} value={plant}>
                 {plant}
+              </option>
+            ))}
+          </select>
+        </div>
+        {/* Sesi menentukan nama berkas DAN folder tanggalnya, jadi ia berdiri
+            sejajar dengan Lokasi, bukan disembunyikan di Pengaturan Simpan.
+            Nilainya mengikuti sesi terdekat sampai operator memilih sendiri --
+            yang perlu dilakukan saat menyusul sesi yang terlewat. */}
+        <div className="inline-flex items-center gap-1.5 rounded-md border bg-card px-3 py-1.5 text-sm">
+          <Clock className="h-4 w-4 text-muted-foreground" />
+          <span className="text-muted-foreground">Sesi:</span>
+          <select
+            value={activeSession.startsAt.toISOString()}
+            onChange={(e) => setSelectedSessionIso(e.target.value)}
+            className="bg-transparent font-semibold outline-none"
+          >
+            {sessionOptions.map((session) => (
+              <option key={session.startsAt.toISOString()} value={session.startsAt.toISOString()}>
+                {session.label}
+                {isSessionOnAnotherDay(session, now)
+                  ? ` (${session.startsAt.toLocaleDateString("id-ID", {
+                      day: "2-digit",
+                      month: "short",
+                    })})`
+                  : ""}
               </option>
             ))}
           </select>
@@ -1442,7 +1539,13 @@ function CapturePage() {
                 </p>
                 <p className="rounded-md bg-muted px-3 py-2 font-mono text-xs break-all text-foreground">
                   {confirmSaveBin
-                    ? `${formatFilename(pattern, counter, toLocationToken(activePlant), toBinToken(activePlant, confirmSaveBin))}.${ext}`
+                    ? `${formatFilename(pattern, {
+                        index: counter,
+                        location: toLocationToken(activePlant),
+                        source: toBinToken(activePlant, confirmSaveBin),
+                        slot: toBinTitle(activePlant, confirmSaveBin),
+                        session: activeSession.label,
+                      })}.${ext}`
                     : "—"}
                 </p>
                 <p>
