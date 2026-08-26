@@ -26,6 +26,15 @@ services:
       # the container can see -- i.e. the mount below, not a UNC path and not
       # a path that only exists on the edge device.
       NETWORK_SAVE_ROOT: ${NETWORK_SAVE_ROOT:-/mnt/mti/ML/MTI/Calcine Project/Calcine Sample Foto/Foto Sampling}
+      # Antrean kirim. Setiap capture ditulis ke sini lebih dulu, lalu
+      # diteruskan ke NETWORK_SAVE_ROOT. Dipetakan ke named volume di bawah
+      # supaya antreannya BERTAHAN melewati `docker compose up -d --build` --
+      # kalau ia tinggal di lapisan container, deploy akan menghapus foto yang
+      # belum sempat terkirim.
+      CAPTURE_SPOOL_DIR: ${CAPTURE_SPOOL_DIR:-/var/lib/capture-spool}
+      # Saat terlampaui, capture ditolak dengan pesan jelas -- bukan membuang
+      # entri terlama.
+      CAPTURE_SPOOL_MAX_MB: ${CAPTURE_SPOOL_MAX_MB:-2048}
     # Reads CAMERA_API_URL/CAMERA_API_TOKEN/NETWORK_SAVE_ROOT from a local .env
     # if present, otherwise the defaults above apply.
     env_file:
@@ -65,3 +74,12 @@ services:
         target: /mnt/mti
         bind:
           propagation: rslave
+      # Antrean kirim. Named volume, bukan bind: isinya murni milik aplikasi
+      # dan tidak perlu dibaca dari host, tapi harus selamat dari rebuild.
+      - capture-spool:/var/lib/capture-spool
+
+volumes:
+  # Dikelola Docker. `docker compose down` biasa TIDAK menghapusnya; hanya
+  # `down -v` yang melakukannya -- dan itu berarti membuang foto yang belum
+  # terkirim, jadi jangan dipakai selama antreannya belum kosong.
+  capture-spool:

@@ -628,7 +628,7 @@ function CapturePage() {
 
     try {
       let savedNetworkPath: string | null = null;
-      let replacedExisting = false;
+      let pendingForward = 0;
       let persistedPath: string | null = null;
       let saveMethod: CaptureSaveMethod = "browser-download";
       let saveConfirmed = false;
@@ -663,15 +663,22 @@ function CapturePage() {
         // tanda share tidak ter-mount.
         const relativePath = `${activePlant}/${sessionPathSegment(activeSession)}/${base}.${ext}`;
         const saved = await saveMediaToNetwork({
-          data: { assetId: previewItem.assetId, relativePath },
+          data: {
+            assetId: previewItem.assetId,
+            relativePath,
+            capturedAt: previewItem.capturedAt,
+          },
         });
         if (saved.ok) {
           filename = saved.filename;
           savedNetworkPath = saved.savedTo;
-          replacedExisting = saved.replaced;
           persistedPath = saved.savedTo;
-          saveMethod = "app-network";
+          // Dua keadaan berbeda, dan hanya satu yang boleh disebut tersimpan di
+          // folder jaringan. Yang kedua sudah aman di app server dan akan
+          // menyusul sendiri -- fotonya tidak hilang, tapi belum di share.
+          saveMethod = saved.forwarded ? "app-network" : "spooled";
           saveConfirmed = true;
+          pendingForward = saved.forwarded ? 0 : saved.pending;
         } else if (saved.code !== "NETWORK_SAVE_NOT_CONFIGURED") {
           // NOT_CONFIGURED is the expected/common case (not every deployment
           // has a network share set up) and not worth alarming anyone about.
@@ -759,21 +766,19 @@ function CapturePage() {
       // menyebut itu "berhasil" membuat orang berhenti memeriksanya.
       if (savedNetworkPath) {
         if (saveMethod === "app-network") {
-          // Menimpa itu tidak bisa dibatalkan, jadi ia tidak boleh lewat
-          // sebagai notifikasi hijau biasa -- operator harus sadar capture
-          // sebelumnya di sesi ini baru saja hilang dari share.
-          const headline = replacedExisting
-            ? `${binLabel(bin)} sesi ${activeSession.label} DIGANTI`
-            : `${binLabel(bin)} tersimpan ke folder jaringan`;
+          const headline = `${binLabel(bin)} tersimpan ke folder jaringan`;
           setStatus(`${headline}: ${savedNetworkPath}`);
-          if (replacedExisting) {
-            toast.warning(headline, {
-              description: `Capture sebelumnya di sesi ini ditimpa. ${savedNetworkPath}`,
-              duration: 8000,
-            });
-          } else {
-            toast.success(headline, { description: savedNetworkPath, duration: 6000 });
-          }
+          toast.success(headline, { description: savedNetworkPath, duration: 6000 });
+        } else if (saveMethod === "spooled") {
+          // Sengaja bukan hijau. Foto memang aman, tapi menyebutnya
+          // "tersimpan" untuk berkas yang belum sampai di share persis
+          // kekeliruan yang berulang kali kita temukan di halaman ini.
+          const headline = `${binLabel(bin)} tersimpan di server, menunggu jaringan`;
+          setStatus(`${headline} (${pendingForward} foto dalam antrean)`);
+          toast.warning(headline, {
+            description: `Folder jaringan sedang tidak terjangkau. ${pendingForward} foto menunggu dan akan terkirim sendiri begitu koneksinya pulih.`,
+            duration: 8000,
+          });
         } else {
           setStatus(`${binLabel(bin)} tersimpan ke folder browser: ${savedNetworkPath}`);
           toast.warning(`${binLabel(bin)} tersimpan ke folder browser`, {

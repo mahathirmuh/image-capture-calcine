@@ -14,8 +14,11 @@ import { getDeviceStatus, type DeviceStatus } from "@/lib/camera-api";
 import { PageTitle } from "@/components/page-shell";
 import { useIsAdmin } from "@/lib/use-session-user";
 import {
+  flushSpoolNow,
+  getSpoolSummary,
   getStorageConfigSummary,
   probeNetworkSaveRoot,
+  type SpoolSummary,
   type StorageProbeResult,
 } from "@/lib/storage-diagnostics";
 
@@ -253,6 +256,8 @@ function StoragePage() {
   const [deviceCheckedAt, setDeviceCheckedAt] = useState<Date | null>(null);
   const [deviceLoading, setDeviceLoading] = useState(false);
   const [probeResult, setProbeResult] = useState<StorageProbeResult | null>(null);
+  const [spool, setSpool] = useState<SpoolSummary | null>(null);
+  const [flushing, setFlushing] = useState(false);
   const [probeLoading, setProbeLoading] = useState(false);
 
   async function refreshConfig() {
@@ -275,6 +280,24 @@ function StoragePage() {
     }
   }
 
+  async function refreshSpool() {
+    try {
+      setSpool(await getSpoolSummary());
+    } catch {
+      setSpool(null);
+    }
+  }
+
+  async function runFlush() {
+    setFlushing(true);
+    try {
+      await flushSpoolNow();
+      await refreshSpool();
+    } finally {
+      setFlushing(false);
+    }
+  }
+
   async function runProbe() {
     setProbeLoading(true);
     try {
@@ -294,6 +317,7 @@ function StoragePage() {
     // halaman ini. Probe menulis lalu menghapus satu file uji; cukup murah
     // untuk dijalankan tiap kali halaman dibuka.
     void runProbe();
+    void refreshSpool();
   }, []);
 
   const liveCaptureSaveReady = !!config?.configured && !!deviceStatus?.online;
@@ -437,6 +461,36 @@ function StoragePage() {
           tone={probeResult?.ok ? "success" : probeResult ? "warning" : "default"}
         />
       </section>
+
+      {/* Antrean kirim. Ditaruh SEBELUM kartu lain karena ia satu-satunya
+          tanda bahwa share sedang bermasalah -- halaman Capture tidak lagi
+          menunjukkan gejala apa pun sejak semua capture lewat antrean. */}
+      {spool?.configured && spool.pending > 0 && (
+        <section className="mb-6 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-amber-800">
+                {spool.pending} foto menunggu dikirim ke folder jaringan
+              </div>
+              <p className="mt-1 text-xs text-amber-700">
+                Foto sudah aman di app server dan akan terkirim sendiri begitu folder jaringan
+                terjangkau. {Math.round(spool.bytes / 1024 / 1024)} MB terpakai dari{" "}
+                {Math.round(spool.capBytes / 1024 / 1024)} MB.
+                {spool.oldestQueuedAt
+                  ? ` Paling lama menunggu sejak ${formatDateTime(new Date(spool.oldestQueuedAt))}.`
+                  : ""}
+              </p>
+            </div>
+            <button
+              onClick={() => void runFlush()}
+              disabled={flushing}
+              className="shrink-0 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+              {flushing ? "Mengirim..." : "Kirim sekarang"}
+            </button>
+          </div>
+        </section>
+      )}
 
       <section className="mb-6 grid gap-4 md:grid-cols-3">
         <div className="rounded-xl border bg-card shadow-sm p-4">

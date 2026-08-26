@@ -13,6 +13,18 @@ const serverEnvSchema = z.object({
   ),
   CAMERA_API_TOKEN: z.preprocess(emptyStringToUndefined, z.string().optional()),
   NETWORK_SAVE_ROOT: z.preprocess(emptyStringToUndefined, z.string().optional()),
+  // Antrean lokal di app server. Setiap capture ditulis ke sini lebih dulu,
+  // lalu diteruskan ke NETWORK_SAVE_ROOT -- langsung kalau share sehat,
+  // menyusul kalau tidak. Harus menunjuk volume yang bertahan melewati
+  // `docker compose up --build`, kalau tidak antrean ikut terhapus saat deploy.
+  CAPTURE_SPOOL_DIR: z.preprocess(emptyStringToUndefined, z.string().optional()),
+  // Batas ukuran antrean. Saat terlampaui, capture DITOLAK dengan pesan jelas
+  // -- bukan membuang entri terlama. Operator yang ditolak tahu ada masalah dan
+  // bisa memanggil bantuan; entri yang dibuang diam-diam hilang tanpa jejak.
+  CAPTURE_SPOOL_MAX_MB: z.preprocess(
+    emptyStringToUndefined,
+    z.coerce.number().int().positive().default(2048),
+  ),
   CARDDB_USER: z.preprocess(emptyStringToUndefined, z.string().optional()),
   CARDDB_PASSWORD: z.preprocess(emptyStringToUndefined, z.string().optional()),
   CARDDB_SERVER: z.preprocess(emptyStringToUndefined, z.string().optional()),

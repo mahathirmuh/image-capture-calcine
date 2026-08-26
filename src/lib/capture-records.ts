@@ -11,6 +11,11 @@ import { getCardDbPool, getCardDbSchema, isCardDbConfigured } from "./carddb";
 // menambah anggota di sini tidak menuntut migrasi skema.
 export const CAPTURE_SAVE_METHODS = [
   "app-network",
+  // Sudah di app server, belum sampai di folder jaringan. Diperbarui jadi
+  // "app-network" oleh markCaptureForwarded() begitu antreannya terkirim.
+  // Nilai ini harus tetap ada walau semuanya sudah terkirim: record lama yang
+  // sempat menyandangnya perlu tetap terbaca.
+  "spooled",
   "edge-network",
   "browser-folder",
   "browser-download",
@@ -247,7 +252,12 @@ export function normalizeCaptureBinLabel(value: string): string | null {
 }
 
 export function toCaptureRecordStatus(saveMethod: CaptureSaveMethod) {
-  return saveMethod === "browser-download" ? "downloaded" : "saved";
+  if (saveMethod === "browser-download") return "downloaded";
+  // "spooled" belum sampai di folder jaringan, jadi belum boleh disebut
+  // "saved" -- itu status yang dipakai laporan untuk menghitung capture yang
+  // sudah aman di share.
+  if (saveMethod === "spooled") return "pending";
+  return "saved";
 }
 
 /**

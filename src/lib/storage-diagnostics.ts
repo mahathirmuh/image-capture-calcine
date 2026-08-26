@@ -30,6 +30,36 @@ export const getStorageConfigSummary = createServerFn({ method: "GET" }).handler
   };
 });
 
+export type SpoolSummary = {
+  configured: boolean;
+  pending: number;
+  bytes: number;
+  capBytes: number;
+  oldestQueuedAt: number | null;
+};
+
+/**
+ * Isi antrean kirim di app server.
+ *
+ * Sejak semua capture lewat antrean, share yang mati tidak lagi menimbulkan
+ * gejala apa pun di halaman Capture -- foto tetap "berhasil" dan operator
+ * tidak melihat apa-apa. Angka inilah satu-satunya tanda, jadi ia bagian yang
+ * menahan kegagalan senyap, bukan sekadar pelengkap halaman Storage.
+ */
+export const getSpoolSummary = createServerFn({ method: "GET" }).handler(
+  async (): Promise<SpoolSummary> => {
+    const { getSpoolStatus, ensureSpoolWorker } = await import("./server/capture-spool");
+    ensureSpoolWorker();
+    return getSpoolStatus();
+  },
+);
+
+/** Kirim ulang antrean sekarang juga, tanpa menunggu timer lima menitan. */
+export const flushSpoolNow = createServerFn({ method: "POST" }).handler(async () => {
+  const { flushSpool } = await import("./server/capture-spool");
+  return flushSpool();
+});
+
 export const probeNetworkSaveRoot = createServerFn({ method: "POST" }).handler(
   async (): Promise<StorageProbeResult> => {
     const checkedAt = Date.now();

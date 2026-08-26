@@ -75,6 +75,10 @@ describe("parseServerEnv", () => {
       CAMERA_API_URL: "https://camera.internal:8443",
       CAMERA_API_TOKEN: "secret-token",
       NETWORK_SAVE_ROOT: "\\\\10.1.1.44\\Data Analytics\\ML\\MTI",
+      // Antrean kirim tidak disebut di masukan, tapi tetap muncul di hasil:
+      // dir-nya opsional, dan batas ukurannya punya nilai bawaan.
+      CAPTURE_SPOOL_DIR: undefined,
+      CAPTURE_SPOOL_MAX_MB: 2048,
       CARDDB_USER: "capture_app",
       CARDDB_PASSWORD: "db-secret",
       CARDDB_SERVER: "10.60.10.47",

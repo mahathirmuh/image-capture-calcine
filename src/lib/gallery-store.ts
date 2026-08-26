@@ -1,6 +1,14 @@
 // Persistent gallery store. Captures are kept in IndexedDB so they survive
 // reloads and navigation between routes. Object URLs are recreated on load.
 
+// `import type` -- dihapus seluruhnya saat kompilasi, jadi mssql yang diimpor
+// capture-records.ts tidak ikut tertarik ke bundle browser.
+//
+// Diimpor, bukan disalin: daftar metode simpan ini sudah tiga kali harus
+// diselaraskan manual di dua tempat, dan yang terlewat baru ketahuan lewat
+// error tipe di berkas ketiga.
+import type { CaptureSaveMethod } from "./capture-records";
+
 const IDB_NAME = "capture-system";
 const IDB_STORE = "gallery";
 const IDB_BLOB_STORE = "gallery-blobs";
@@ -20,7 +28,7 @@ export type GalleryItem = {
   createdAt: number;
   captureRecordId?: number | null;
   persistedPath?: string | null;
-  saveMethod?: "app-network" | "edge-network" | "browser-folder" | "browser-download" | null;
+  saveMethod?: CaptureSaveMethod | null;
   // Untuk ditampilkan di kartu galeri. Salinan tampilan saja -- yang berwenang
   // ada di metadata record MSSQL, distempel server dari cookie sesi.
   capturedBy?: string | null;
@@ -35,7 +43,7 @@ type StoredGalleryItem = {
   hasFileHandle: boolean;
   captureRecordId?: number | null;
   persistedPath?: string | null;
-  saveMethod?: "app-network" | "edge-network" | "browser-folder" | "browser-download" | null;
+  saveMethod?: CaptureSaveMethod | null;
   // Untuk ditampilkan di kartu galeri. Salinan tampilan saja -- yang berwenang
   // ada di metadata record MSSQL, distempel server dari cookie sesi.
   capturedBy?: string | null;

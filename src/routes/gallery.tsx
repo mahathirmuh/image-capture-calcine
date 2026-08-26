@@ -128,9 +128,11 @@ function formatBin(bin?: string): string {
 function formatCaptureRecordStatus(status: string): string {
   return status === "downloaded"
     ? "Diunduh lokal"
-    : status === "saved"
-      ? "Tersimpan"
-      : status || "—";
+    : status === "pending"
+      ? "Menunggu dikirim"
+      : status === "saved"
+        ? "Tersimpan"
+        : status || "—";
 }
 
 // Menerjemahkan path tersimpan jadi keterangan yang bisa dibaca operator.
@@ -156,6 +158,9 @@ function describeStorage(
       network: false,
     };
   }
+  if (saveMethod === "spooled") {
+    return { label: "Di app server, menunggu dikirim ke share", path: rawPath, network: false };
+  }
   if (saveMethod === "app-network" || saveMethod === "edge-network") {
     return { label: "Folder jaringan", path: rawPath, network: true };
   }
@@ -163,15 +168,17 @@ function describeStorage(
 }
 
 function formatSaveMethodLabel(method: CaptureRecordView["saveMethod"]): string {
-  return method === "app-network"
-    ? "App -> network"
-    : method === "edge-network"
-      ? "Edge -> network"
-      : method === "browser-folder"
-        ? "Browser -> folder"
-        : method === "browser-download"
-          ? "Browser download"
-          : "—";
+  return method === "spooled"
+    ? "Menunggu dikirim"
+    : method === "app-network"
+      ? "App -> network"
+      : method === "edge-network"
+        ? "Edge -> network"
+        : method === "browser-folder"
+          ? "Browser -> folder"
+          : method === "browser-download"
+            ? "Browser download"
+            : "—";
 }
 
 function HistogramChart({ histogram }: { histogram: Histogram }) {
