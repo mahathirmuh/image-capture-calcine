@@ -627,6 +627,51 @@ function GalleryPage() {
   const clampedPage = Math.min(page, totalPages);
   const pageStart = (clampedPage - 1) * pageSize;
   const pageItems = filteredGallery.slice(pageStart, pageStart + pageSize);
+
+  // Navigasi maju-mundur di panel detail.
+  //
+  // Dicari lewat id, bukan menyimpan indeks di state: daftar bisa berubah di
+  // bawah panel yang sedang terbuka -- rename, hapus, ganti filter, ganti
+  // urutan -- dan indeks tersimpan akan menunjuk gambar yang salah tanpa ada
+  // tanda apa pun. `-1` berarti gambar yang dibuka sudah tidak ada di daftar,
+  // dan tombolnya ikut mati dengan sendirinya.
+  const detailIndex = detailItem
+    ? filteredGallery.findIndex((item) => item.id === detailItem.id)
+    : -1;
+
+  const showDetailAt = useCallback(
+    (index: number) => {
+      const next = filteredGallery[index];
+      if (!next) return;
+      setDetailItem(next);
+      // Grid ikut berpindah halaman. Tanpa ini, menutup panel setelah menyusuri
+      // 30 gambar akan mendarat di halaman pertama, jauh dari yang terakhir
+      // dilihat.
+      setPage(Math.floor(index / pageSize) + 1);
+      // Layar penuh ikut berganti gambar HANYA kalau ia sedang terbuka.
+      setFullscreenUrl((current) => (current ? next.url : null));
+    },
+    [filteredGallery, pageSize],
+  );
+
+  useEffect(() => {
+    if (detailIndex < 0) return;
+    const onKey = (event: KeyboardEvent) => {
+      // Halaman ini punya kolom pencarian dan beberapa dropdown; panah di
+      // dalamnya milik kontrol itu, bukan milik penampil gambar.
+      const target = event.target as HTMLElement | null;
+      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        showDetailAt(detailIndex - 1);
+      } else if (event.key === "ArrowRight") {
+        event.preventDefault();
+        showDetailAt(detailIndex + 1);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [detailIndex, showDetailAt]);
   const selectedItems = gallery.filter((item) => selectedIds.has(item.id));
   const totalBytes = gallery.reduce((sum, item) => sum + item.blob.size, 0);
   const filteredBytes = filteredGallery.reduce((sum, item) => sum + item.blob.size, 0);
@@ -1493,7 +1538,7 @@ ${storage.path ?? "—"}`}
             </button>
           </div>
 
-          <div className="relative mb-4 overflow-hidden rounded-md border bg-muted">
+          <div className="relative mb-2 overflow-hidden rounded-md border bg-muted">
             <img
               src={detailItem.url}
               alt={detailItem.name}
@@ -1506,6 +1551,27 @@ ${storage.path ?? "—"}`}
             >
               <Maximize2 className="h-3.5 w-3.5" />
             </button>
+            <button
+              onClick={() => showDetailAt(detailIndex - 1)}
+              disabled={detailIndex <= 0}
+              title="Gambar sebelumnya (panah kiri)"
+              className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-background/80 p-1.5 hover:bg-background disabled:pointer-events-none disabled:opacity-0"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => showDetailAt(detailIndex + 1)}
+              disabled={detailIndex < 0 || detailIndex >= filteredGallery.length - 1}
+              title="Gambar berikutnya (panah kanan)"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-background/80 p-1.5 hover:bg-background disabled:pointer-events-none disabled:opacity-0"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="mb-4 text-center text-[11px] text-muted-foreground">
+            {detailIndex >= 0
+              ? `${detailIndex + 1} dari ${filteredGallery.length} · panah kiri/kanan untuk berpindah`
+              : "Gambar ini sudah tidak ada di daftar yang sedang difilter."}
           </div>
 
           <div className="mb-4">
@@ -1690,6 +1756,30 @@ ${storage.path ?? "—"}`}
             className="absolute right-4 top-4 rounded-md bg-background/80 p-2 hover:bg-background"
           >
             <X className="h-4 w-4" />
+          </button>
+          {/* stopPropagation wajib: latar overlay menutup dirinya saat diklik,
+              dan tanpa ini menekan panah justru menutup layar penuh. */}
+          <button
+            onClick={(event) => {
+              event.stopPropagation();
+              showDetailAt(detailIndex - 1);
+            }}
+            disabled={detailIndex <= 0}
+            title="Gambar sebelumnya (panah kiri)"
+            className="absolute left-4 top-1/2 -translate-y-1/2 rounded-full bg-background/80 p-2 hover:bg-background disabled:pointer-events-none disabled:opacity-0"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+          <button
+            onClick={(event) => {
+              event.stopPropagation();
+              showDetailAt(detailIndex + 1);
+            }}
+            disabled={detailIndex < 0 || detailIndex >= filteredGallery.length - 1}
+            title="Gambar berikutnya (panah kanan)"
+            className="absolute right-4 top-1/2 -translate-y-1/2 rounded-full bg-background/80 p-2 hover:bg-background disabled:pointer-events-none disabled:opacity-0"
+          >
+            <ChevronRight className="h-5 w-5" />
           </button>
         </div>
       )}
