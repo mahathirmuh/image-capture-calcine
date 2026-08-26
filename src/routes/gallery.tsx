@@ -843,6 +843,7 @@ function GalleryPage() {
                     <th className="p-2">Lokasi</th>
                     <th className="p-2">Bin</th>
                     <th className="p-2">Sesi</th>
+                    <th className="p-2">Operator</th>
                     <th className="p-2">Status</th>
                     <th className="p-2">Metode</th>
                     <th className="p-2">Path Simpan</th>
@@ -864,6 +865,9 @@ function GalleryPage() {
                       </td>
                       <td className="p-2 text-xs text-muted-foreground">
                         {record.captureSession ?? "—"}
+                      </td>
+                      <td className="p-2 text-xs text-muted-foreground">
+                        {record.capturedBy ?? "—"}
                       </td>
                       <td className="p-2 text-xs text-muted-foreground">
                         {formatCaptureRecordStatus(record.status)}
@@ -1241,7 +1245,7 @@ ${storage.path ?? "—"}`}
                       <Package className="h-2.5 w-2.5" /> {formatBin(item.bin)}
                     </div>
                     <div className="flex items-center gap-1">
-                      <User className="h-2.5 w-2.5" /> —
+                      <User className="h-2.5 w-2.5" /> {item.capturedBy ?? "—"}
                     </div>
                     {(() => {
                       const storage = describeStorage(item.persistedPath, item.saveMethod);
@@ -1472,7 +1476,9 @@ ${storage.path ?? "—"}`}
               <dt className="text-muted-foreground">Waktu Capture</dt>
               <dd className="text-right font-medium">{formatDateTime(detailItem.createdAt)}</dd>
               <dt className="text-muted-foreground">Operator</dt>
-              <dd className="text-right font-medium">—</dd>
+              <dd className="text-right font-medium">
+                {detailRecord?.capturedBy ?? detailItem.capturedBy ?? "—"}
+              </dd>
               <dt className="text-muted-foreground">Status DB</dt>
               <dd className="text-right font-medium">
                 {detailRecord ? formatCaptureRecordStatus(detailRecord.status) : "Belum tercatat"}

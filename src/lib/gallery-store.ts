@@ -21,6 +21,9 @@ export type GalleryItem = {
   captureRecordId?: number | null;
   persistedPath?: string | null;
   saveMethod?: "app-network" | "edge-network" | "browser-folder" | "browser-download" | null;
+  // Untuk ditampilkan di kartu galeri. Salinan tampilan saja -- yang berwenang
+  // ada di metadata record MSSQL, distempel server dari cookie sesi.
+  capturedBy?: string | null;
 };
 
 type StoredGalleryItem = {
@@ -33,6 +36,9 @@ type StoredGalleryItem = {
   captureRecordId?: number | null;
   persistedPath?: string | null;
   saveMethod?: "app-network" | "edge-network" | "browser-folder" | "browser-download" | null;
+  // Untuk ditampilkan di kartu galeri. Salinan tampilan saja -- yang berwenang
+  // ada di metadata record MSSQL, distempel server dari cookie sesi.
+  capturedBy?: string | null;
 };
 
 function openDB(): Promise<IDBDatabase> {
@@ -141,6 +147,7 @@ export async function saveGallery(items: GalleryItem[]): Promise<void> {
           captureRecordId: item.captureRecordId ?? null,
           persistedPath: item.persistedPath ?? null,
           saveMethod: item.saveMethod ?? null,
+          capturedBy: item.capturedBy ?? null,
         };
         store.put(meta, item.id);
         blobStore.put(item.blob, item.id);
@@ -171,6 +178,7 @@ export async function addGalleryItem(item: GalleryItem): Promise<void> {
         captureRecordId: item.captureRecordId ?? null,
         persistedPath: item.persistedPath ?? null,
         saveMethod: item.saveMethod ?? null,
+        capturedBy: item.capturedBy ?? null,
       };
       tx.objectStore(IDB_STORE).put(meta, item.id);
       tx.objectStore(IDB_BLOB_STORE).put(item.blob, item.id);

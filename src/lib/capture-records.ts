@@ -140,6 +140,7 @@ export type CaptureRecordView = {
   plant: string | null;
   captureBin: string | null;
   captureSession: string | null;
+  capturedBy: string | null;
   station: string | null;
   fileName: string;
   filePath: string;
@@ -249,7 +250,19 @@ export function toCaptureRecordStatus(saveMethod: CaptureSaveMethod) {
   return saveMethod === "browser-download" ? "downloaded" : "saved";
 }
 
-export function buildCaptureRecordMetadata(input: RecordCaptureInput) {
+/**
+ * Siapa yang menekan Capture. SENGAJA bukan bagian dari RecordCaptureInput:
+ * nilainya dibaca server dari cookie sesi, bukan dikirim browser. Kalau ia ikut
+ * skema masukan, siapa pun yang bisa memanggil serverFn ini boleh mengaku
+ * sebagai operator mana pun -- dan atribusi yang bisa dipalsukan lebih buruk
+ * daripada tidak ada atribusi sama sekali, karena ia terlihat tepercaya.
+ */
+export type CaptureOperator = { id: number; name: string } | null;
+
+export function buildCaptureRecordMetadata(
+  input: RecordCaptureInput,
+  operator: CaptureOperator = null,
+) {
   return {
     source: "capture-page",
     deviceCode: input.deviceCode,
@@ -257,6 +270,8 @@ export function buildCaptureRecordMetadata(input: RecordCaptureInput) {
     plant: input.plant,
     captureBin: input.captureBin,
     captureSession: input.captureSession ?? null,
+    capturedByUserId: operator?.id ?? null,
+    capturedBy: operator?.name ?? null,
     station: input.station ?? null,
     saveMethod: input.saveMethod,
     assetId: input.assetId ?? null,
@@ -271,6 +286,9 @@ function parseCaptureRecordMetadata(raw: unknown): {
   // Record dari sebelum skema sesi dipakai tidak punya kunci ini, jadi nullable
   // bukan kelalaian -- Gallery menampilkannya sebagai "—" untuk capture lama.
   captureSession: string | null;
+  // Record dari sebelum atribusi operator dipasang tidak punya kunci ini.
+  capturedBy: string | null;
+  capturedByUserId: number | null;
   station: string | null;
   saveMethod: CaptureSaveMethod | null;
   assetId: string | null;
@@ -296,6 +314,8 @@ function parseCaptureRecordMetadata(raw: unknown): {
     plant: typeof parsed.plant === "string" ? parsed.plant : null,
     captureBin: typeof parsed.captureBin === "string" ? parsed.captureBin : null,
     captureSession: typeof parsed.captureSession === "string" ? parsed.captureSession : null,
+    capturedBy: typeof parsed.capturedBy === "string" ? parsed.capturedBy : null,
+    capturedByUserId: typeof parsed.capturedByUserId === "number" ? parsed.capturedByUserId : null,
     station: typeof parsed.station === "string" ? parsed.station : null,
     saveMethod,
     assetId: typeof parsed.assetId === "string" ? parsed.assetId : null,
@@ -311,6 +331,7 @@ function mapCaptureRecordRow(row: Record<string, unknown>): CaptureRecordView {
     plant: metadata.plant ?? (typeof row.plant === "string" ? row.plant : null),
     captureBin: metadata.captureBin,
     captureSession: metadata.captureSession,
+    capturedBy: metadata.capturedBy,
     station: metadata.station ?? (typeof row.station === "string" ? row.station : null),
     fileName: String(row.file_name ?? ""),
     filePath: String(row.file_path ?? ""),
@@ -615,7 +636,20 @@ export const recordCaptureResult = createServerFn({ method: "POST" })
       }
 
       const locationId = await resolveLocationId(pool.request(), schema, data, deviceId);
-      const metadataJson = JSON.stringify(buildCaptureRecordMetadata(data));
+      // Identitas diambil dari sesi di sisi server, bukan dari payload klien.
+      // Gagal membacanya tidak membatalkan pencatatan capture -- foto yang
+      // sudah tersimpan tetap harus punya record, sekadar tanpa atribusi.
+      let operator: CaptureOperator = null;
+      try {
+        const { getAppSession } = await import("./server/session");
+        const session = await getAppSession();
+        const user = session.data.user;
+        if (user) operator = { id: user.id, name: user.fullName || user.username };
+      } catch {
+        operator = null;
+      }
+
+      const metadataJson = JSON.stringify(buildCaptureRecordMetadata(data, operator));
       const result = await pool
         .request()
         .input("deviceId", sql.BigInt, deviceId)

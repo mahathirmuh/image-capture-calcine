@@ -55,6 +55,10 @@ describe("capture-records helpers", () => {
       // Capture dari sebelum skema sesi tidak mengirim nilai ini, dan metadata
       // tetap harus terbentuk -- bukan gagal atau kehilangan kunci lain.
       captureSession: null,
+      // Tanpa argumen operator, atribusinya kosong. Ini jalur yang dipakai saat
+      // sesi login tidak terbaca: capture tetap tercatat, sekadar tanpa nama.
+      capturedByUserId: null,
+      capturedBy: null,
       station: "Main Area",
       saveMethod: "edge-network",
       assetId: "asset-123",
@@ -67,6 +71,23 @@ describe("capture-records helpers", () => {
   it("carries the sampling session into metadata", () => {
     const metadata = buildCaptureRecordMetadata({ ...captureInput, captureSession: "02.00" });
     expect(metadata.captureSession).toBe("02.00");
+  });
+
+  // Atribusi datang dari argumen kedua, bukan dari input. Itu yang menahan
+  // klien mengaku sebagai operator lain: nilainya distempel server dari cookie
+  // sesi, dan tidak ada jalan memasukkannya lewat payload.
+  it("stamps the operator from its own argument, never from the input", () => {
+    const metadata = buildCaptureRecordMetadata(captureInput, { id: 7, name: "Budi" });
+    expect(metadata.capturedBy).toBe("Budi");
+    expect(metadata.capturedByUserId).toBe(7);
+
+    const forged = buildCaptureRecordMetadata({
+      ...captureInput,
+      capturedBy: "Orang Lain",
+      capturedByUserId: 99,
+    } as unknown as typeof captureInput);
+    expect(forged.capturedBy).toBeNull();
+    expect(forged.capturedByUserId).toBeNull();
   });
 
   it("treats non-download save methods as saved", () => {

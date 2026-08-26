@@ -54,7 +54,7 @@ import {
   sessionPathSegment,
 } from "@/lib/capture-session";
 import { getOperatorPlant, type OperatorPlant } from "@/lib/operator-plant";
-import { useIsAdmin } from "@/lib/use-session-user";
+import { useIsAdmin, useSessionUser } from "@/lib/use-session-user";
 import { PageTitle } from "@/components/page-shell";
 
 export const Route = createFileRoute("/capture")({
@@ -246,6 +246,7 @@ function CapturePage() {
   // menyembunyikan panel tidak menghalangi siapa pun menyunting localStorage
   // langsung -- jangan diperlakukan sebagai pembatasan keamanan.
   const isAdmin = useIsAdmin();
+  const sessionUser = useSessionUser();
   const [capturingBin, setCapturingBin] = useState<Bin | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -857,6 +858,10 @@ function CapturePage() {
         parentDir,
         createdAt: previewItem.capturedAt,
         captureRecordId: captureRecord.ok ? captureRecord.recordId : null,
+        // Salinan tampilan untuk kartu galeri lokal. Yang berwenang tetap
+        // metadata record di MSSQL, yang distempel server dari cookie sesi --
+        // nilai di sini tidak pernah dikirim ke server.
+        capturedBy: sessionUser?.fullName || sessionUser?.username || null,
         persistedPath: persistedPath ?? savedNetworkPath ?? `browser-download/${filename}`,
         saveMethod,
       };
