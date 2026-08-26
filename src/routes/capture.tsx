@@ -1150,7 +1150,7 @@ function CapturePage() {
           dijeda sampai koneksi kembali stabil.
         </div>
       )}
-      <section className="mb-6 grid gap-4 xl:grid-cols-[1.35fr_1fr]">
+      <section className={`mb-6 grid gap-4 ${isAdmin ? "xl:grid-cols-[1.35fr_1fr]" : ""}`}>
         <div className="rounded-xl border bg-card shadow-sm p-5">
           <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
             <div>
@@ -1180,49 +1180,60 @@ function CapturePage() {
           </div>
         </div>
 
-        <section className="rounded-xl border bg-card shadow-sm p-5">
-          <div className="mb-3 flex items-center gap-2">
-            {activeRuntimeIssue?.tone === "danger" ? (
-              <AlertTriangle className="h-4 w-4 text-destructive" />
-            ) : activeRuntimeIssue ? (
-              <AlertTriangle className="h-4 w-4 text-amber-600" />
-            ) : (
-              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-            )}
-            <h2 className="text-sm font-semibold">Tindakan Berikutnya</h2>
-          </div>
-          {activeRuntimeIssue ? (
-            <div
-              className={`rounded-lg border px-3 py-3 text-sm ${
-                activeRuntimeIssue.tone === "danger"
-                  ? "border-destructive/30 bg-destructive/5 text-destructive"
-                  : "border-amber-500/30 bg-amber-500/5 text-amber-700"
-              }`}
-            >
-              <div className="font-medium">{activeRuntimeIssue.title}</div>
-              <div className="mt-1">{activeRuntimeIssue.detail}</div>
-              <div className="mt-2 text-xs">{activeRuntimeIssue.nextAction}</div>
+        {/* Panel diagnostik, hanya untuk admin.
+            Isinya menerjemahkan keadaan runtime jadi langkah teknis --
+            memeriksa edge API, lease session, koneksi USB. Operator tidak
+            punya wewenang atas satu pun dari itu, dan menampilkan daftar
+            tindakan yang tak bisa ia jalankan hanya membuat halaman terasa
+            penuh masalah padahal kameranya baik-baik saja.
+
+            Kartu runtime di sebelah kiri tetap tampil untuk semua orang:
+            itu KEADAAN (siap / tidak siap), bukan instruksi perbaikan. */}
+        {isAdmin && (
+          <section className="rounded-xl border bg-card shadow-sm p-5">
+            <div className="mb-3 flex items-center gap-2">
+              {activeRuntimeIssue?.tone === "danger" ? (
+                <AlertTriangle className="h-4 w-4 text-destructive" />
+              ) : activeRuntimeIssue ? (
+                <AlertTriangle className="h-4 w-4 text-amber-600" />
+              ) : (
+                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+              )}
+              <h2 className="text-sm font-semibold">Tindakan Berikutnya</h2>
             </div>
-          ) : runtimeBootstrapping ? (
-            <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-3 text-sm text-muted-foreground">
-              Aplikasi sedang memuat status edge device dan mencoba menyelaraskan session kamera.
-            </div>
-          ) : (
-            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-3 text-sm text-muted-foreground">
-              Session, edge API, dan kamera tidak menunjukkan blocker utama saat ini.
-            </div>
-          )}
-          <div className="mt-3 space-y-2">
-            {runtimeActions.map((item) => (
+            {activeRuntimeIssue ? (
               <div
-                key={item}
-                className="rounded-md border bg-background px-3 py-2 text-xs text-muted-foreground"
+                className={`rounded-lg border px-3 py-3 text-sm ${
+                  activeRuntimeIssue.tone === "danger"
+                    ? "border-destructive/30 bg-destructive/5 text-destructive"
+                    : "border-amber-500/30 bg-amber-500/5 text-amber-700"
+                }`}
               >
-                {item}
+                <div className="font-medium">{activeRuntimeIssue.title}</div>
+                <div className="mt-1">{activeRuntimeIssue.detail}</div>
+                <div className="mt-2 text-xs">{activeRuntimeIssue.nextAction}</div>
               </div>
-            ))}
-          </div>
-        </section>
+            ) : runtimeBootstrapping ? (
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-3 text-sm text-muted-foreground">
+                Aplikasi sedang memuat status edge device dan mencoba menyelaraskan session kamera.
+              </div>
+            ) : (
+              <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-3 text-sm text-muted-foreground">
+                Session, edge API, dan kamera tidak menunjukkan blocker utama saat ini.
+              </div>
+            )}
+            <div className="mt-3 space-y-2">
+              {runtimeActions.map((item) => (
+                <div
+                  key={item}
+                  className="rounded-md border bg-background px-3 py-2 text-xs text-muted-foreground"
+                >
+                  {item}
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
       </section>
 
       <div className="grid gap-6 md:grid-cols-2">
