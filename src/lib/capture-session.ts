@@ -71,35 +71,6 @@ export function resolveNearestSession(now: Date = new Date()): CaptureSession {
 }
 
 /**
- * Sesi yang layak ditawarkan di dropdown: dari `hoursBefore` jam sebelum `now`
- * sampai `hoursAfter` jam sesudahnya, terbaru dulu.
- *
- * Jendelanya condong ke belakang karena itu kebutuhan nyatanya -- operator
- * menyusul sesi yang terlewat jauh lebih sering daripada menyiapkan sesi yang
- * masih lama. Jendela ke depan tetap ada secukupnya supaya sesi berikutnya
- * bisa dipilih saat persiapan.
- */
-export function listSelectableSessions(
-  now: Date = new Date(),
-  hoursBefore = 12,
-  hoursAfter = 3,
-): CaptureSession[] {
-  const earliest = now.getTime() - hoursBefore * 3_600_000;
-  const latest = now.getTime() + hoursAfter * 3_600_000;
-  const sessions: CaptureSession[] = [];
-
-  for (const dayOffset of [-1, 0, 1]) {
-    for (const hour of CAPTURE_SESSION_HOURS) {
-      const startsAt = sessionAt(now, dayOffset, hour);
-      const time = startsAt.getTime();
-      if (time >= earliest && time <= latest) sessions.push(toSession(startsAt));
-    }
-  }
-
-  return sessions.sort((a, b) => b.startsAt.getTime() - a.startsAt.getTime());
-}
-
-/**
  * Segmen folder "YYYY/MM/DD" dari TANGGAL SESI, bukan jam dinding.
  *
  * Inilah yang menjaga sesi 23.00 tetap utuh dalam satu folder walau
@@ -113,7 +84,8 @@ export function sessionPathSegment(session: CaptureSession): string {
   return `${yyyy}/${mm}/${dd}`;
 }
 
-/** Apakah tanggal sesi berbeda dari tanggal hari ini -- dipakai untuk memberi label di dropdown. */
+/** Apakah tanggal sesi berbeda dari tanggal hari ini -- dipakai untuk menandai
+ * sesi 23.00 yang dikerjakan setelah tengah malam. */
 export function isSessionOnAnotherDay(session: CaptureSession, now: Date = new Date()): boolean {
   return session.startsAt.toDateString() !== now.toDateString();
 }

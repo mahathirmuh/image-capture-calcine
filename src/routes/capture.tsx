@@ -49,12 +49,9 @@ import {
   type BinSlot,
 } from "@/lib/locations";
 import {
-  formatSessionLabel,
   isSessionOnAnotherDay,
-  listSelectableSessions,
   resolveNearestSession,
   sessionPathSegment,
-  type CaptureSession,
 } from "@/lib/capture-session";
 import { getOperatorPlant, type OperatorPlant } from "@/lib/operator-plant";
 import { useIsAdmin } from "@/lib/use-session-user";
@@ -292,25 +289,14 @@ function CapturePage() {
     return () => clearInterval(timer);
   }, []);
 
-  // Sesi yang dipilih operator, disimpan sebagai ISO. Selama null, sesi
-  // mengikuti yang terdekat dan ikut berpindah sendiri saat jam berganti --
-  // itulah "default ke sesi terdekat". Begitu operator memilih sendiri,
-  // pilihannya dipertahankan dan tidak digeser oleh jam.
-  const [selectedSessionIso, setSelectedSessionIso] = useState<string | null>(null);
-  const sessionOptions = useMemo(() => listSelectableSessions(now), [now]);
-  const activeSession = useMemo<CaptureSession>(() => {
-    if (selectedSessionIso) {
-      const startsAt = new Date(selectedSessionIso);
-      if (!Number.isNaN(startsAt.getTime())) {
-        return {
-          hour: startsAt.getHours(),
-          label: formatSessionLabel(startsAt.getHours()),
-          startsAt,
-        };
-      }
-    }
-    return resolveNearestSession(now);
-  }, [selectedSessionIso, now]);
+  // Sesi ditentukan sepenuhnya dari jam, tanpa pilihan manual. Ia ikut
+  // berpindah sendiri saat jam berganti.
+  //
+  // Konsekuensi yang perlu diingat: capture yang menyusul sesi terlewat akan
+  // tercatat di sesi TERDEKAT, bukan sesi yang sebenarnya dikejar -- dan sesi
+  // menentukan nama berkas sekaligus folder tanggalnya, jadi memperbaikinya
+  // menuntut rename langsung di share, bukan lewat aplikasi.
+  const activeSession = useMemo(() => resolveNearestSession(now), [now]);
   const [pattern, setPattern] = useState<string>(DEFAULT_PREFS.pattern);
   const [ext, setExt] = useState<"jpg">(DEFAULT_PREFS.ext);
   const [counter, setCounter] = useState<number>(DEFAULT_PREFS.counter);
@@ -1075,23 +1061,23 @@ function CapturePage() {
             <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
               Sesi
             </span>
-            <select
-              value={activeSession.startsAt.toISOString()}
-              onChange={(e) => setSelectedSessionIso(e.target.value)}
-              className="cursor-pointer bg-transparent text-sm font-semibold outline-none"
-            >
-              {sessionOptions.map((session) => (
-                <option key={session.startsAt.toISOString()} value={session.startsAt.toISOString()}>
-                  {session.label}
-                  {isSessionOnAnotherDay(session, now)
-                    ? ` (${session.startsAt.toLocaleDateString("id-ID", {
-                        day: "2-digit",
-                        month: "short",
-                      })})`
-                    : ""}
-                </option>
-              ))}
-            </select>
+            <span className="text-sm font-semibold">
+              {activeSession.label}
+              {/* Sesi 23.00 yang dikerjakan setelah tengah malam bertanggal
+                  KEMARIN, dan berkasnya memang mendarat di folder kemarin.
+                  Tanpa keterangan ini "23.00" pada pukul 00.20 terbaca seperti
+                  salah, padahal justru itu yang benar. */}
+              {isSessionOnAnotherDay(activeSession, now) && (
+                <span className="ml-1 font-normal text-muted-foreground">
+                  (
+                  {activeSession.startsAt.toLocaleDateString("id-ID", {
+                    day: "2-digit",
+                    month: "short",
+                  })}
+                  )
+                </span>
+              )}
+            </span>
           </div>
         </div>
       </header>

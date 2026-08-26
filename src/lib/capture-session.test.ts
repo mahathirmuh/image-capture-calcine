@@ -4,7 +4,6 @@ import {
   CAPTURE_SESSION_HOURS,
   formatSessionLabel,
   isSessionOnAnotherDay,
-  listSelectableSessions,
   resolveNearestSession,
   sessionPathSegment,
 } from "./capture-session";
@@ -70,31 +69,6 @@ describe("sessionPathSegment", () => {
   it("memakai nol di depan", () => {
     const session = resolveNearestSession(at(2026, 1, 5, 8, 10));
     expect(sessionPathSegment(session)).toBe("2026/01/05");
-  });
-});
-
-describe("listSelectableSessions", () => {
-  it("mengurutkan terbaru dulu dan memuat sesi terdekat", () => {
-    const now = at(2026, 8, 25, 14, 20);
-    const sessions = listSelectableSessions(now);
-    expect(sessions.length).toBeGreaterThan(0);
-    expect(sessions.map((s) => s.label)).toContain("14.00");
-    const times = sessions.map((s) => s.startsAt.getTime());
-    expect([...times].sort((a, b) => b - a)).toEqual(times);
-  });
-
-  it("menjangkau sesi kemarin sesudah tengah malam", () => {
-    const sessions = listSelectableSessions(at(2026, 8, 26, 0, 30));
-    const yesterday = sessions.filter((s) => s.startsAt.getDate() === 25);
-    expect(yesterday.map((s) => s.label)).toContain("23.00");
-  });
-
-  it("condong ke belakang: sesi lampau lebih banyak daripada sesi mendatang", () => {
-    const now = at(2026, 8, 25, 14, 20);
-    const sessions = listSelectableSessions(now);
-    const past = sessions.filter((s) => s.startsAt.getTime() <= now.getTime()).length;
-    const future = sessions.filter((s) => s.startsAt.getTime() > now.getTime()).length;
-    expect(past).toBeGreaterThan(future);
   });
 });
 
