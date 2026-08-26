@@ -254,6 +254,7 @@ function GalleryPage() {
   const [captureRecords, setCaptureRecords] = useState<CaptureRecordView[]>([]);
   const [captureRecordsError, setCaptureRecordsError] = useState<string | null>(null);
   const [operatorPlant, setOperatorPlant] = useState<OperatorPlant | null>(null);
+  const [recordPage, setRecordPage] = useState(1);
 
   // Istilah slot mengikuti plant si PENONTON, bukan plant tiap record. Satu
   // galeri bisa memuat record dari beberapa plant sekaligus; menamai filternya
@@ -282,6 +283,12 @@ function GalleryPage() {
   const [savedViewPreference, setSavedViewPreference] =
     useState<GallerySavedViewPreference>("all-images");
   const [galleryViewLoaded, setGalleryViewLoaded] = useState(false);
+  // Kembali ke halaman pertama setiap kali filter berubah. Satu effect, bukan
+  // setRecordPage(1) yang ditempel di 12 handler filter -- satu yang terlewat
+  // akan menghasilkan bug yang hanya muncul lewat satu filter tertentu.
+  useEffect(() => {
+    setRecordPage(1);
+  }, [searchQuery, filterDate, filterLocation, filterBin]);
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [compareOpen, setCompareOpen] = useState(false);
@@ -600,7 +607,21 @@ function GalleryPage() {
     const matchesBin = filterBin === "" || toBinSlot(item.captureBin) === toBinSlot(filterBin);
     return matchesSearch && matchesDate && matchesLocation && matchesBin;
   });
-  const recentCaptureRecords = filteredCaptureRecords.slice(0, 8);
+  // Sebelumnya `slice(0, 8)`: sisanya tidak bisa dijangkau sama sekali,
+  // sementara badge di sebelahnya tetap mengumumkan "18 record cocok filter".
+  // Angka yang menyebut lebih banyak daripada yang bisa dilihat itu justru
+  // membuat orang mengira datanya hilang.
+  const RECORDS_PER_PAGE = 8;
+  const recordTotalPages = Math.max(1, Math.ceil(filteredCaptureRecords.length / RECORDS_PER_PAGE));
+  // Di-clamp, bukan di-reset lewat effect: filter yang menyempit bisa membuat
+  // halaman aktif melewati batas, dan clamp menanganinya saat render tanpa
+  // menimbulkan render kedua.
+  const clampedRecordPage = Math.min(recordPage, recordTotalPages);
+  const recordStart = (clampedRecordPage - 1) * RECORDS_PER_PAGE;
+  const recentCaptureRecords = filteredCaptureRecords.slice(
+    recordStart,
+    recordStart + RECORDS_PER_PAGE,
+  );
 
   const totalPages = Math.max(1, Math.ceil(filteredGallery.length / pageSize));
   const clampedPage = Math.min(page, totalPages);
@@ -896,6 +917,35 @@ ${storage.path ?? "—"}`}
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {filteredCaptureRecords.length > RECORDS_PER_PAGE && (
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+              <span>
+                Menampilkan {recordStart + 1} sampai{" "}
+                {Math.min(recordStart + RECORDS_PER_PAGE, filteredCaptureRecords.length)} dari{" "}
+                {filteredCaptureRecords.length} record
+              </span>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setRecordPage((p) => Math.max(1, p - 1))}
+                  disabled={clampedRecordPage <= 1}
+                  className="rounded-md border border-input bg-background p-1.5 hover:bg-accent disabled:opacity-40"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                </button>
+                <span className="rounded-md border border-input px-2 py-1">
+                  {clampedRecordPage} / {recordTotalPages}
+                </span>
+                <button
+                  onClick={() => setRecordPage((p) => Math.min(recordTotalPages, p + 1))}
+                  disabled={clampedRecordPage >= recordTotalPages}
+                  className="rounded-md border border-input bg-background p-1.5 hover:bg-accent disabled:opacity-40"
+                >
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
             </div>
           )}
         </section>
