@@ -57,6 +57,7 @@ import {
   type CaptureSession,
 } from "@/lib/capture-session";
 import { getOperatorPlant, type OperatorPlant } from "@/lib/operator-plant";
+import { useIsAdmin } from "@/lib/use-session-user";
 import { PageTitle } from "@/components/page-shell";
 
 export const Route = createFileRoute("/capture")({
@@ -239,6 +240,15 @@ function RuntimeCard({
 }
 
 function CapturePage() {
+  // Pengaturan Simpan disembunyikan dari operator. Isinya konfigurasi yang
+  // berlaku untuk semua orang -- pola nama berkas, indeks gambar, folder
+  // fallback -- dan pola yang diubah satu operator membuat berkasnya berbeda
+  // sendiri dari seluruh plant tanpa ada yang menyadarinya.
+  //
+  // Penjaga TAMPILAN saja. Nilainya tetap dimuat dan dipakai seperti biasa, dan
+  // menyembunyikan panel tidak menghalangi siapa pun menyunting localStorage
+  // langsung -- jangan diperlakukan sebagai pembatasan keamanan.
+  const isAdmin = useIsAdmin();
   const [capturingBin, setCapturingBin] = useState<Bin | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -1361,141 +1371,146 @@ function CapturePage() {
       </div>
 
       {/* Settings */}
-      <section className="mt-6 rounded-xl border bg-card shadow-sm p-4">
-        <h2 className="mb-4 text-lg font-semibold">Pengaturan Simpan</h2>
+      {isAdmin && (
+        <section className="mt-6 rounded-xl border bg-card shadow-sm p-4">
+          <h2 className="mb-4 text-lg font-semibold">Pengaturan Simpan</h2>
 
-        <div className="grid gap-4 md:grid-cols-3">
-          <div className="md:col-span-3">
-            <label className="mb-1 block text-sm font-medium">Folder simpan (Shared Folder)</label>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                onClick={pickDirectory}
-                disabled={hydrated && !supportsFS}
-                className="rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="md:col-span-3">
+              <label className="mb-1 block text-sm font-medium">
+                Folder simpan (Shared Folder)
+              </label>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={pickDirectory}
+                  disabled={hydrated && !supportsFS}
+                  className="rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
+                >
+                  {dirName ? "Ganti folder" : "Pilih folder"}
+                </button>
+                {pendingReconnect && (
+                  <button
+                    onClick={reconnectDirectory}
+                    className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                  >
+                    Sambungkan ulang
+                  </button>
+                )}
+                {dirName && (
+                  <button
+                    onClick={forgetDirectory}
+                    className="rounded-md border border-input bg-background px-3 py-2 text-sm hover:bg-accent"
+                  >
+                    Lupakan
+                  </button>
+                )}
+                <span className="text-sm text-muted-foreground">
+                  {dirName
+                    ? `${dirName}${pendingReconnect ? " (izin diperlukan)" : " · diingat"}`
+                    : fsUnsupportedNote
+                      ? "Tidak didukung — akan diunduh"
+                      : "Belum ada folder dipilih"}
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Jika aplikasi ini sudah punya folder simpan jaringan yang dikonfigurasi, setiap
+                capture akan otomatis disimpan ke sana sehingga folder di sini tidak wajib dipilih.
+                Picker ini adalah fallback saat path tersebut belum tersedia: pilih folder, misalnya
+                network share seperti{" "}
+                <span className="font-mono">{"\\\\10.1.1.44\\Data Analytics\\ML\\MTI"}</span>, lalu
+                gambar akan dikirim ke sana dengan subfolder Tahun/Bulan/Hari yang sama, misalnya
+                `2026/07/18`. Browser hanya menampilkan nama folder, bukan path jaringan penuh. Jika
+                semua jalur simpan gagal diakses, hasil capture akan diunduh lokal agar tidak
+                hilang.
+              </p>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium">Lokasi</label>
+              <select
+                value={activePlant}
+                onChange={(e) => setLocation(e.target.value)}
+                disabled={plantLocked}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {dirName ? "Ganti folder" : "Pilih folder"}
-              </button>
-              {pendingReconnect && (
-                <button
-                  onClick={reconnectDirectory}
-                  className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-                >
-                  Sambungkan ulang
-                </button>
-              )}
-              {dirName && (
-                <button
-                  onClick={forgetDirectory}
-                  className="rounded-md border border-input bg-background px-3 py-2 text-sm hover:bg-accent"
-                >
-                  Lupakan
-                </button>
-              )}
-              <span className="text-sm text-muted-foreground">
-                {dirName
-                  ? `${dirName}${pendingReconnect ? " (izin diperlukan)" : " · diingat"}`
-                  : fsUnsupportedNote
-                    ? "Tidak didukung — akan diunduh"
-                    : "Belum ada folder dipilih"}
-              </span>
+                {(plantLocked ? [activePlant] : PLANTS).map((plant) => (
+                  <option key={plant} value={plant}>
+                    {plant}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {plantLocked
+                  ? `Akun Anda terpasang di ${activePlant}, jadi lokasinya tidak bisa diubah dari sini.`
+                  : "Menentukan capture ini berasal dari plant yang mana."}
+              </p>
             </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Jika aplikasi ini sudah punya folder simpan jaringan yang dikonfigurasi, setiap
-              capture akan otomatis disimpan ke sana sehingga folder di sini tidak wajib dipilih.
-              Picker ini adalah fallback saat path tersebut belum tersedia: pilih folder, misalnya
-              network share seperti{" "}
-              <span className="font-mono">{"\\\\10.1.1.44\\Data Analytics\\ML\\MTI"}</span>, lalu
-              gambar akan dikirim ke sana dengan subfolder Tahun/Bulan/Hari yang sama, misalnya
-              `2026/07/18`. Browser hanya menampilkan nama folder, bukan path jaringan penuh. Jika
-              semua jalur simpan gagal diakses, hasil capture akan diunduh lokal agar tidak hilang.
-            </p>
-          </div>
 
-          <div>
-            <label className="mb-1 block text-sm font-medium">Lokasi</label>
-            <select
-              value={activePlant}
-              onChange={(e) => setLocation(e.target.value)}
-              disabled={plantLocked}
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {(plantLocked ? [activePlant] : PLANTS).map((plant) => (
-                <option key={plant} value={plant}>
-                  {plant}
-                </option>
-              ))}
-            </select>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {plantLocked
-                ? `Akun Anda terpasang di ${activePlant}, jadi lokasinya tidak bisa diubah dari sini.`
-                : "Menentukan capture ini berasal dari plant yang mana."}
-            </p>
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm font-medium">Sumber</label>
-            <div className="rounded-md border border-input bg-muted px-3 py-2 text-sm">
-              {binLabel(1)} / {binLabel(2)}
+            <div>
+              <label className="mb-1 block text-sm font-medium">Sumber</label>
+              <div className="rounded-md border border-input bg-muted px-3 py-2 text-sm">
+                {binLabel(1)} / {binLabel(2)}
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Ditentukan otomatis dari tombol Capture BIN yang dipakai.
+              </p>
             </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Ditentukan otomatis dari tombol Capture BIN yang dipakai.
-            </p>
-          </div>
 
-          <div>
-            <label className="mb-1 block text-sm font-medium">Format file</label>
-            <div className="rounded-md border border-input bg-muted px-3 py-2 text-sm">JPEG</div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Disimpan langsung dari kamera sebagai JPEG (`.jpg`).
-            </p>
-          </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium">Format file</label>
+              <div className="rounded-md border border-input bg-muted px-3 py-2 text-sm">JPEG</div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Disimpan langsung dari kamera sebagai JPEG (`.jpg`).
+              </p>
+            </div>
 
-          <div className="md:col-span-2">
-            <label className="mb-1 block text-sm font-medium">Format nama file</label>
-            <input
-              value={pattern}
-              onChange={(e) => setPattern(e.target.value)}
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
-            />
-            <p className="mt-1 text-xs text-muted-foreground">
-              Tokens: {"{DD} {MMMM} {MM} {YYYY} {HH} {mm} {ss} {LOCATION} {SOURCE} {INDEX} {TS}"}
-              <br />
-              {"{MMMM}"} = nama bulan lengkap (July), {"{LOCATION}"} = kode plant (AP / CP)
-              <br />
-              {/* nextFilename embeds the current clock, so it must not be
-                    rendered until after hydration -- the server's HH.mm and the
-                    browser's would differ by the time hydration runs, and React
-                    would throw a text-mismatch (#418) on this node. */}
-              Contoh: <span className="font-mono">{hydrated ? nextFilename : "—"}</span>
-            </p>
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm font-medium">Indeks gambar</label>
-            <div className="flex items-center gap-2">
+            <div className="md:col-span-2">
+              <label className="mb-1 block text-sm font-medium">Format nama file</label>
               <input
-                value={String(counter).padStart(3, "0")}
-                readOnly
-                className="w-full rounded-md border border-input bg-muted px-3 py-2 text-sm font-mono"
+                value={pattern}
+                onChange={(e) => setPattern(e.target.value)}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
               />
-              <button
-                onClick={resetCounter}
-                title="Reset ke 001"
-                className="inline-flex shrink-0 items-center gap-1 rounded-md border border-input bg-background px-3 py-2 text-sm hover:bg-accent"
-              >
-                <RotateCcw className="h-3.5 w-3.5" /> Reset
-              </button>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Tokens: {"{DD} {MMMM} {MM} {YYYY} {HH} {mm} {ss} {LOCATION} {SOURCE} {INDEX} {TS}"}
+                <br />
+                {"{MMMM}"} = nama bulan lengkap (July), {"{LOCATION}"} = kode plant (AP / CP)
+                <br />
+                {/* nextFilename embeds the current clock, so it must not be
+                      rendered until after hydration -- the server's HH.mm and the
+                      browser's would differ by the time hydration runs, and React
+                      would throw a text-mismatch (#418) on this node. */}
+                Contoh: <span className="font-mono">{hydrated ? nextFilename : "—"}</span>
+              </p>
             </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Bertambah otomatis setelah setiap capture.
-            </p>
-          </div>
-        </div>
 
-        <div className="mt-4 rounded-md bg-muted px-3 py-2 text-xs font-mono break-all">
-          File berikutnya akan disimpan sebagai: {hydrated ? nextFilename : "—"}
-        </div>
-      </section>
+            <div>
+              <label className="mb-1 block text-sm font-medium">Indeks gambar</label>
+              <div className="flex items-center gap-2">
+                <input
+                  value={String(counter).padStart(3, "0")}
+                  readOnly
+                  className="w-full rounded-md border border-input bg-muted px-3 py-2 text-sm font-mono"
+                />
+                <button
+                  onClick={resetCounter}
+                  title="Reset ke 001"
+                  className="inline-flex shrink-0 items-center gap-1 rounded-md border border-input bg-background px-3 py-2 text-sm hover:bg-accent"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" /> Reset
+                </button>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Bertambah otomatis setelah setiap capture.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-md bg-muted px-3 py-2 text-xs font-mono break-all">
+            File berikutnya akan disimpan sebagai: {hydrated ? nextFilename : "—"}
+          </div>
+        </section>
+      )}
     </div>
   );
 }
