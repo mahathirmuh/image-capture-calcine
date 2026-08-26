@@ -285,6 +285,16 @@ export function AppSidebar() {
       </SidebarContent>
       <SidebarFooter className="relative z-10 border-t border-sidebar-border">
         <DeviceStatusCard />
+        {/* Tahun dihitung saat render, bukan ditulis tetap: copyright yang
+            tertinggal di tahun lalu adalah hal pertama yang terlihat basi oleh
+            siapa pun yang membuka aplikasi ini di bulan Januari.
+
+            Ikut disembunyikan saat sidebar diciutkan ke mode ikon, mengikuti
+            DeviceStatusCard di atasnya -- di lebar itu tidak ada ruang untuk
+            teks apa pun. */}
+        <p className="px-1 pb-1 text-[10px] leading-relaxed text-sidebar-foreground/50 group-data-[collapsible=icon]:hidden">
+          &copy; {new Date().getFullYear()} PT Merdeka Tsingshan Indonesia
+        </p>
       </SidebarFooter>
     </Sidebar>
   );
