@@ -56,16 +56,6 @@ import {
   sessionPathSegment,
   type CaptureSession,
 } from "@/lib/capture-session";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { getOperatorPlant, type OperatorPlant } from "@/lib/operator-plant";
 import { PageTitle } from "@/components/page-shell";
 
@@ -257,10 +247,6 @@ function CapturePage() {
   const [bin2, setBin2] = useState<BinPreview | null>(null);
   const [lastSource, setLastSource] = useState<Bin>(1);
   const [savingBin, setSavingBin] = useState<Bin | null>(null);
-  // Bin yang sedang menunggu konfirmasi simpan. Dipisahkan dari `savingBin`
-  // karena keduanya menandai fase berbeda: yang ini "operator belum memutuskan",
-  // yang itu "penulisan sedang berjalan".
-  const [confirmSaveBin, setConfirmSaveBin] = useState<Bin | null>(null);
   const [autofocusing, setAutofocusing] = useState(false);
   // Synchronous re-entrancy guard for saves. `savingBin` is state (async), so a
   // fast double-click could pass its check twice before re-render; this ref
@@ -493,13 +479,21 @@ function CapturePage() {
       const res = await getMediaContent({ data: { assetId } });
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
+      const captured: BinPreview = { blob, url, assetId, capturedAt };
       const setBin = bin === 1 ? setBin1 : setBin2;
       setBin((prev) => {
         if (prev) URL.revokeObjectURL(prev.url);
-        return { blob, url, assetId, capturedAt };
+        return captured;
       });
       setLastSource(bin);
       setStatus(null);
+
+      // Capture dan simpan jadi satu tindakan. Operator mengambil 16 foto per
+      // shift; klik kedua untuk setiap foto adalah gesekan tanpa imbalan,
+      // karena keputusan sebenarnya ("gambarnya bagus atau tidak") dibuat
+      // setelah melihat hasilnya -- dan hasil yang jelek diperbaiki dengan
+      // "Ambil ulang", yang menimpa berkas di sesi yang sama.
+      await saveBin(bin, captured);
     } catch (error: unknown) {
       const message = getErrorMessage(error, "Capture gagal");
       const issue = describeCameraRuntimeIssue(getRuntimeErrorCode(error), message);
@@ -606,9 +600,12 @@ function CapturePage() {
     });
   }
 
-  async function saveBin(bin: Bin) {
-    const previewItem = bin === 1 ? bin1 : bin2;
-    if (!previewItem || savingRef.current) return;
+  // Preview diterima sebagai argumen, tidak dibaca dari state: pemanggilnya
+  // adalah captureToBin() yang baru saja memanggil setBin(), dan state React
+  // belum diperbarui pada tick yang sama -- membacanya dari sana akan
+  // menyimpan gambar SEBELUMNYA.
+  async function saveBin(bin: Bin, previewItem: BinPreview) {
+    if (savingRef.current) return;
     savingRef.current = true;
     setSavingBin(bin);
     setError(null);
@@ -1265,7 +1262,12 @@ function CapturePage() {
                         ? "Preview langsung"
                         : "Preview mati"}
                 </span>
-                {showFrozen && <span className="text-emerald-600">Siap disimpan</span>}
+                {/* Preview hanya bertahan kalau simpan TIDAK terkonfirmasi --
+                    jalur sukses membersihkannya sendiri lewat clearBin().
+                    Jadi keadaan beku di sini justru berarti berkasnya belum
+                    tentu sampai ke folder jaringan, dan menandainya hijau
+                    "Tersimpan" akan berbohong. */}
+                {showFrozen && <span className="text-amber-600">Belum masuk folder jaringan</span>}
               </div>
 
               <div className="mt-3 flex flex-wrap gap-2">
@@ -1275,28 +1277,14 @@ function CapturePage() {
                   title={captureActionHint}
                   className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
                 >
-                  {isCapturing
-                    ? "Mengambil…"
-                    : showFrozen
-                      ? `Ambil ulang ${binLabel(bin)}`
-                      : `Capture ${binLabel(bin)}`}
+                  {isSaving
+                    ? "Menyimpan…"
+                    : isCapturing
+                      ? "Mengambil…"
+                      : showFrozen
+                        ? `Ambil ulang ${binLabel(bin)}`
+                        : `Capture ${binLabel(bin)}`}
                 </button>
-                <button
-                  onClick={() => setConfirmSaveBin(bin)}
-                  disabled={!preview || isSaving}
-                  className="rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
-                >
-                  {isSaving ? "Menyimpan…" : `Simpan ${binLabel(bin)}`}
-                </button>
-                {showFrozen && (
-                  <button
-                    onClick={() => clearBin(bin)}
-                    disabled={isSaving}
-                    className="rounded-md px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-accent disabled:opacity-50"
-                  >
-                    Buang
-                  </button>
-                )}
               </div>
             </section>
           );
@@ -1508,60 +1496,6 @@ function CapturePage() {
           File berikutnya akan disimpan sebagai: {hydrated ? nextFilename : "—"}
         </div>
       </section>
-
-      {/* Konfirmasi sebelum menulis. Simpan tidak bisa dibatalkan dari sini --
-          berkasnya langsung mendarat di folder jaringan dan indeks gambar ikut
-          maju -- jadi nama berkas yang akan dipakai ditampilkan sekalian,
-          supaya salah lokasi atau salah indeks ketahuan sebelum ditulis,
-          bukan sesudah. */}
-      <AlertDialog
-        open={confirmSaveBin !== null}
-        onOpenChange={(open) => !open && setConfirmSaveBin(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              Simpan hasil capture {confirmSaveBin ? binLabel(confirmSaveBin) : ""}?
-            </AlertDialogTitle>
-            <AlertDialogDescription asChild>
-              <div className="space-y-2">
-                <p>
-                  Hasil capture dikirim ke folder jaringan dan dicatat ke registry. Setelah
-                  tersimpan, berkasnya tidak bisa ditarik kembali dari halaman ini.
-                </p>
-                <p className="rounded-md bg-muted px-3 py-2 font-mono text-xs break-all text-foreground">
-                  {confirmSaveBin
-                    ? `${formatFilename(pattern, {
-                        index: counter,
-                        location: toLocationToken(activePlant),
-                        source: toBinToken(activePlant, confirmSaveBin),
-                        slot: toBinTitle(activePlant, confirmSaveBin),
-                        session: activeSession.label,
-                      })}.${ext}`
-                    : "—"}
-                </p>
-                <p>
-                  Lokasi: {activePlant}. Kalau folder jaringan sedang tidak bisa dipakai, hasil
-                  capture diunduh lokal supaya tidak hilang.
-                </p>
-              </div>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Batal</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(event) => {
-                event.preventDefault();
-                const bin = confirmSaveBin;
-                setConfirmSaveBin(null);
-                if (bin) void saveBin(bin);
-              }}
-            >
-              Simpan {confirmSaveBin ? binLabel(confirmSaveBin) : ""}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }
