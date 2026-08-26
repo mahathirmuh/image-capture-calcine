@@ -126,12 +126,11 @@ export function analyzeFilenamePattern(pattern: string): FilenamePatternAnalysis
     );
   }
   if (hasCollisionRisk && hasSession && hasSource) {
-    // Pada skema sesi, nama ganda itu DISENGAJA: satu sesi memang hanya punya
-    // satu berkas per slot. Capture ulang untuk sesi yang sama akan menjadi
-    // "(2)" -- keduanya tersimpan, dan yang mana yang dipakai ditentukan dari
-    // waktu capture di Gallery, bukan dari nama berkas.
+    // Pada skema sesi, nama yang sama itu DISENGAJA: satu sesi memang hanya
+    // punya satu berkas per slot, dan capture ulang memang dimaksudkan
+    // menggantikan yang sebelumnya.
     warnings.push(
-      "Capture ulang pada sesi dan slot yang sama akan tersimpan sebagai `(2)`; keduanya disimpan, tidak ada yang tertimpa.",
+      "Capture ulang pada sesi dan slot yang sama akan MENIMPA berkas sebelumnya di folder tujuan. Waktu capture setiap percobaan tetap tercatat di registry.",
     );
   } else if (hasCollisionRisk) {
     warnings.push(

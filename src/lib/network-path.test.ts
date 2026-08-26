@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  isWindowsStyleRoot,
-  joinNetworkPath,
-  normalizeRelativeSegments,
-  splitFilename,
-} from "./network-path";
+import { isWindowsStyleRoot, joinNetworkPath, normalizeRelativeSegments } from "./network-path";
 
 // Root UNC ditulis lewat konstanta supaya deretan backslash-nya hanya perlu
 // dibaca benar sekali, bukan di setiap ekspektasi.
@@ -107,20 +102,5 @@ describe("joinNetworkPath", () => {
 
   it("mengembalikan root apa adanya kalau tidak ada segmen", () => {
     expect(joinNetworkPath(POSIX_ROOT, [])).toBe(POSIX_ROOT);
-  });
-});
-
-describe("splitFilename", () => {
-  it("memisahkan ekstensi terakhir", () => {
-    expect(splitFilename("foto.jpg")).toEqual({ base: "foto", ext: ".jpg" });
-    expect(splitFilename("BIN 1.2026.08.25.jpg")).toEqual({
-      base: "BIN 1.2026.08.25",
-      ext: ".jpg",
-    });
-  });
-
-  it("menganggap berkas tanpa ekstensi dan dotfile sebagai basis penuh", () => {
-    expect(splitFilename("catatan")).toEqual({ base: "catatan", ext: "" });
-    expect(splitFilename(".gitignore")).toEqual({ base: ".gitignore", ext: "" });
   });
 });

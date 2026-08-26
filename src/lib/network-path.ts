@@ -55,14 +55,3 @@ export function joinNetworkPath(targetRoot: string, segments: string[]): string 
   if (segments.length === 0) return root;
   return `${root}${separator}${segments.join(separator)}`;
 }
-
-/**
- * Pisah nama berkas jadi basis dan ekstensi supaya penyelesaian tabrakan nama
- * bisa menyisipkan " (2)" SEBELUM ekstensi, bukan sesudahnya. Titik di posisi
- * awal (`.gitignore`) dianggap bagian dari basis, bukan penanda ekstensi.
- */
-export function splitFilename(filename: string): { base: string; ext: string } {
-  const dot = filename.lastIndexOf(".");
-  if (dot <= 0) return { base: filename, ext: "" };
-  return { base: filename.slice(0, dot), ext: filename.slice(dot) };
-}

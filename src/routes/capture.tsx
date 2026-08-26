@@ -171,28 +171,6 @@ function formatFilename(pattern: string, values: FilenameValues) {
   return out;
 }
 
-// The minute-resolution filename intentionally has no seconds/index, so two
-// captures of the same bin within one minute would collide. Rather than let
-// `getFileHandle(create:true)` silently overwrite the earlier file, disambiguate
-// with a " (2)", " (3)" … suffix — the same thing Windows/Downloads would do.
-async function resolveUniqueName(dir: DirHandle, base: string, ext: string): Promise<string> {
-  const exists = async (name: string) => {
-    try {
-      await dir.getFileHandle(name, { create: false });
-      return true;
-    } catch {
-      return false;
-    }
-  };
-  let name = `${base}.${ext}`;
-  if (!(await exists(name))) return name;
-  for (let i = 2; i < 1000; i++) {
-    name = `${base} (${i}).${ext}`;
-    if (!(await exists(name))) return name;
-  }
-  return `${base} ${Date.now()}.${ext}`;
-}
-
 // Zero-padded Year/Month/Day path segment (e.g. "2026/07/18") -- sorts
 // correctly in Explorer (which only sorts alphabetically -- month *names*
 // would put April before January), used both for the browser's own nested
@@ -651,6 +629,7 @@ function CapturePage() {
 
     try {
       let savedNetworkPath: string | null = null;
+      let replacedExisting = false;
       let persistedPath: string | null = null;
       let saveMethod: CaptureSaveMethod = "browser-download";
       let saveConfirmed = false;
@@ -690,6 +669,7 @@ function CapturePage() {
         if (saved.ok) {
           filename = saved.filename;
           savedNetworkPath = saved.savedTo;
+          replacedExisting = saved.replaced;
           persistedPath = saved.savedTo;
           saveMethod = "app-network";
           saveConfirmed = true;
@@ -732,7 +712,9 @@ function CapturePage() {
             dirHandle,
             activeSession.startsAt,
           );
-          filename = await resolveUniqueName(dayDir, base, ext);
+          // Menimpa yang senama, sama seperti jalur jaringan: satu sesi
+          // hanya punya satu berkas per slot.
+          filename = `${base}.${ext}`;
           fileHandle = await dayDir.getFileHandle(filename, { create: true });
           const writable = await fileHandle.createWritable();
           await writable.write(previewItem.blob);
@@ -778,11 +760,21 @@ function CapturePage() {
       // menyebut itu "berhasil" membuat orang berhenti memeriksanya.
       if (savedNetworkPath) {
         if (saveMethod === "app-network") {
-          setStatus(`${binLabel(bin)} tersimpan ke folder jaringan: ${savedNetworkPath}`);
-          toast.success(`${binLabel(bin)} tersimpan ke folder jaringan`, {
-            description: savedNetworkPath,
-            duration: 6000,
-          });
+          // Menimpa itu tidak bisa dibatalkan, jadi ia tidak boleh lewat
+          // sebagai notifikasi hijau biasa -- operator harus sadar capture
+          // sebelumnya di sesi ini baru saja hilang dari share.
+          const headline = replacedExisting
+            ? `${binLabel(bin)} sesi ${activeSession.label} DIGANTI`
+            : `${binLabel(bin)} tersimpan ke folder jaringan`;
+          setStatus(`${headline}: ${savedNetworkPath}`);
+          if (replacedExisting) {
+            toast.warning(headline, {
+              description: `Capture sebelumnya di sesi ini ditimpa. ${savedNetworkPath}`,
+              duration: 8000,
+            });
+          } else {
+            toast.success(headline, { description: savedNetworkPath, duration: 6000 });
+          }
         } else {
           setStatus(`${binLabel(bin)} tersimpan ke folder browser: ${savedNetworkPath}`);
           toast.warning(`${binLabel(bin)} tersimpan ke folder browser`, {

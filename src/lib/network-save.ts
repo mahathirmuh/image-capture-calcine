@@ -22,16 +22,17 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
 import { getServerEnv } from "./env";
-import { joinNetworkPath, normalizeRelativeSegments, splitFilename } from "./network-path";
+import { joinNetworkPath, normalizeRelativeSegments } from "./network-path";
 
 type SaveFailure = { ok: false; code: string; message: string };
-type SaveSuccess = { ok: true; savedTo: string; filename: string };
+type SaveSuccess = {
+  ok: true;
+  savedTo: string;
+  filename: string;
+  /** true kalau berkas dengan nama itu sudah ada dan ditimpa. */
+  replaced: boolean;
+};
 export type NetworkSaveResult = SaveSuccess | SaveFailure;
-
-// Batas percobaan penamaan " (2)", " (3)", ... sebelum menyerah. Tabrakan
-// muncul kalau dua capture menit yang sama memperebutkan nama polos yang sama;
-// puluhan sudah jauh melebihi yang mungkin terjadi dalam satu menit.
-const MAX_NAME_ATTEMPTS = 25;
 
 function errorCode(error: unknown): string | null {
   if (typeof error === "object" && error !== null && "code" in error) {
@@ -146,30 +147,35 @@ export const saveMediaToNetwork = createServerFn({ method: "POST" })
       };
     }
 
-    const { base, ext } = splitFilename(requestedName);
-    for (let attempt = 0; attempt < MAX_NAME_ATTEMPTS; attempt++) {
-      const filename = attempt === 0 ? requestedName : `${base} (${attempt + 1})${ext}`;
-      const fullPath = joinNetworkPath(targetRoot, [...directorySegments, filename]);
-      try {
-        // Flag "wx" gagal kalau berkasnya sudah ada. Itu memang yang
-        // diinginkan: memeriksa dulu lalu menulis meninggalkan celah untuk
-        // capture berbarengan saling menimpa, sedangkan di sini penolakannya
-        // atomik dan tinggal dicoba dengan nama berikutnya.
-        await writeFile(fullPath, bytes, { flag: "wx" });
-        return { ok: true, savedTo: fullPath, filename };
-      } catch (error: unknown) {
-        if (errorCode(error) === "EEXIST") continue;
-        return {
-          ok: false,
-          code: errorCode(error) ?? "WRITE_FAILED",
-          message: `Gagal menulis ke ${fullPath}: ${errorMessage(error, "error tidak diketahui")}`,
-        };
-      }
+    const fullPath = joinNetworkPath(targetRoot, [...directorySegments, requestedName]);
+
+    // Berkas yang senama DITIMPA, tidak diberi suffix "(2)".
+    //
+    // Nama berkas menyebut sesi dan slot, jadi nama yang sama berarti sampel
+    // yang sama diambil ulang -- biasanya karena hasil pertamanya buram.
+    // Menyimpan keduanya membuat folder harian berisi lebih dari satu berkas
+    // per sesi, dan orang yang membukanya harus menebak mana yang dipakai.
+    //
+    // Ini memang membuang berkas lama secara permanen. Yang menahannya: waktu
+    // capture setiap percobaan tetap tercatat di registry (`captured_at`),
+    // jadi jejak "pernah ada capture lain di sesi ini" tidak ikut hilang, dan
+    // operator diberi tahu lewat toast bahwa ia baru saja menimpa.
+    let replaced = false;
+    try {
+      await stat(fullPath);
+      replaced = true;
+    } catch {
+      replaced = false;
     }
 
-    return {
-      ok: false,
-      code: "NAME_COLLISION",
-      message: `Nama ${requestedName} dan ${MAX_NAME_ATTEMPTS - 1} varian bernomor sudah terpakai di ${directory}`,
-    };
+    try {
+      await writeFile(fullPath, bytes);
+      return { ok: true, savedTo: fullPath, filename: requestedName, replaced };
+    } catch (error: unknown) {
+      return {
+        ok: false,
+        code: errorCode(error) ?? "WRITE_FAILED",
+        message: `Gagal menulis ke ${fullPath}: ${errorMessage(error, "error tidak diketahui")}`,
+      };
+    }
   });
