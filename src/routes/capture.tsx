@@ -1096,7 +1096,17 @@ function CapturePage() {
           {error}
         </div>
       )}
-      {status && (
+      {/* Banner status hanya untuk admin.
+          Isinya campuran: pesan daur hidup session kamera dari
+          useCaptureCameraSession() dan konfirmasi simpan dari saveBin().
+          Yang pertama diagnostik -- operator tidak bisa berbuat apa pun atas
+          "menunggu kamera siap", dan keadaan itu sudah terbaca di kartu Session
+          Lease. Yang kedua tetap sampai ke operator lewat toast, yang justru
+          lebih terlihat karena muncul di sudut layar tanpa peduli posisi scroll.
+
+          Banner error (merah) di atas TIDAK ikut disembunyikan: kegagalan harus
+          tetap terlihat siapa pun yang login. */}
+      {isAdmin && status && (
         <div className="mb-4 rounded-md border border-primary/30 bg-primary/5 px-4 py-3 text-sm">
           {status}
         </div>
