@@ -1019,54 +1019,75 @@ function CapturePage() {
 
   return (
     <div className="p-6">
-      <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
+      <header className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
           <PageTitle
             title="Capture"
             description="Ambil gambar dari kamera, lihat preview, lalu simpan ke folder pilihan dengan format nama file kustom."
           />
         </div>
-        <div className="inline-flex items-center gap-1.5 rounded-md border bg-card px-3 py-1.5 text-sm">
-          <MapPin className="h-4 w-4 text-muted-foreground" />
-          <span className="text-muted-foreground">Lokasi:</span>
-          <select
-            value={activePlant}
-            onChange={(e) => setLocation(e.target.value)}
-            disabled={plantLocked}
-            title={plantLocked ? "Akun Anda terpasang di plant ini" : undefined}
-            className="bg-transparent font-semibold outline-none disabled:cursor-not-allowed disabled:opacity-100"
-          >
-            {(plantLocked ? [activePlant] : PLANTS).map((plant) => (
-              <option key={plant} value={plant}>
-                {plant}
-              </option>
-            ))}
-          </select>
-        </div>
-        {/* Sesi menentukan nama berkas DAN folder tanggalnya, jadi ia berdiri
-            sejajar dengan Lokasi, bukan disembunyikan di Pengaturan Simpan.
-            Nilainya mengikuti sesi terdekat sampai operator memilih sendiri --
-            yang perlu dilakukan saat menyusul sesi yang terlewat. */}
-        <div className="inline-flex items-center gap-1.5 rounded-md border bg-card px-3 py-1.5 text-sm">
-          <Clock className="h-4 w-4 text-muted-foreground" />
-          <span className="text-muted-foreground">Sesi:</span>
-          <select
-            value={activeSession.startsAt.toISOString()}
-            onChange={(e) => setSelectedSessionIso(e.target.value)}
-            className="bg-transparent font-semibold outline-none"
-          >
-            {sessionOptions.map((session) => (
-              <option key={session.startsAt.toISOString()} value={session.startsAt.toISOString()}>
-                {session.label}
-                {isSessionOnAnotherDay(session, now)
-                  ? ` (${session.startsAt.toLocaleDateString("id-ID", {
-                      day: "2-digit",
-                      month: "short",
-                    })})`
-                  : ""}
-              </option>
-            ))}
-          </select>
+        {/* Lokasi dan Sesi dikelompokkan dalam SATU wadah flex.
+            Sebelumnya keduanya jadi anak langsung <header> yang ber-
+            justify-between, sehingga judul terlempar ke kiri dan kedua kontrol
+            terpisah ke ujung yang berbeda -- terbaca seperti dua hal yang tak
+            berhubungan, padahal keduanya sama-sama menentukan ke mana berkas
+            disimpan dan bagaimana ia dinamai. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex h-9 items-center gap-2 rounded-lg border bg-card px-3 shadow-sm">
+            <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              Lokasi
+            </span>
+            {/* Operator yang terikat satu plant mendapat teks biasa, bukan
+                dropdown yang dinonaktifkan. Dropdown yang tidak bisa dibuka
+                tetap terlihat seperti bisa diklik -- itu janji palsu yang
+                dicoba operator sekali lalu diingat sebagai aplikasi yang rusak. */}
+            {plantLocked ? (
+              <span className="text-sm font-semibold" title="Akun Anda terpasang di plant ini">
+                {activePlant}
+              </span>
+            ) : (
+              <select
+                value={activePlant}
+                onChange={(e) => setLocation(e.target.value)}
+                className="cursor-pointer bg-transparent text-sm font-semibold outline-none"
+              >
+                {PLANTS.map((plant) => (
+                  <option key={plant} value={plant}>
+                    {plant}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          {/* Sesi menentukan nama berkas DAN folder tanggalnya, jadi ia berdiri
+              sejajar dengan Lokasi, bukan disembunyikan di Pengaturan Simpan.
+              Nilainya mengikuti sesi terdekat sampai operator memilih sendiri --
+              yang perlu dilakukan saat menyusul sesi yang terlewat. */}
+          <div className="inline-flex h-9 items-center gap-2 rounded-lg border bg-card px-3 shadow-sm">
+            <Clock className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              Sesi
+            </span>
+            <select
+              value={activeSession.startsAt.toISOString()}
+              onChange={(e) => setSelectedSessionIso(e.target.value)}
+              className="cursor-pointer bg-transparent text-sm font-semibold outline-none"
+            >
+              {sessionOptions.map((session) => (
+                <option key={session.startsAt.toISOString()} value={session.startsAt.toISOString()}>
+                  {session.label}
+                  {isSessionOnAnotherDay(session, now)
+                    ? ` (${session.startsAt.toLocaleDateString("id-ID", {
+                        day: "2-digit",
+                        month: "short",
+                      })})`
+                    : ""}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </header>
 
