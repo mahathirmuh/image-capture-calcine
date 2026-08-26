@@ -84,6 +84,56 @@ function notifyGalleryChange() {
   for (const listener of galleryListeners) listener();
 }
 
+// Pemetaan antara item galeri dan bentuk tersimpannya, dikumpulkan di satu
+// tempat.
+//
+// Sebelumnya daftar field-nya ditulis tangan di TIGA tempat: dua jalur tulis
+// (saveGallery, addGalleryItem) dan satu jalur baca (loadGallery). Menambah
+// satu field menuntut ketiganya diubah, dan yang terlewat tidak menghasilkan
+// error apa pun -- field-nya opsional, jadi TypeScript tidak keberatan; nilainya
+// hanya lenyap diam-diam saat dibaca kembali. Persis itu yang terjadi pada
+// `capturedBy`: tersimpan dengan benar, hilang saat dimuat.
+//
+// Sekarang keduanya pasangan yang bisa diuji tanpa IndexedDB.
+export function toStoredGalleryMeta(item: GalleryItem): StoredGalleryItem {
+  return {
+    id: item.id,
+    name: item.name,
+    folder: item.folder,
+    bin: item.bin,
+    createdAt: item.createdAt,
+    hasFileHandle: !!item.fileHandle,
+    captureRecordId: item.captureRecordId ?? null,
+    persistedPath: item.persistedPath ?? null,
+    saveMethod: item.saveMethod ?? null,
+    capturedBy: item.capturedBy ?? null,
+  };
+}
+
+export function fromStoredGalleryMeta(
+  meta: StoredGalleryItem,
+  blob: Blob,
+  url: string,
+): GalleryItem {
+  return {
+    id: meta.id,
+    name: meta.name,
+    url,
+    blob,
+    folder: meta.folder,
+    bin: meta.bin,
+    // Handle direktori tidak bisa bertahan di IndexedDB bersama metadata ini;
+    // yang tersimpan cuma penandanya (`hasFileHandle`).
+    fileHandle: null,
+    parentDir: null,
+    createdAt: meta.createdAt,
+    captureRecordId: meta.captureRecordId ?? null,
+    persistedPath: meta.persistedPath ?? null,
+    saveMethod: meta.saveMethod ?? null,
+    capturedBy: meta.capturedBy ?? null,
+  };
+}
+
 export async function loadGallery(): Promise<GalleryItem[]> {
   if (typeof window === "undefined" || !("indexedDB" in window)) return [];
   try {
@@ -104,20 +154,7 @@ export async function loadGallery(): Promise<GalleryItem[]> {
         req.onerror = () => reject(req.error);
       });
       if (!blob) continue;
-      items.push({
-        id: meta.id,
-        name: meta.name,
-        url: URL.createObjectURL(blob),
-        blob,
-        folder: meta.folder,
-        bin: meta.bin,
-        fileHandle: null,
-        parentDir: null,
-        createdAt: meta.createdAt,
-        captureRecordId: meta.captureRecordId ?? null,
-        persistedPath: meta.persistedPath ?? null,
-        saveMethod: meta.saveMethod ?? null,
-      });
+      items.push(fromStoredGalleryMeta(meta, blob, URL.createObjectURL(blob)));
     }
     db.close();
     return items.sort((a, b) => b.createdAt - a.createdAt);
@@ -137,19 +174,7 @@ export async function saveGallery(items: GalleryItem[]): Promise<void> {
       store.clear();
       blobStore.clear();
       for (const item of items) {
-        const meta: StoredGalleryItem = {
-          id: item.id,
-          name: item.name,
-          folder: item.folder,
-          bin: item.bin,
-          createdAt: item.createdAt,
-          hasFileHandle: !!item.fileHandle,
-          captureRecordId: item.captureRecordId ?? null,
-          persistedPath: item.persistedPath ?? null,
-          saveMethod: item.saveMethod ?? null,
-          capturedBy: item.capturedBy ?? null,
-        };
-        store.put(meta, item.id);
+        store.put(toStoredGalleryMeta(item), item.id);
         blobStore.put(item.blob, item.id);
       }
       tx.oncomplete = () => resolve();
@@ -168,19 +193,7 @@ export async function addGalleryItem(item: GalleryItem): Promise<void> {
     const db = await openDB();
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction([IDB_STORE, IDB_BLOB_STORE], "readwrite");
-      const meta: StoredGalleryItem = {
-        id: item.id,
-        name: item.name,
-        folder: item.folder,
-        bin: item.bin,
-        createdAt: item.createdAt,
-        hasFileHandle: !!item.fileHandle,
-        captureRecordId: item.captureRecordId ?? null,
-        persistedPath: item.persistedPath ?? null,
-        saveMethod: item.saveMethod ?? null,
-        capturedBy: item.capturedBy ?? null,
-      };
-      tx.objectStore(IDB_STORE).put(meta, item.id);
+      tx.objectStore(IDB_STORE).put(toStoredGalleryMeta(item), item.id);
       tx.objectStore(IDB_BLOB_STORE).put(item.blob, item.id);
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
