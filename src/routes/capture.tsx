@@ -1080,7 +1080,17 @@ function CapturePage() {
           {status}
         </div>
       )}
-      {hydrated && supportsFS && !dirName && (
+      {/* Hanya untuk admin. Satu-satunya tindakan yang ditawarkan banner ini
+          adalah memilih folder cadangan, dan panel Pengaturan Simpan yang
+          mengelolanya sudah disembunyikan dari operator -- menyisakan
+          peringatan tanpa jalan keluar hanya membuat operator cemas tentang
+          sesuatu yang bukan urusannya.
+
+          Konsekuensinya nyata: di mesin operator jalur cadangan folder browser
+          tidak akan pernah disiapkan, karena handle-nya tersimpan per browser
+          dan tidak bisa diwariskan dari mesin admin. Rantai simpan di sana jadi
+          dua lapis -- folder jaringan, lalu unduhan browser. */}
+      {isAdmin && hydrated && supportsFS && !dirName && (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm">
           {/* Banner ini muncul hanya karena folder browser belum dipilih, dan
               tidak tahu apa-apa soal kondisi folder jaringan. Kalimat lamanya
