@@ -544,7 +544,12 @@ function CapturePage() {
         setError(job.error?.message ?? "Autofocus gagal");
         return;
       }
+      // Toast, bukan cuma setStatus: banner status disembunyikan dari operator,
+      // jadi tanpa ini autofocus berhasil tanpa tanda apa pun bagi mereka --
+      // tombol hanya berhenti abu-abu, yang sama persis dengan tampilan gagal
+      // diam. Kegagalannya sendiri sudah lewat banner error yang tetap tampil.
       setStatus("Fokus selesai");
+      toast.success("Fokus selesai", { duration: 3000 });
     } catch (error: unknown) {
       const message = getErrorMessage(error, "Autofocus gagal");
       const issue = describeCameraRuntimeIssue(getRuntimeErrorCode(error), message);
