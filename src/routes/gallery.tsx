@@ -403,6 +403,8 @@ function GalleryPage() {
   // ketik, dan mendaftar ulang listener pada tiap perpindahan gambar itu
   // pemborosan yang tidak perlu.
   const fullscreenOpenRef = useRef(false);
+  // Kartu yang unduhannya sedang disiapkan dari folder jaringan.
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   const [sortOption, setSortOption] = useState<GallerySortOption>(
     DEFAULT_GALLERY_VIEW_STATE.sortOption,
@@ -701,6 +703,56 @@ function GalleryPage() {
     a.href = item.url;
     a.download = item.name;
     a.click();
+  }
+
+  /**
+   * Unduh satu kartu, ada atau tidak salinan lokalnya.
+   *
+   * Dulu unduhan hanya mungkin untuk foto yang di-capture di browser ini --
+   * `item.url` menunjuk blob di IndexedDB. Sejak kartu datang dari registry,
+   * itu berarti tombol Unduh mati untuk hampir semua kartu, termasuk bagi
+   * Super Admin yang jelas berhak.
+   *
+   * Tanpa salinan lokal, berkasnya ditarik dari folder jaringan lewat URL
+   * bertanda tangan lalu diserahkan sebagai unduhan. Ini memang menarik ~11 MB
+   * -- tapi itu memang yang diminta orang saat menekan "Unduh".
+   */
+  async function downloadCard(card: GalleryCard) {
+    if (card.local) {
+      downloadItem(card.local);
+      return;
+    }
+    const recordId = card.captureRecordId;
+    if (recordId == null) return;
+    setDownloadingId(card.id);
+    try {
+      const cached = remoteImageUrls[recordId];
+      const signed = cached
+        ? { ok: true as const, url: cached }
+        : await createCaptureMediaUrl({ data: { recordId } });
+      if (!signed.ok) {
+        alert(`Gagal menyiapkan unduhan: ${signed.message}`);
+        return;
+      }
+      const response = await fetch(signed.url);
+      if (!response.ok) {
+        alert("Berkas tidak bisa diambil dari folder jaringan.");
+        return;
+      }
+      // Lewat blob, bukan menautkan URL bertanda tangan langsung: server
+      // melayaninya sebagai image/jpeg, jadi tautan biasa akan MENAMPILKAN
+      // gambarnya di tab baru alih-alih menyimpannya.
+      const objectUrl = URL.createObjectURL(await response.blob());
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = card.name;
+      anchor.click();
+      URL.revokeObjectURL(objectUrl);
+    } catch {
+      alert("Gagal mengunduh dari folder jaringan.");
+    } finally {
+      setDownloadingId(null);
+    }
   }
 
   function downloadSelected() {
@@ -1941,10 +1993,10 @@ ${storage.path ?? "—"}`}
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem
-                            disabled={!item.local}
-                            onClick={() => item.local && downloadItem(item.local)}
+                            disabled={downloadingId === item.id}
+                            onClick={() => void downloadCard(item)}
                           >
-                            Unduh
+                            {downloadingId === item.id ? "Menyiapkan..." : "Unduh"}
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             disabled={!item.local}
@@ -2043,10 +2095,10 @@ ${storage.path ?? "—"}`}
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem
-                              disabled={!item.local}
-                              onClick={() => item.local && downloadItem(item.local)}
+                              disabled={downloadingId === item.id}
+                              onClick={() => void downloadCard(item)}
                             >
-                              Unduh
+                              {downloadingId === item.id ? "Menyiapkan..." : "Unduh"}
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               disabled={!item.local}
@@ -2366,10 +2418,14 @@ ${storage.path ?? "—"}`}
 
           <div className="flex gap-2">
             <button
-              disabled={!detailItem.local}
-              onClick={() => detailItem.local && downloadItem(detailItem.local)}
+              disabled={downloadingId === detailItem.id}
+              onClick={() => void downloadCard(detailItem)}
               className="flex-1 rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
-              title={detailItem.local ? "Unduh salinan lokal" : "Tidak ada salinan di browser ini"}
+              title={
+                detailItem.local
+                  ? "Unduh salinan lokal"
+                  : "Ditarik dari folder jaringan -- berkasnya berukuran penuh"
+              }
             >
               Unduh
             </button>
