@@ -65,6 +65,16 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 /**
  * Sejauh mana galeri dan tabel riwayat bisa ditelusuri dari halaman ini.
@@ -406,6 +416,17 @@ function GalleryPage() {
   // Kartu yang unduhannya sedang disiapkan dari folder jaringan.
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
+  // Konfirmasi hapus & ubah nama dipegang di state, bukan lewat confirm()/
+  // prompt() bawaan browser. Dialog bawaan itu menempel di tepi atas jendela,
+  // tidak mengikuti tema aplikasi, dan tidak bisa menampilkan sebab kegagalan
+  // di tempat yang sama -- untuk penghapusan permanen ke folder jaringan,
+  // dialognya justru bagian yang paling perlu terbaca jelas.
+  const [pendingDelete, setPendingDelete] = useState<GalleryCard | null>(null);
+  const [pendingRename, setPendingRename] = useState<GalleryCard | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [dialogBusy, setDialogBusy] = useState(false);
+  const [dialogError, setDialogError] = useState<string | null>(null);
+
   const [sortOption, setSortOption] = useState<GallerySortOption>(
     DEFAULT_GALLERY_VIEW_STATE.sortOption,
   );
@@ -617,19 +638,40 @@ function GalleryPage() {
    * justru membuang satu-satunya salinan yang tersisa sementara fotonya tetap
    * ada di share.
    */
-  async function deleteCard(card: GalleryCard) {
-    const onShare = card.persistedPath && !card.persistedPath.startsWith("browser-download/");
-    const warning = onShare
-      ? `Hapus "${card.name}"?
+  /** Path berkasnya di share, atau null kalau capture ini tidak pernah ke sana. */
+  function sharePathOf(card: GalleryCard): string | null {
+    const path = card.persistedPath;
+    if (!path || path.startsWith("browser-download/")) return null;
+    return path;
+  }
 
-Berkasnya ikut dibuang dari folder jaringan:
-${card.persistedPath}
+  function askDelete(card: GalleryCard) {
+    setDialogError(null);
+    setPendingDelete(card);
+  }
 
-Tidak ada recycle bin di sana -- penghapusan ini permanen.`
-      : `Hapus "${card.name}"?`;
-    if (!confirm(warning)) return;
+  function askRename(card: GalleryCard) {
+    setDialogError(null);
+    setRenameValue(card.name);
+    setPendingRename(card);
+  }
+
+  /**
+   * Hapus capture: baris registry, JPEG di folder jaringan, thumbnail, dan
+   * salinan di browser ini.
+   *
+   * SERVER DULU, LOKAL BELAKANGAN. Yang memegang berkas sungguhannya adalah
+   * server; kalau ia menolak, salinan lokal tidak boleh ikut hilang -- itu
+   * justru membuang satu-satunya salinan yang tersisa sementara fotonya tetap
+   * ada di share.
+   */
+  async function confirmDelete() {
+    const card = pendingDelete;
+    if (!card) return;
 
     const local = card.local;
+    setDialogBusy(true);
+    setDialogError(null);
     try {
       const captureDelete = await deleteCaptureRecord({
         data: {
@@ -642,7 +684,9 @@ Tidak ada recycle bin di sana -- penghapusan ini permanen.`
       // Record tidak ketemu bukan alasan berhenti: kartu yatim (registry sudah
       // tidak mengenalnya) tetap harus bisa dibersihkan dari browser ini.
       if (!captureDelete.ok && captureDelete.code !== "CAPTURE_RECORD_NOT_FOUND") {
-        alert(`Tidak ada yang dihapus: ${captureDelete.message}`);
+        // Dialognya sengaja dibiarkan terbuka: sebabnya terbaca di tempat
+        // keputusannya diambil, dan tombolnya tinggal ditekan lagi.
+        setDialogError(captureDelete.message);
         return;
       }
 
@@ -666,8 +710,11 @@ Tidak ada recycle bin di sana -- penghapusan ini permanen.`
         next.delete(card.id);
         return next;
       });
+      setPendingDelete(null);
     } catch (error: unknown) {
-      alert(getErrorMessage(error, "Gagal menghapus item"));
+      setDialogError(getErrorMessage(error, "Gagal menghapus item"));
+    } finally {
+      setDialogBusy(false);
     }
   }
 
@@ -678,11 +725,18 @@ Tidak ada recycle bin di sana -- penghapusan ini permanen.`
    * menyebut nama yang tidak ada di share lebih buruk daripada perubahan nama
    * yang gagal dan tinggal diulang.
    */
-  async function renameCard(card: GalleryCard) {
-    const nextName = prompt("Nama file baru (sertakan ekstensi):", card.name);
-    if (!nextName || nextName === card.name) return;
+  async function confirmRename() {
+    const card = pendingRename;
+    if (!card) return;
+    const nextName = renameValue.trim();
+    if (!nextName || nextName === card.name) {
+      setPendingRename(null);
+      return;
+    }
 
     const local = card.local;
+    setDialogBusy(true);
+    setDialogError(null);
     try {
       const captureRename = await renameCaptureRecord({
         data: {
@@ -694,7 +748,7 @@ Tidak ada recycle bin di sana -- penghapusan ini permanen.`
       });
 
       if (!captureRename.ok && captureRename.code !== "CAPTURE_RECORD_NOT_FOUND") {
-        alert(`Nama tidak diubah: ${captureRename.message}`);
+        setDialogError(captureRename.message);
         return;
       }
 
@@ -738,8 +792,11 @@ Tidak ada recycle bin di sana -- penghapusan ini permanen.`
           local: updatedLocal ?? detailItem.local,
         });
       }
+      setPendingRename(null);
     } catch (error: unknown) {
-      alert(getErrorMessage(error, "Gagal mengubah nama file"));
+      setDialogError(getErrorMessage(error, "Gagal mengubah nama file"));
+    } finally {
+      setDialogBusy(false);
     }
   }
 
@@ -2043,11 +2100,11 @@ ${storage.path ?? "—"}`}
                           >
                             {downloadingId === item.id ? "Menyiapkan..." : "Unduh"}
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => void renameCard(item)}>
+                          <DropdownMenuItem onClick={() => askRename(item)}>
                             Ubah nama
                           </DropdownMenuItem>
                           <DropdownMenuItem
-                            onClick={() => void deleteCard(item)}
+                            onClick={() => askDelete(item)}
                             className="text-destructive"
                           >
                             Hapus
@@ -2141,11 +2198,11 @@ ${storage.path ?? "—"}`}
                             >
                               {downloadingId === item.id ? "Menyiapkan..." : "Unduh"}
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => void renameCard(item)}>
+                            <DropdownMenuItem onClick={() => askRename(item)}>
                               Ubah nama
                             </DropdownMenuItem>
                             <DropdownMenuItem
-                              onClick={() => void deleteCard(item)}
+                              onClick={() => askDelete(item)}
                               className="text-destructive"
                             >
                               Hapus
@@ -2297,7 +2354,7 @@ ${storage.path ?? "—"}`}
               <span className="text-xs font-semibold text-muted-foreground">Metadata</span>
               {isAdmin && (
                 <button
-                  onClick={() => void renameCard(detailItem)}
+                  onClick={() => askRename(detailItem)}
                   className="inline-flex items-center gap-1 rounded-md border border-input px-2 py-1 text-[11px] hover:bg-accent disabled:opacity-40"
                   title="Ubah nama berkas, termasuk berkasnya di folder jaringan"
                 >
@@ -2469,7 +2526,7 @@ ${storage.path ?? "—"}`}
             </button>
             {isAdmin && (
               <button
-                onClick={() => void deleteCard(detailItem)}
+                onClick={() => askDelete(detailItem)}
                 className="flex-1 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive hover:bg-destructive/20 disabled:opacity-40"
               >
                 Hapus
@@ -2562,6 +2619,135 @@ ${storage.path ?? "—"}`}
           </div>
         </div>
       )}
+
+      {/* Konfirmasi hapus.
+          Dipisah dari confirm() bawaan browser karena yang dipertaruhkan bukan
+          sekadar baris database: berkasnya dibuang permanen dari share, dan
+          path-nya perlu terbaca utuh sebelum tombolnya ditekan. */}
+      <AlertDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open && !dialogBusy) {
+            setPendingDelete(null);
+            setDialogError(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Hapus capture ini?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3 text-sm">
+                <p className="font-medium text-foreground">{pendingDelete?.name}</p>
+                {pendingDelete && sharePathOf(pendingDelete) ? (
+                  <div className="space-y-1">
+                    <p>Berkasnya ikut dibuang dari folder jaringan:</p>
+                    <code className="block overflow-x-auto rounded-md border bg-muted px-2 py-1.5 text-[11px] leading-relaxed">
+                      {sharePathOf(pendingDelete)}
+                    </code>
+                  </div>
+                ) : (
+                  <p>Capture ini tidak punya berkas di folder jaringan.</p>
+                )}
+                <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-[12px] text-destructive">
+                  Tidak ada recycle bin di folder jaringan. Penghapusan ini permanen.
+                </p>
+                {dialogError && (
+                  <p className="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-[12px] font-medium text-destructive">
+                    {dialogError}
+                  </p>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={dialogBusy}>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={dialogBusy}
+              onClick={(event) => {
+                // Radix menutup dialognya sendiri saat Action ditekan. Di sini
+                // penutupan justru harus menunggu servernya menjawab, supaya
+                // kegagalan masih punya tempat untuk tampil.
+                event.preventDefault();
+                void confirmDelete();
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {dialogBusy ? "Menghapus..." : "Hapus permanen"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Ubah nama. Pakai AlertDialog yang sama supaya kedua aksi berbahaya di
+          galeri terasa satu keluarga, bukan satu modal rapi dan satu prompt()
+          bawaan browser. */}
+      <AlertDialog
+        open={pendingRename !== null}
+        onOpenChange={(open) => {
+          if (!open && !dialogBusy) {
+            setPendingRename(null);
+            setDialogError(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Ubah nama berkas</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3 text-sm">
+                <p>
+                  Nama berkas di folder jaringan ikut berubah, bukan hanya catatannya di registry.
+                </p>
+                {pendingRename && sharePathOf(pendingRename) && (
+                  <code className="block overflow-x-auto rounded-md border bg-muted px-2 py-1.5 text-[11px] leading-relaxed">
+                    {sharePathOf(pendingRename)}
+                  </code>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2">
+            <label htmlFor="rename-input" className="text-xs font-medium text-muted-foreground">
+              Nama baru (sertakan ekstensi)
+            </label>
+            <input
+              id="rename-input"
+              autoFocus
+              value={renameValue}
+              disabled={dialogBusy}
+              onChange={(event) => setRenameValue(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !dialogBusy) {
+                  event.preventDefault();
+                  void confirmRename();
+                }
+              }}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              Tidak boleh memuat / \ : * ? &quot; &lt; &gt; |
+            </p>
+            {dialogError && (
+              <p className="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-[12px] font-medium text-destructive">
+                {dialogError}
+              </p>
+            )}
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={dialogBusy}>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={dialogBusy || renameValue.trim() === ""}
+              onClick={(event) => {
+                event.preventDefault();
+                void confirmRename();
+              }}
+            >
+              {dialogBusy ? "Menyimpan..." : "Simpan nama"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
