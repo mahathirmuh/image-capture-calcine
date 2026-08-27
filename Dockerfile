@@ -33,7 +33,8 @@ ENV HOST=0.0.0.0
 # Run as the image's built-in unprivileged user rather than root.
 COPY --from=build --chown=node:node /app/.output ./.output
 
-# Titik pasang antrean kirim (CAPTURE_SPOOL_DIR di docker-compose.yml).
+# Titik pasang volume aplikasi: antrean kirim (CAPTURE_SPOOL_DIR) dan thumbnail
+# galeri (CAPTURE_THUMBS_DIR), keduanya dari docker-compose.yml.
 #
 # WAJIB ADA DI IMAGE, dan wajib milik `node`. Kalau Docker memasang named
 # volume ke path yang belum ada di image, ia membuat path itu milik root --
@@ -41,9 +42,9 @@ COPY --from=build --chown=node:node /app/.output ./.output
 # dengan EACCES saat menulis entri antrean. Foldernya yang ada di sini
 # menentukan pemilik volume barunya.
 #
-# Kalau CAPTURE_SPOOL_DIR diarahkan ke tempat lain, path di bawah ini harus
-# ikut diubah.
-RUN mkdir -p /var/lib/capture-spool && chown node:node /var/lib/capture-spool
+# Kalau salah satu variabel itu diarahkan ke tempat lain, path di bawah ini
+# harus ikut diubah.
+RUN mkdir -p /var/lib/capture-spool /var/lib/capture-thumbs && chown node:node /var/lib/capture-spool /var/lib/capture-thumbs
 
 USER node
 EXPOSE 3000

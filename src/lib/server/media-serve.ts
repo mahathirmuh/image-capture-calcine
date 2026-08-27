@@ -58,9 +58,16 @@ export async function handleMediaRequest(request: Request): Promise<Response> {
   const url = new URL(request.url);
   if (request.method !== "GET") return plain(405, "Hanya GET.");
 
-  const rawId = url.pathname.slice(MEDIA_PREFIX.length).split("/")[0];
-  const recordId = Number(rawId);
+  const segments = url.pathname.slice(MEDIA_PREFIX.length).split("/");
+  const recordId = Number(segments[0]);
   if (!Number.isInteger(recordId) || recordId < 1) return plain(400, "Id capture tidak sah.");
+
+  // Hanya dua bentuk yang dikenal: /media/:id dan /media/:id/thumb. Apa pun
+  // selain itu ditolak, bukan diperlakukan sebagai foto ukuran penuh.
+  const wantsThumb = segments[1] === "thumb";
+  if (segments.length > 2 || (segments.length === 2 && !wantsThumb)) {
+    return plain(404, "Bentuk URL gambar tidak dikenal.");
+  }
 
   const check = await verifyMediaToken(
     recordId,
@@ -73,6 +80,22 @@ export async function handleMediaRequest(request: Request): Promise<Response> {
     return check.code === "EXPIRED"
       ? plain(410, "URL gambar sudah kedaluwarsa. Muat ulang halamannya.")
       : plain(403, "Tanda tangan URL tidak sah.");
+  }
+
+  // Thumbnail dilayani dari disk app server, jadi tidak menyentuh folder
+  // jaringan sama sekali -- inilah yang membuat grid galeri ringan: ~50 KB dari
+  // disk lokal, bukan ~11 MB lewat CIFS ke 10.1.1.44.
+  if (wantsThumb) {
+    const { readThumbnail } = await import("./thumb-store");
+    const thumb = await readThumbnail(recordId);
+    if (!thumb) return plain(404, "Thumbnail belum ada untuk capture ini.");
+    return new Response(new Uint8Array(thumb.bytes), {
+      headers: {
+        "content-type": "image/jpeg",
+        "content-length": String(thumb.size),
+        "cache-control": "private, max-age=300",
+      },
+    });
   }
 
   const { getServerEnv } = await import("../env");

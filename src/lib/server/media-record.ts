@@ -63,3 +63,47 @@ export async function findCaptureRecordForMedia(id: number): Promise<MediaRecord
       saveMethod !== "browser-folder",
   };
 }
+
+/**
+ * Plant untuk sekumpulan record sekaligus.
+ *
+ * Grid galeri meminta URL untuk 24 thumbnail dalam satu kali jalan, dan setiap
+ * satunya tetap harus lolos pemeriksaan plant. Satu kueri untuk semuanya, bukan
+ * 24 kueri berturut-turut.
+ */
+export async function findRecordPlants(
+  ids: readonly number[],
+): Promise<Map<number, string | null>> {
+  const result = new Map<number, string | null>();
+  if (!isCardDbConfigured() || ids.length === 0) return result;
+
+  const schema = `[${getCardDbSchema()}]`;
+  const pool = await getCardDbPool();
+  const request = pool.request();
+  // Daftar IN dirakit sebagai parameter bernama, bukan angka yang ditempel ke
+  // teks kueri. Id-nya memang sudah divalidasi sebagai bilangan bulat, tapi
+  // merakit SQL dari nilai apa pun adalah kebiasaan yang cepat atau lambat
+  // dipakai untuk nilai yang belum divalidasi.
+  const placeholders = ids.map((id, index) => {
+    request.input(`id${index}`, sql.BigInt, id);
+    return `@id${index}`;
+  });
+
+  const rows = await request.query(`
+    SELECT
+      cr.id,
+      JSON_VALUE(cr.metadata_json, '$.plant') AS meta_plant,
+      l.plant AS location_plant
+    FROM ${schema}.capture_records cr
+    LEFT JOIN ${schema}.locations l ON l.id = cr.location_id
+    WHERE cr.id IN (${placeholders.join(", ")});`);
+
+  for (const row of rows.recordset as Record<string, unknown>[]) {
+    result.set(
+      Number(row.id),
+      (typeof row.meta_plant === "string" ? row.meta_plant : null) ??
+        (typeof row.location_plant === "string" ? row.location_plant : null),
+    );
+  }
+  return result;
+}

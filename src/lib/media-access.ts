@@ -72,3 +72,105 @@ export const createCaptureMediaUrl = createServerFn({ method: "POST" })
     const token = await createMediaToken(data.recordId);
     return { ok: true, url: buildMediaPath(data.recordId, token), expiresAt: token.expiresAt };
   });
+
+const saveThumbSchema = z.object({
+  recordId: z.number().int().positive(),
+  /** JPEG ter-base64, tanpa awalan data URL. */
+  base64: z.string().min(1).max(2_000_000),
+});
+
+export type SaveThumbResult = { ok: true } | { ok: false; code: string; message: string };
+
+/**
+ * Titipkan thumbnail yang dibuat browser operator.
+ *
+ * Tidak ada pemeriksaan plant di sini, dan itu disengaja: yang mengirim adalah
+ * orang yang BARU SAJA melakukan capture itu, dan record-nya baru dibuat atas
+ * namanya beberapa milidetik sebelumnya. Yang dijaga justru ukurannya -- lihat
+ * MAX_THUMBNAIL_BYTES -- supaya endpoint ini tidak bisa dipakai menitipkan
+ * berkas besar ke disk app server.
+ */
+export const saveCaptureThumbnail = createServerFn({ method: "POST" })
+  .validator(saveThumbSchema)
+  .handler(async ({ data }): Promise<SaveThumbResult> => {
+    const { getAppSession, isSessionConfigured } = await import("./server/session");
+    if (!isSessionConfigured()) {
+      return { ok: false, code: "SESSION_NOT_CONFIGURED", message: "Sesi login belum aktif." };
+    }
+    try {
+      if ((await getAppSession()).data.user?.id === undefined) {
+        return { ok: false, code: "UNAUTHENTICATED", message: "Sesi login tidak terbaca." };
+      }
+    } catch {
+      return { ok: false, code: "UNAUTHENTICATED", message: "Sesi login tidak terbaca." };
+    }
+
+    const { saveThumbnail } = await import("./server/thumb-store");
+    return saveThumbnail(data.recordId, Buffer.from(data.base64, "base64"));
+  });
+
+const thumbUrlsSchema = z.object({
+  // Sebesar satu halaman grid dengan kelonggaran. Batas ini yang menahan satu
+  // permintaan menanyakan seluruh tabel sekaligus.
+  recordIds: z.array(z.number().int().positive()).max(200),
+});
+
+export type ThumbUrlsResult =
+  | { ok: true; urls: Record<number, string> }
+  | { ok: false; code: string; message: string };
+
+/**
+ * URL bertanda tangan untuk sekumpulan thumbnail, satu kali jalan.
+ *
+ * Grid memuat 24 kartu sekaligus; meminta URL satu per satu berarti 24
+ * perjalanan bolak-balik sebelum gambar pertama muncul.
+ *
+ * Yang TIDAK punya thumbnail sengaja tidak muncul di hasil, bukan dikembalikan
+ * sebagai URL yang nanti menghasilkan 404: kartunya lalu bisa menampilkan
+ * placeholder yang benar, bukan gambar rusak.
+ */
+export const createCaptureThumbUrls = createServerFn({ method: "POST" })
+  .validator(thumbUrlsSchema)
+  .handler(async ({ data }): Promise<ThumbUrlsResult> => {
+    if (data.recordIds.length === 0) return { ok: true, urls: {} };
+
+    const { getAppSession, isSessionConfigured } = await import("./server/session");
+    if (!isSessionConfigured()) {
+      return { ok: false, code: "SESSION_NOT_CONFIGURED", message: "Sesi login belum aktif." };
+    }
+    try {
+      if ((await getAppSession()).data.user?.id === undefined) {
+        return { ok: false, code: "UNAUTHENTICATED", message: "Sesi login tidak terbaca." };
+      }
+    } catch {
+      return { ok: false, code: "UNAUTHENTICATED", message: "Sesi login tidak terbaca." };
+    }
+
+    const [
+      { getOperatorPlant },
+      { findRecordPlants },
+      thumbs,
+      { buildThumbPath, createMediaToken },
+    ] = await Promise.all([
+      import("./operator-plant"),
+      import("./server/media-record"),
+      import("./server/thumb-store"),
+      import("./server/media-token"),
+    ]);
+
+    if (!thumbs.isThumbStoreConfigured()) return { ok: true, urls: {} };
+
+    const operator = await getOperatorPlant();
+    const plants = await findRecordPlants(data.recordIds);
+
+    const urls: Record<number, string> = {};
+    for (const recordId of data.recordIds) {
+      const plant = plants.get(recordId);
+      // Record yang tidak dikenal registry tidak diberi URL sama sekali.
+      if (plant === undefined) continue;
+      if (operator.locked && operator.plant && plant && plant !== operator.plant) continue;
+      if (!(await thumbs.thumbnailExists(recordId))) continue;
+      urls[recordId] = buildThumbPath(recordId, await createMediaToken(recordId));
+    }
+    return { ok: true, urls };
+  });

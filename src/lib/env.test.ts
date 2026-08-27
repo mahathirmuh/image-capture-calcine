@@ -79,6 +79,7 @@ describe("parseServerEnv", () => {
       // dir-nya opsional, dan batas ukurannya punya nilai bawaan.
       CAPTURE_SPOOL_DIR: undefined,
       CAPTURE_SPOOL_MAX_MB: 2048,
+      CAPTURE_THUMBS_DIR: undefined,
       // Tidak disebut di masukan, jadi REST API /api/v1 tetap mati -- itu
       // bawaannya, dan disengaja: API yang menyala karena variabelnya lupa
       // diisi adalah kegagalan yang tidak terlihat.

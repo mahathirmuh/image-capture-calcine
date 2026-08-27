@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import { type GalleryItem, loadGallery, saveGallery, removeGalleryItem } from "@/lib/gallery-store";
 import { getDeviceStatus, type DeviceStatus } from "@/lib/camera-api";
-import { createCaptureMediaUrl } from "@/lib/media-access";
+import { createCaptureMediaUrl, createCaptureThumbUrls } from "@/lib/media-access";
 import { toBinLabel, toBinSlot, type BinSlot } from "@/lib/locations";
 import { getOperatorPlant, type OperatorPlant } from "@/lib/operator-plant";
 import {
@@ -194,9 +194,23 @@ type GalleryCard = {
  * ada di PC ini" dan "capture-nya gagal" dua hal yang sangat berbeda, dan
  * operator perlu bisa membedakannya sekilas.
  */
-function CardThumb({ card, className }: { card: GalleryCard; className?: string }) {
+function CardThumb({
+  card,
+  thumbUrl,
+  className,
+}: {
+  card: GalleryCard;
+  thumbUrl?: string;
+  className?: string;
+}) {
+  // Urutannya menaik dari yang paling murah: blob lokal tidak menyentuh
+  // jaringan sama sekali, thumbnail ~50 KB dari disk app server, dan foto
+  // ukuran penuh (~11 MB lewat CIFS) tidak pernah dipakai di grid.
   if (card.local) {
     return <img src={card.local.url} alt={card.name} className={className} />;
+  }
+  if (thumbUrl) {
+    return <img src={thumbUrl} alt={card.name} className={className} loading="lazy" />;
   }
   return (
     <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-muted px-2 text-center text-muted-foreground">
@@ -336,6 +350,10 @@ function GalleryPage() {
   // Umurnya lima menit, jadi disimpan per sesi buka halaman saja -- tidak perlu
   // dan tidak boleh diawetkan.
   const [remoteImageUrls, setRemoteImageUrls] = useState<Record<number, string>>({});
+  // URL thumbnail per record. Diminta sekali untuk seluruh halaman grid, bukan
+  // satu-satu: 24 kartu berarti 24 perjalanan bolak-balik sebelum gambar
+  // pertama muncul.
+  const [thumbUrls, setThumbUrls] = useState<Record<number, string>>({});
   const [remoteImageError, setRemoteImageError] = useState<string | null>(null);
   const [remoteImageLoading, setRemoteImageLoading] = useState(false);
   const [detailDimensions, setDetailDimensions] = useState<{
@@ -489,42 +507,36 @@ function GalleryPage() {
     };
   }, [detailItem]);
 
-  // Ambil URL bertanda tangan begitu kartu tanpa salinan lokal dibuka.
+  // Foto ukuran penuh DIAMBIL HANYA KALAU DIMINTA.
   //
-  // Sengaja hanya di panel detail, bukan di grid: berkasnya foto penuh ~11 MB,
-  // dan memuat 24 sekaligus untuk satu halaman grid akan menarik ratusan MB
-  // hanya untuk dilihat sekilas. Satu per satu, saat memang dibuka.
-  useEffect(() => {
+  // Dulu ini otomatis begitu kartunya dibuka, dan itu berarti ~11 MB lewat CIFS
+  // ke 10.1.1.44 setiap kali seseorang menyusuri galeri dengan panah kiri/kanan.
+  // Thumbnail sudah cukup untuk hampir semua keperluan; ukuran penuh baru perlu
+  // saat ada yang benar-benar ingin memeriksa detail piksel.
+  const loadFullImage = useCallback(async () => {
     const recordId = detailItem?.captureRecordId ?? null;
-    if (!detailItem || detailItem.local || recordId === null) {
-      setRemoteImageError(null);
-      setRemoteImageLoading(false);
-      return;
-    }
-    if (remoteImageUrls[recordId]) return;
-
-    let cancelled = false;
+    if (recordId === null || remoteImageUrls[recordId]) return;
     setRemoteImageError(null);
     setRemoteImageLoading(true);
-    createCaptureMediaUrl({ data: { recordId } })
-      .then((result) => {
-        if (cancelled) return;
-        if (!result.ok) {
-          setRemoteImageError(result.message);
-          return;
-        }
-        setRemoteImageUrls((urls) => ({ ...urls, [recordId]: result.url }));
-      })
-      .catch(() => {
-        if (!cancelled) setRemoteImageError("Gagal meminta gambar dari app server.");
-      })
-      .finally(() => {
-        if (!cancelled) setRemoteImageLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
+    try {
+      const result = await createCaptureMediaUrl({ data: { recordId } });
+      if (!result.ok) {
+        setRemoteImageError(result.message);
+        return;
+      }
+      setRemoteImageUrls((urls) => ({ ...urls, [recordId]: result.url }));
+    } catch {
+      setRemoteImageError("Gagal meminta gambar dari app server.");
+    } finally {
+      setRemoteImageLoading(false);
+    }
   }, [detailItem, remoteImageUrls]);
+
+  // Pesan error milik kartu sebelumnya tidak boleh menempel di kartu berikutnya.
+  useEffect(() => {
+    setRemoteImageError(null);
+    setRemoteImageLoading(false);
+  }, [detailItem]);
 
   async function persist(items: GalleryItem[]) {
     setGallery(items);
@@ -835,6 +847,34 @@ function GalleryPage() {
   const pageStart = (clampedPage - 1) * pageSize;
   const pageItems = filteredGallery.slice(pageStart, pageStart + pageSize);
 
+  // Satu permintaan untuk seluruh halaman yang sedang tampil.
+  //
+  // Yang sudah punya blob lokal dilewati -- gambarnya sudah ada di browser ini
+  // dan tidak perlu apa pun dari server. Yang sudah punya URL juga dilewati:
+  // token-nya berumur lima menit, dan meminta ulang setiap kali daftar berubah
+  // akan menghasilkan permintaan tanpa henti saat orang mengetik di pencarian.
+  useEffect(() => {
+    const wanted = pageItems
+      .filter((card) => !card.local && card.captureRecordId != null)
+      .map((card) => card.captureRecordId as number)
+      .filter((id) => !thumbUrls[id]);
+    if (wanted.length === 0) return;
+
+    let cancelled = false;
+    createCaptureThumbUrls({ data: { recordIds: wanted } })
+      .then((result) => {
+        if (cancelled || !result.ok) return;
+        setThumbUrls((urls) => ({ ...urls, ...result.urls }));
+      })
+      .catch(() => {
+        // Thumbnail cuma pemercepat. Gagalnya berarti kartu memakai
+        // placeholder, bukan galeri yang rusak.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [pageItems, thumbUrls]);
+
   // Navigasi maju-mundur di panel detail.
   //
   // Dicari lewat id, bukan menyimpan indeks di state: daftar bisa berubah di
@@ -963,11 +1003,16 @@ function GalleryPage() {
   // Sumber gambar panel detail: blob lokal kalau ada, kalau tidak URL
   // bertanda tangan yang sudah diambil dari app server. `null` berarti belum
   // ada -- entah sedang diminta, entah gagal, dan panelnya membedakan keduanya.
-  const detailImageUrl =
+  const detailRecordId = detailItem?.captureRecordId ?? null;
+  const detailFullUrl =
     detailItem?.local?.url ??
-    (detailItem?.captureRecordId != null
-      ? (remoteImageUrls[detailItem.captureRecordId] ?? null)
-      : null);
+    (detailRecordId != null ? (remoteImageUrls[detailRecordId] ?? null) : null);
+  // Thumbnail dipakai selama ukuran penuh belum diminta. 640 px sudah tajam di
+  // panel selebar ini; menariknya ~11 MB hanya untuk ditampilkan sekecil itu
+  // adalah pemborosan yang dulu membuat galeri terasa berat.
+  const detailThumbUrl = detailRecordId != null ? (thumbUrls[detailRecordId] ?? null) : null;
+  const detailImageUrl = detailFullUrl ?? detailThumbUrl;
+  const detailShowsThumbOnly = detailFullUrl === null && detailThumbUrl !== null;
 
   if (!hydrated) {
     return (
@@ -1557,6 +1602,9 @@ ${storage.path ?? "—"}`}
                 >
                   <CardThumb
                     card={item}
+                    thumbUrl={
+                      item.captureRecordId != null ? thumbUrls[item.captureRecordId] : undefined
+                    }
                     className="h-full w-full object-cover transition group-hover:scale-105"
                   />
                 </button>
@@ -1661,7 +1709,15 @@ ${storage.path ?? "—"}`}
                         onClick={() => setDetailItem(item)}
                         className="block h-10 w-10 overflow-hidden rounded bg-muted"
                       >
-                        <CardThumb card={item} className="h-full w-full object-cover" />
+                        <CardThumb
+                          card={item}
+                          thumbUrl={
+                            item.captureRecordId != null
+                              ? thumbUrls[item.captureRecordId]
+                              : undefined
+                          }
+                          className="h-full w-full object-cover"
+                        />
                       </button>
                     </td>
                     <td className="max-w-xs truncate p-2 font-medium">{item.name}</td>
@@ -1812,6 +1868,24 @@ ${storage.path ?? "—"}`}
                 title="Layar penuh"
               >
                 <Maximize2 className="h-3.5 w-3.5" />
+              </button>
+            )}
+            {/* Ukuran penuh selalu bisa dijangkau, tapi selalu atas permintaan.
+                Label menyebut ukurannya supaya orang tahu apa yang ia minta
+                sebelum menunggu. */}
+            {detailShowsThumbOnly && (
+              <button
+                onClick={() => void loadFullImage()}
+                disabled={remoteImageLoading}
+                className="absolute bottom-2 left-2 rounded-md bg-background/85 px-2 py-1 text-[11px] font-medium hover:bg-background disabled:opacity-60"
+              >
+                {remoteImageLoading
+                  ? "Memuat..."
+                  : `Muat ukuran penuh${
+                      detailRecord?.fileSizeBytes
+                        ? ` (${formatBytes(detailRecord.fileSizeBytes)})`
+                        : ""
+                    }`}
               </button>
             )}
             <button

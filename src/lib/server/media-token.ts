@@ -72,10 +72,28 @@ export async function verifyMediaToken(
   return timingSafeEqual(a, b) ? { ok: true } : { ok: false, code: "BAD_SIGNATURE" };
 }
 
-/** Path relatif yang dipakai `<img src>`. */
+function query(token: { expiresAt: number; signature: string }): string {
+  return `e=${token.expiresAt}&s=${encodeURIComponent(token.signature)}`;
+}
+
+/** Path relatif foto ukuran penuh, dipakai `<img src>`. */
 export function buildMediaPath(
   recordId: number,
   token: { expiresAt: number; signature: string },
 ): string {
-  return `/media/${recordId}?e=${token.expiresAt}&s=${encodeURIComponent(token.signature)}`;
+  return `/media/${recordId}?${query(token)}`;
+}
+
+/**
+ * Path relatif thumbnail.
+ *
+ * Tanda tangannya SAMA dengan foto ukuran penuh, dan itu tidak melonggarkan
+ * apa pun: keduanya gambar yang sama, hanya berbeda ukuran. Menandatanganinya
+ * terpisah hanya akan menggandakan token tanpa menambah satu pun batasan.
+ */
+export function buildThumbPath(
+  recordId: number,
+  token: { expiresAt: number; signature: string },
+): string {
+  return `/media/${recordId}/thumb?${query(token)}`;
 }

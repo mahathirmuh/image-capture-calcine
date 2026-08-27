@@ -1421,6 +1421,16 @@ export const deleteCaptureRecord = createServerFn({ method: "POST" })
         WHERE id = @recordId;
       `);
 
+      // Thumbnail-nya ikut dibuang. Tanpa ini, berkas kecil itu menumpuk di
+      // volume app server untuk record yang sudah tidak ada -- tidak ada lagi
+      // yang menyebutnya, jadi tidak ada lagi yang akan membersihkannya.
+      //
+      // Kegagalannya sengaja tidak membatalkan penghapusan: record-nya sudah
+      // hilang, dan thumbnail yatim jauh lebih ringan akibatnya daripada
+      // penghapusan yang dilaporkan gagal padahal sudah terjadi.
+      const { deleteThumbnail } = await import("./server/thumb-store");
+      await deleteThumbnail(recordId).catch(() => {});
+
       return {
         ok: true as const,
         recordId,

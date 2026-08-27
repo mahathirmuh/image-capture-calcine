@@ -25,6 +25,8 @@ import {
 import { addGalleryItem } from "@/lib/gallery-store";
 import { triggerCapture, triggerAutofocus, pollJob, getMediaContent } from "@/lib/camera-api";
 import { saveMediaToNetwork } from "@/lib/network-save";
+import { saveCaptureThumbnail } from "@/lib/media-access";
+import { blobToBase64, createThumbnailBlob } from "@/lib/thumbnail";
 import {
   logDeviceEvent,
   recordCaptureResult,
@@ -850,6 +852,28 @@ function CapturePage() {
             ? `${prev}. Metadata capture belum tercatat ke DB (${captureRecord.message}).`
             : `Metadata capture belum tercatat ke DB (${captureRecord.message}).`,
         );
+      }
+
+      // Thumbnail untuk grid galeri, dibuat DI SINI karena di sinilah fotonya
+      // sedang dipegang di memori. Turun dari ~11 MB ke ~50 KB, dan itulah yang
+      // membuat galeri bisa menampilkan gambar dari PC mana pun tanpa menarik
+      // foto ukuran penuh lewat CIFS untuk setiap kartu.
+      //
+      // Sepenuhnya tidak mengikat: kegagalannya tidak menyentuh status capture
+      // sama sekali. Fotonya sudah tersimpan di folder jaringan, dan galeri
+      // tanpa thumbnail hanya berarti kartunya memakai placeholder.
+      if (captureRecord.ok) {
+        void (async () => {
+          try {
+            const thumb = await createThumbnailBlob(previewItem.blob);
+            if (!thumb) return;
+            await saveCaptureThumbnail({
+              data: { recordId: captureRecord.recordId, base64: await blobToBase64(thumb) },
+            });
+          } catch {
+            // Sengaja diam: lihat alasan di atas.
+          }
+        })();
       }
 
       const item = {

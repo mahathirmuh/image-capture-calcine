@@ -43,6 +43,10 @@ services:
       # yang memang membutuhkannya. Nilai bawaan di sini akan berarti setiap
       # deployment menyalakan API dengan kunci yang sama dan sudah publik.
       API_KEYS: ${API_KEYS:-}
+      # Thumbnail galeri. Dibuat di browser operator saat capture (~50 KB),
+      # disimpan di sini, lalu dilayani ke grid galeri sebagai ganti foto
+      # ukuran penuh yang ~11 MB. Kosongkan untuk mematikan fiturnya.
+      CAPTURE_THUMBS_DIR: ${CAPTURE_THUMBS_DIR:-/var/lib/capture-thumbs}
     # Reads CAMERA_API_URL/CAMERA_API_TOKEN/NETWORK_SAVE_ROOT from a local .env
     # if present, otherwise the defaults above apply.
     env_file:
@@ -85,8 +89,16 @@ services:
       # Antrean kirim. Named volume, bukan bind: isinya murni milik aplikasi
       # dan tidak perlu dibaca dari host, tapi harus selamat dari rebuild.
       - capture-spool:/var/lib/capture-spool
+      # Thumbnail. Volume sendiri, bukan menumpang capture-spool: antrean kirim
+      # kosong begitu semuanya terkirim, sementara thumbnail harus bertahan
+      # selama record-nya masih ada.
+      - capture-thumbs:/var/lib/capture-thumbs
 
 volumes:
+  # Aman dibuang: galeri hanya jatuh ke memuat foto ukuran penuh dari folder
+  # jaringan -- jauh lebih berat, tapi tidak ada data yang hilang. Foto aslinya
+  # selalu ada di share, tidak pernah hanya di sini.
+  capture-thumbs:
   # Dikelola Docker. `docker compose down` biasa TIDAK menghapusnya; hanya
   # `down -v` yang melakukannya -- dan itu berarti membuang foto yang belum
   # terkirim, jadi jangan dipakai selama antreannya belum kosong.
