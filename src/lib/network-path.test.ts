@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { isWindowsStyleRoot, joinNetworkPath, normalizeRelativeSegments } from "./network-path";
+import {
+  isSafeFileName,
+  isWindowsStyleRoot,
+  joinNetworkPath,
+  normalizeRelativeSegments,
+} from "./network-path";
 
 // Root UNC ditulis lewat konstanta supaya deretan backslash-nya hanya perlu
 // dibaca benar sekali, bukan di setiap ekspektasi.
@@ -102,5 +107,46 @@ describe("joinNetworkPath", () => {
 
   it("mengembalikan root apa adanya kalau tidak ada segmen", () => {
     expect(joinNetworkPath(POSIX_ROOT, [])).toBe(POSIX_ROOT);
+  });
+});
+
+// Nama ini dipakai untuk mengubah nama berkas SUNGGUHAN di folder jaringan,
+// jadi yang diuji di sini bukan kerapian teks melainkan penjaga traversal.
+describe("isSafeFileName", () => {
+  it("menerima nama baku sesi capture", () => {
+    expect(isSafeFileName("02.00 Train 1.jpg")).toBe(true);
+    expect(isSafeFileName("23.00 Bin 2.jpg")).toBe(true);
+    // Spasi di ujung dirapikan, bukan jadi alasan menolak.
+    expect(isSafeFileName("  11.00 Train 1.jpg  ")).toBe(true);
+  });
+
+  it("menolak pemisah path supaya berkas tidak pindah folder", () => {
+    expect(isSafeFileName("sub/foto.jpg")).toBe(false);
+    expect(isSafeFileName("sub\\foto.jpg")).toBe(false);
+    expect(isSafeFileName("/mnt/mti/foto.jpg")).toBe(false);
+  });
+
+  it("menolak traversal ke atas", () => {
+    expect(isSafeFileName("..")).toBe(false);
+    expect(isSafeFileName(".")).toBe(false);
+    expect(isSafeFileName("../../etc/passwd")).toBe(false);
+  });
+
+  it("menolak nama kosong", () => {
+    expect(isSafeFileName("")).toBe(false);
+    expect(isSafeFileName("   ")).toBe(false);
+  });
+
+  it("menolak karakter terlarang Windows dan karakter kontrol", () => {
+    expect(isSafeFileName('foto".jpg')).toBe(false);
+    expect(isSafeFileName("foto:1.jpg")).toBe(false);
+    expect(isSafeFileName("foto*.jpg")).toBe(false);
+    expect(isSafeFileName("foto?.jpg")).toBe(false);
+    expect(isSafeFileName("foto|.jpg")).toBe(false);
+    // Ditulis sebagai escape, bukan byte mentah: karakter kontrol yang
+    // diketik langsung ke berkas sumber tidak terlihat saat dibaca dan
+    // membuat git memperlakukan berkasnya sebagai biner.
+    expect(isSafeFileName("foto\u0000.jpg")).toBe(false);
+    expect(isSafeFileName("foto\u001f.jpg")).toBe(false);
   });
 });

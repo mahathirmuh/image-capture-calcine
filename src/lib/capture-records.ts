@@ -3,6 +3,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
 import { getCardDbPool, getCardDbSchema, isCardDbConfigured } from "./carddb";
+import { isSafeFileName } from "./network-path";
 
 // "app-network" adalah jalur utama sekarang: app server menarik byte dari edge
 // lalu menulis sendiri ke share. "edge-network" ditahan supaya record lama --
@@ -71,7 +72,14 @@ export const listCaptureRecordsSchema = z
 const renameCaptureRecordSchema = z.object({
   recordId: z.number().int().positive().nullable().optional(),
   currentFileName: z.string().trim().min(1, "Nama file saat ini wajib diisi"),
-  nextFileName: z.string().trim().min(1, "Nama file baru wajib diisi"),
+  nextFileName: z
+    .string()
+    .trim()
+    .min(1, "Nama file baru wajib diisi")
+    // Nama ini sekarang dipakai untuk mengubah nama berkas SUNGGUHAN di folder
+    // jaringan, jadi ia tidak lagi sekadar teks di database. Pemisah path di
+    // dalamnya akan memindahkan berkas keluar dari foldernya.
+    .refine(isSafeFileName, 'Nama file tidak boleh memuat / \\ : * ? " < > |'),
   capturedAt: z.number().int().positive(),
 });
 
@@ -1361,6 +1369,19 @@ export const renameCaptureRecord = createServerFn({ method: "POST" })
         data.nextFileName,
       );
 
+      // Berkasnya dulu, registry belakangan -- alasannya sama seperti pada
+      // hapus: registry yang menunjuk nama yang tidak ada di share lebih buruk
+      // daripada perubahan nama yang gagal dan bisa diulang.
+      const { renameShareFile } = await import("./server/share-file");
+      const moved = await renameShareFile(currentFilePath, nextFilePath);
+      if (!moved.ok) {
+        return {
+          ok: false as const,
+          code: moved.code,
+          message: `Nama tidak diubah karena berkasnya gagal dipindah: ${moved.message}`,
+        };
+      }
+
       await pool
         .request()
         .input("recordId", sql.BigInt, recordId)
@@ -1413,6 +1434,31 @@ export const deleteCaptureRecord = createServerFn({ method: "POST" })
           ok: false as const,
           code: "CAPTURE_RECORD_NOT_FOUND",
           message: "Record capture yang cocok tidak ditemukan di MSSQL.",
+        };
+      }
+
+      // Path-nya dibaca SEBELUM barisnya dihapus -- setelah DELETE tidak ada
+      // lagi yang tahu berkas mana yang dimaksud, dan JPEG-nya akan tinggal di
+      // share selamanya tanpa apa pun yang menyebutnya.
+      const existing = await pool.request().input("recordId", sql.BigInt, recordId).query(`
+        SELECT TOP 1 file_path
+        FROM ${schema}.capture_records
+        WHERE id = @recordId;
+      `);
+      const existingFilePath =
+        typeof existing.recordset[0]?.file_path === "string" ? existing.recordset[0].file_path : "";
+
+      // Berkas lebih dulu, baris registry belakangan. Kalau share-nya sedang
+      // tidak bisa ditulis, penghapusannya BATAL seluruhnya: record yang sudah
+      // hilang duluan akan meninggalkan berkas yatim yang tidak bisa ditemukan
+      // siapa pun lagi. Sebaliknya, gagal yang dilaporkan masih bisa diulang.
+      const { deleteShareFile } = await import("./server/share-file");
+      const removed = await deleteShareFile(existingFilePath);
+      if (!removed.ok) {
+        return {
+          ok: false as const,
+          code: removed.code,
+          message: `Record tidak dihapus karena berkasnya gagal dibuang: ${removed.message}`,
         };
       }
 

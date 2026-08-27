@@ -48,6 +48,26 @@ export function normalizeRelativeSegments(relativePath: string): string[] | null
   return segments;
 }
 
+/**
+ * Nama berkas yang aman dipakai sebagai SATU segmen.
+ *
+ * Dipakai saat mengubah nama capture: nama barunya datang dari `prompt()` di
+ * browser dan sekarang benar-benar mengubah nama berkas di folder jaringan,
+ * jadi pemisah path di dalamnya akan memindahkan berkas keluar dari foldernya.
+ *
+ * Sengaja menumpang `normalizeRelativeSegments` alih-alih menyusun daftar
+ * karakter terlarang kedua: dua daftar yang berdiri sendiri pasti akan
+ * menyimpang, dan yang lebih longgar di antaranya yang akan menentukan.
+ *
+ * Spasi dan titik justru wajib lolos -- nama bakunya "02.00 Train 1.jpg".
+ */
+export function isSafeFileName(name: string): boolean {
+  if (typeof name !== "string") return false;
+  const trimmed = name.trim();
+  const segments = normalizeRelativeSegments(trimmed);
+  return segments !== null && segments.length === 1 && segments[0] === trimmed;
+}
+
 /** Sambung `targetRoot` dengan segmen memakai separator yang cocok dengan root. */
 export function joinNetworkPath(targetRoot: string, segments: string[]): string {
   const separator = isWindowsStyleRoot(targetRoot) ? "\\" : "/";

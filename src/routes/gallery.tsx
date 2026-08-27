@@ -608,90 +608,135 @@ function GalleryPage() {
     await saveGallery(items);
   }
 
-  async function deleteItem(item: GalleryItem) {
-    if (!confirm(`Delete "${item.name}"?`)) return;
+  /**
+   * Hapus capture: baris registry, JPEG di folder jaringan, thumbnail, dan
+   * salinan di browser ini.
+   *
+   * SERVER DULU, LOKAL BELAKANGAN. Yang memegang berkas sungguhannya adalah
+   * server; kalau ia menolak, salinan lokal tidak boleh ikut hilang -- itu
+   * justru membuang satu-satunya salinan yang tersisa sementara fotonya tetap
+   * ada di share.
+   */
+  async function deleteCard(card: GalleryCard) {
+    const onShare = card.persistedPath && !card.persistedPath.startsWith("browser-download/");
+    const warning = onShare
+      ? `Hapus "${card.name}"?
+
+Berkasnya ikut dibuang dari folder jaringan:
+${card.persistedPath}
+
+Tidak ada recycle bin di sana -- penghapusan ini permanen.`
+      : `Hapus "${card.name}"?`;
+    if (!confirm(warning)) return;
+
+    const local = card.local;
     try {
-      if (item.parentDir && item.fileHandle) {
-        await item.parentDir.removeEntry(item.name);
-      }
       const captureDelete = await deleteCaptureRecord({
         data: {
-          recordId: item.captureRecordId ?? null,
-          fileName: item.name,
-          capturedAt: item.createdAt,
+          recordId: card.captureRecordId ?? null,
+          fileName: card.name,
+          capturedAt: card.createdAt,
         },
       });
-      URL.revokeObjectURL(item.url);
-      const next = gallery.filter((x) => x.id !== item.id);
-      await persist(next);
-      await removeGalleryItem(item.id);
+
+      // Record tidak ketemu bukan alasan berhenti: kartu yatim (registry sudah
+      // tidak mengenalnya) tetap harus bisa dibersihkan dari browser ini.
+      if (!captureDelete.ok && captureDelete.code !== "CAPTURE_RECORD_NOT_FOUND") {
+        alert(`Tidak ada yang dihapus: ${captureDelete.message}`);
+        return;
+      }
+
       if (captureDelete.ok) {
         setCaptureRecords((prev) => prev.filter((record) => record.id !== captureDelete.recordId));
       }
-      if (detailItem?.id === item.id) setDetailItem(null);
+
+      if (local) {
+        if (local.parentDir && local.fileHandle) {
+          await local.parentDir.removeEntry(local.name).catch(() => {});
+        }
+        URL.revokeObjectURL(local.url);
+        await persist(gallery.filter((x) => x.id !== local.id));
+        await removeGalleryItem(local.id);
+      }
+
+      if (detailItem?.id === card.id) setDetailItem(null);
       setSelectedIds((prev) => {
-        if (!prev.has(item.id)) return prev;
+        if (!prev.has(card.id)) return prev;
         const next = new Set(prev);
-        next.delete(item.id);
+        next.delete(card.id);
         return next;
       });
-      if (!captureDelete.ok && captureDelete.code !== "CAPTURE_RECORD_NOT_FOUND") {
-        alert(`Item lokal terhapus, tetapi sinkron DB gagal: ${captureDelete.message}`);
-      }
     } catch (error: unknown) {
       alert(getErrorMessage(error, "Gagal menghapus item"));
     }
   }
 
-  async function renameItem(item: GalleryItem) {
-    const suggested = item.name;
-    const nextName = prompt("New filename (include extension):", suggested);
-    if (!nextName || nextName === item.name) return;
+  /**
+   * Ubah nama capture, termasuk nama berkasnya di folder jaringan.
+   *
+   * Urutannya sama seperti hapus dan karena alasan yang sama: registry yang
+   * menyebut nama yang tidak ada di share lebih buruk daripada perubahan nama
+   * yang gagal dan tinggal diulang.
+   */
+  async function renameCard(card: GalleryCard) {
+    const nextName = prompt("Nama file baru (sertakan ekstensi):", card.name);
+    if (!nextName || nextName === card.name) return;
+
+    const local = card.local;
     try {
-      let updated: GalleryItem = { ...item, name: nextName };
-      if (item.parentDir && item.fileHandle) {
-        const newHandle = await item.parentDir.getFileHandle(nextName, { create: true });
-        const writable = await newHandle.createWritable();
-        await writable.write(item.blob);
-        await writable.close();
-        await item.parentDir.removeEntry(item.name);
-        updated = { ...updated, fileHandle: newHandle };
-      }
       const captureRename = await renameCaptureRecord({
         data: {
-          recordId: item.captureRecordId ?? null,
-          currentFileName: item.name,
+          recordId: card.captureRecordId ?? null,
+          currentFileName: card.name,
           nextFileName: nextName,
-          capturedAt: item.createdAt,
+          capturedAt: card.createdAt,
         },
       });
-      if (captureRename.ok) {
-        updated = {
-          ...updated,
-          captureRecordId: captureRename.recordId,
-          persistedPath: captureRename.nextFilePath,
-        };
+
+      if (!captureRename.ok && captureRename.code !== "CAPTURE_RECORD_NOT_FOUND") {
+        alert(`Nama tidak diubah: ${captureRename.message}`);
+        return;
       }
-      const next = gallery.map((x) => (x.id === item.id ? updated : x));
-      await persist(next);
+
       if (captureRename.ok) {
         setCaptureRecords((prev) =>
           prev.map((record) =>
             record.id === captureRename.recordId
-              ? {
-                  ...record,
-                  fileName: nextName,
-                  filePath: captureRename.nextFilePath,
-                }
+              ? { ...record, fileName: nextName, filePath: captureRename.nextFilePath }
               : record,
           ),
         );
       }
-      if (detailItem?.id === item.id) {
-        setDetailItem({ ...detailItem, name: updated.name, local: updated });
+
+      let updatedLocal: GalleryItem | null = null;
+      if (local) {
+        updatedLocal = { ...local, name: nextName };
+        if (local.parentDir && local.fileHandle) {
+          const newHandle = await local.parentDir.getFileHandle(nextName, { create: true });
+          const writable = await newHandle.createWritable();
+          await writable.write(local.blob);
+          await writable.close();
+          await local.parentDir.removeEntry(local.name);
+          updatedLocal = { ...updatedLocal, fileHandle: newHandle };
+        }
+        if (captureRename.ok) {
+          updatedLocal = {
+            ...updatedLocal,
+            captureRecordId: captureRename.recordId,
+            persistedPath: captureRename.nextFilePath,
+          };
+        }
+        const settled = updatedLocal;
+        await persist(gallery.map((x) => (x.id === local.id ? settled : x)));
       }
-      if (!captureRename.ok && captureRename.code !== "CAPTURE_RECORD_NOT_FOUND") {
-        alert(`Nama file lokal berubah, tetapi sinkron DB gagal: ${captureRename.message}`);
+
+      if (detailItem?.id === card.id) {
+        setDetailItem({
+          ...detailItem,
+          name: nextName,
+          persistedPath: captureRename.ok ? captureRename.nextFilePath : detailItem.persistedPath,
+          local: updatedLocal ?? detailItem.local,
+        });
       }
     } catch (error: unknown) {
       alert(getErrorMessage(error, "Gagal mengubah nama file"));
@@ -1998,15 +2043,11 @@ ${storage.path ?? "—"}`}
                           >
                             {downloadingId === item.id ? "Menyiapkan..." : "Unduh"}
                           </DropdownMenuItem>
-                          <DropdownMenuItem
-                            disabled={!item.local}
-                            onClick={() => item.local && renameItem(item.local)}
-                          >
+                          <DropdownMenuItem onClick={() => void renameCard(item)}>
                             Ubah nama
                           </DropdownMenuItem>
                           <DropdownMenuItem
-                            disabled={!item.local}
-                            onClick={() => item.local && deleteItem(item.local)}
+                            onClick={() => void deleteCard(item)}
                             className="text-destructive"
                           >
                             Hapus
@@ -2100,15 +2141,11 @@ ${storage.path ?? "—"}`}
                             >
                               {downloadingId === item.id ? "Menyiapkan..." : "Unduh"}
                             </DropdownMenuItem>
-                            <DropdownMenuItem
-                              disabled={!item.local}
-                              onClick={() => item.local && renameItem(item.local)}
-                            >
+                            <DropdownMenuItem onClick={() => void renameCard(item)}>
                               Ubah nama
                             </DropdownMenuItem>
                             <DropdownMenuItem
-                              disabled={!item.local}
-                              onClick={() => item.local && deleteItem(item.local)}
+                              onClick={() => void deleteCard(item)}
                               className="text-destructive"
                             >
                               Hapus
@@ -2260,14 +2297,9 @@ ${storage.path ?? "—"}`}
               <span className="text-xs font-semibold text-muted-foreground">Metadata</span>
               {isAdmin && (
                 <button
-                  disabled={!detailItem.local}
-                  onClick={() => detailItem.local && renameItem(detailItem.local)}
+                  onClick={() => void renameCard(detailItem)}
                   className="inline-flex items-center gap-1 rounded-md border border-input px-2 py-1 text-[11px] hover:bg-accent disabled:opacity-40"
-                  title={
-                    detailItem.local
-                      ? "Ubah nama berkas"
-                      : "Hanya bisa dari PC tempat capture ini dilakukan"
-                  }
+                  title="Ubah nama berkas, termasuk berkasnya di folder jaringan"
                 >
                   <Pencil className="h-3 w-3" /> Edit
                 </button>
@@ -2437,8 +2469,7 @@ ${storage.path ?? "—"}`}
             </button>
             {isAdmin && (
               <button
-                disabled={!detailItem.local}
-                onClick={() => detailItem.local && deleteItem(detailItem.local)}
+                onClick={() => void deleteCard(detailItem)}
                 className="flex-1 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive hover:bg-destructive/20 disabled:opacity-40"
               >
                 Hapus
