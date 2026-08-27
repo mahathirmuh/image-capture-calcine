@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildCaptureRecordMetadata,
+  isLocalOnlySave,
   normalizeCaptureBinLabel,
   replaceFileNameInPath,
   toCaptureRecordStatus,
@@ -110,5 +111,32 @@ describe("capture-records helpers", () => {
         "capture-new.jpg",
       ),
     ).toBe("browser-download/capture-new.jpg");
+  });
+});
+
+describe("isLocalOnlySave", () => {
+  // Yang disembunyikan dari galeri: foto yang hanya ada di PC operator.
+  it("menandai jalur cadangan browser sebagai lokal saja", () => {
+    expect(isLocalOnlySave("browser-download")).toBe(true);
+    expect(isLocalOnlySave("browser-folder")).toBe(true);
+  });
+
+  it("tidak menandai foto yang sudah di folder jaringan", () => {
+    expect(isLocalOnlySave("app-network")).toBe(false);
+    expect(isLocalOnlySave("edge-network")).toBe(false);
+  });
+
+  // Menyembunyikan `spooled` akan mengosongkan galeri justru selama gangguan
+  // jaringan -- saat orang paling ingin memastikan fotonya terambil. Berkasnya
+  // sudah aman di app server dan akan menyusul sendiri.
+  it("tidak menyembunyikan foto yang masih mengantre", () => {
+    expect(isLocalOnlySave("spooled")).toBe(false);
+  });
+
+  // Tidak diketahui != tidak tersimpan. Record lama dari sebelum medan ini
+  // dicatat tidak boleh lenyap dari galeri.
+  it("memperlakukan metode yang tidak diketahui sebagai bukan lokal saja", () => {
+    expect(isLocalOnlySave(null)).toBe(false);
+    expect(isLocalOnlySave(undefined)).toBe(false);
   });
 });

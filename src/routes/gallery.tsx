@@ -28,6 +28,7 @@ import { toBinLabel, toBinSlot, type BinSlot } from "@/lib/locations";
 import { getOperatorPlant, type OperatorPlant } from "@/lib/operator-plant";
 import {
   deleteCaptureRecord,
+  isLocalOnlySave,
   listCaptureRecords,
   renameCaptureRecord,
   type CaptureRecordView,
@@ -578,7 +579,19 @@ function GalleryPage() {
     ),
   ).sort();
 
-  const sortedGallery = [...gallery].sort((a, b) => {
+  // Galeri hanya memajang foto yang sampai (atau sedang dalam perjalanan) ke
+  // folder jaringan. Hasil jalur cadangan -- unduhan browser atau folder
+  // pilihan operator -- tidak ditampilkan: ia hanya ada di satu PC, jadi
+  // memajangnya di sini memberi kesan foto itu sudah tersimpan bersama yang
+  // lain, padahal tidak.
+  //
+  // Yang disembunyikan TIDAK dibuang: barisnya tetap ada di tabel Riwayat
+  // Registry DB di atas, lengkap dengan statusnya, supaya foto yang perlu
+  // dipindahkan manual tidak hilang dari pandangan.
+  const networkGallery = gallery.filter((item) => !isLocalOnlySave(item.saveMethod));
+  const localOnlyCount = gallery.length - networkGallery.length;
+
+  const sortedGallery = [...networkGallery].sort((a, b) => {
     switch (sortOption) {
       case "name-asc":
         return a.name.localeCompare(b.name);
@@ -807,7 +820,7 @@ function GalleryPage() {
             icon={Search}
             label="Hasil Tersaring"
             value={filteredGallery.length}
-            hint={`${gallery.length} total image tersimpan lokal`}
+            hint={`${networkGallery.length} image di folder jaringan`}
           />
           <OverviewCard
             icon={CheckSquare}
@@ -1282,7 +1295,18 @@ ${storage.path ?? "—"}`}
           </div>
         </div>
 
-        {gallery.length === 0 ? (
+        {/* Foto yang disembunyikan tetap diumumkan jumlahnya. Menyembunyikan
+            tanpa memberi tahu akan membuat operator mengira capture-nya tidak
+            pernah terjadi -- padahal justru foto inilah yang perlu tindakan. */}
+        {localOnlyCount > 0 && (
+          <div className="mb-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-800">
+            {localOnlyCount} foto tidak ditampilkan karena belum masuk folder jaringan — hanya ada
+            di folder Unduhan PC ini. Detailnya ada di tabel Riwayat Registry DB di atas, bertanda{" "}
+            <span className="font-medium">Browser download</span>.
+          </div>
+        )}
+
+        {networkGallery.length === 0 ? (
           <div className="rounded-md border border-dashed py-10 text-center text-sm text-muted-foreground">
             <p>Hasil capture tersimpan akan muncul di sini.</p>
             <div className="mt-3 flex flex-wrap justify-center gap-2">

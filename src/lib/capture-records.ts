@@ -261,6 +261,23 @@ export function toCaptureRecordStatus(saveMethod: CaptureSaveMethod) {
 }
 
 /**
+ * Foto yang hanya ada di PC operator dan tidak pernah sampai ke folder
+ * jaringan -- hasil jalur cadangan ketika app server tidak bisa menyimpan.
+ *
+ * `spooled` SENGAJA tidak masuk hitungan ini: berkasnya sudah aman di app
+ * server dan akan menyusul sendiri begitu share terjangkau. Menyembunyikannya
+ * akan membuat galeri terlihat kosong justru selama gangguan jaringan, saat
+ * orang paling ingin memastikan fotonya terambil.
+ *
+ * `null`/`undefined` juga tidak dihitung: itu berarti TIDAK DIKETAHUI, bukan
+ * tidak tersimpan. Record lama dari sebelum medan ini dicatat tidak boleh
+ * lenyap dari galeri hanya karena kita tidak bisa menilainya.
+ */
+export function isLocalOnlySave(saveMethod: CaptureSaveMethod | null | undefined): boolean {
+  return saveMethod === "browser-download" || saveMethod === "browser-folder";
+}
+
+/**
  * Siapa yang menekan Capture. SENGAJA bukan bagian dari RecordCaptureInput:
  * nilainya dibaca server dari cookie sesi, bukan dikirim browser. Kalau ia ikut
  * skema masukan, siapa pun yang bisa memanggil serverFn ini boleh mengaku
