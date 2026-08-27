@@ -51,9 +51,20 @@ const recordCaptureSchema = z.object({
 
 export type RecordCaptureInput = z.infer<typeof recordCaptureSchema>;
 
-const listCaptureRecordsSchema = z
+/**
+ * Batas atas jumlah record yang boleh ditarik sekali jalan.
+ *
+ * DIEKSPOR supaya pemanggilnya memakai angka yang sama persis. Sebelumnya
+ * batas ini hanya hidup di dalam skema, dan halaman Gallery meminta 1000 ke
+ * skema yang menolak di atas 500 -- validator menolak sebelum menyentuh
+ * database, promise-nya tidak punya .catch, dan galerinya kosong tanpa satu
+ * pun pesan. Satu konstanta bersama menutup jalan itu.
+ */
+export const CAPTURE_RECORDS_MAX_LIMIT = 1000;
+
+export const listCaptureRecordsSchema = z
   .object({
-    limit: z.number().int().positive().max(500).default(200),
+    limit: z.number().int().positive().max(CAPTURE_RECORDS_MAX_LIMIT).default(200),
   })
   .optional();
 

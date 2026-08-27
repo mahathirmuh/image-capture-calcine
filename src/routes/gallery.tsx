@@ -30,6 +30,7 @@ import { createCaptureMediaUrl } from "@/lib/media-access";
 import { toBinLabel, toBinSlot, type BinSlot } from "@/lib/locations";
 import { getOperatorPlant, type OperatorPlant } from "@/lib/operator-plant";
 import {
+  CAPTURE_RECORDS_MAX_LIMIT,
   deleteCaptureRecord,
   isLocalOnlySave,
   listCaptureRecords,
@@ -60,8 +61,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-/** Sejauh mana galeri dan tabel riwayat bisa ditelusuri dari halaman ini. */
-const RECORD_FETCH_LIMIT = 1000;
+/**
+ * Sejauh mana galeri dan tabel riwayat bisa ditelusuri dari halaman ini.
+ *
+ * Diambil dari batas milik serverFn-nya, bukan ditulis ulang: angka yang
+ * dijemput dari sana tidak bisa lagi melampaui apa yang divalidasinya.
+ */
+const RECORD_FETCH_LIMIT = CAPTURE_RECORDS_MAX_LIMIT;
 
 export const Route = createFileRoute("/gallery")({
   component: GalleryPage,
@@ -401,16 +407,28 @@ function GalleryPage() {
     // jadi batasnya menentukan seberapa jauh ke belakang keduanya bisa dilihat.
     // Untuk riwayat yang lebih dalam, pakai /api/v1/captures yang berpaginasi
     // di SQL -- menarik seluruh tabel ke browser bukan jalan keluarnya.
-    listCaptureRecords({ data: { limit: RECORD_FETCH_LIMIT } }).then((result) => {
-      if (cancelled) return;
-      if (!result.ok) {
-        setCaptureRecordsError(result.message);
+    listCaptureRecords({ data: { limit: RECORD_FETCH_LIMIT } })
+      .then((result) => {
+        if (cancelled) return;
+        if (!result.ok) {
+          setCaptureRecordsError(result.message);
+          setCaptureRecords([]);
+          return;
+        }
+        setCaptureRecordsError(null);
+        setCaptureRecords(result.records);
+      })
+      // Kegagalan yang DILEMPAR -- validator menolak, jaringan putus, serverFn
+      // error -- tidak pernah sampai ke cabang `!result.ok` di atas. Tanpa ini
+      // galeri hanya diam dan kosong, dan kekosongan itu terbaca seperti
+      // "memang belum ada capture".
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setCaptureRecordsError(
+          error instanceof Error ? error.message : "Permintaan ke registry gagal.",
+        );
         setCaptureRecords([]);
-        return;
-      }
-      setCaptureRecordsError(null);
-      setCaptureRecords(result.records);
-    });
+      });
     getDeviceStatus().then((result) => {
       if (cancelled) return;
       setDeviceStatus(result);

@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildCaptureRecordMetadata,
+  CAPTURE_RECORDS_MAX_LIMIT,
   isLocalOnlySave,
+  listCaptureRecordsSchema,
   normalizeCaptureBinLabel,
   replaceFileNameInPath,
   toCaptureRecordStatus,
@@ -138,5 +140,29 @@ describe("isLocalOnlySave", () => {
   it("memperlakukan metode yang tidak diketahui sebagai bukan lokal saja", () => {
     expect(isLocalOnlySave(null)).toBe(false);
     expect(isLocalOnlySave(undefined)).toBe(false);
+  });
+});
+
+describe("batas limit listCaptureRecords", () => {
+  // Invarian yang pernah patah dan mengosongkan seluruh halaman Gallery di
+  // produksi: halaman meminta 1000 ke validator yang menolak di atas 500.
+  // Validator menolak SEBELUM menyentuh database, promise-nya tidak punya
+  // .catch, dan kegagalannya tidak meninggalkan jejak apa pun di layar.
+  //
+  // Keduanya sekarang memakai satu konstanta, dan tes ini yang menjaganya
+  // tetap begitu.
+  it("menerima limit sebesar batas yang diumumkannya sendiri", () => {
+    const parsed = listCaptureRecordsSchema.safeParse({ limit: CAPTURE_RECORDS_MAX_LIMIT });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("menolak di atas batas", () => {
+    const parsed = listCaptureRecordsSchema.safeParse({ limit: CAPTURE_RECORDS_MAX_LIMIT + 1 });
+    expect(parsed.success).toBe(false);
+  });
+
+  it("memakai 200 kalau tidak disebut", () => {
+    const parsed = listCaptureRecordsSchema.safeParse({});
+    expect(parsed.success && parsed.data?.limit).toBe(200);
   });
 });
