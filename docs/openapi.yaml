@@ -1,0 +1,571 @@
+# Kontrak REST API Capture Calcine.
+#
+# Ini menggambarkan permukaan MESIN-KE-MESIN di /api/v1 -- bukan halaman
+# aplikasi, yang berkomunikasi lewat serverFn TanStack Start dan tidak punya
+# kontrak HTTP yang stabil untuk didokumentasikan.
+#
+# Implementasinya ada di src/lib/server/api-rest.ts dan dipasang di
+# src/server.ts. Berkas ini dan modul itu harus berubah bersama-sama; kalau
+# salah satunya tertinggal, yang berbohong adalah berkas ini.
+openapi: 3.0.3
+
+info:
+  title: Capture Calcine API
+  version: "1.0.0"
+  description: |
+    API baca-saja untuk data foto sampling calcine.
+
+    **Baca-saja tanpa kecuali.** Tidak ada endpoint yang menulis ke registry,
+    ke antrean kirim, maupun ke folder jaringan. Kunci API yang bocor tidak
+    bisa dipakai menghapus capture atau mengubah berkas.
+
+    ## Otentikasi
+
+    Setiap permintaan wajib membawa header `X-API-Key`. Kuncinya diambil dari
+    variabel environment `API_KEYS` di app server (dipisah koma kalau lebih
+    dari satu).
+
+    Kalau `API_KEYS` kosong, **seluruh API mati** dan setiap permintaan dijawab
+    `503 API_DISABLED`. Itu disengaja: API yang menyala diam-diam karena
+    variabelnya lupa diisi adalah kegagalan yang tidak terlihat sampai ada
+    yang menemukannya.
+
+    Beri satu kunci per konsumen. Kunci bersama tidak bisa dicabut tanpa
+    memutus semua yang lain sekaligus.
+
+    ## Waktu dan tanggal
+
+    Dua pengertian waktu hidup berdampingan di sini, dan membedakannya penting:
+
+    - `capturedAt` adalah **waktu sebenarnya** tombol Capture ditekan,
+      dikembalikan sebagai ISO 8601 UTC.
+    - `captureSession` adalah **sesi jadwal** yang dituju (`"02.00"` ...
+      `"23.00"`), dan tanggal sesinya bisa berbeda dari tanggal `capturedAt`:
+      sesi 23.00 sering dikerjakan setelah tengah malam, dan tetap milik hari
+      sebelumnya.
+
+    Endpoint `/sessions` mengelompokkan menurut **tanggal sesi**. Filter
+    `from`/`to` di `/captures` menyaring menurut **`capturedAt`**.
+  contact:
+    name: Merdeka Group -- MTI Data Analytics
+
+servers:
+  - url: http://10.60.10.59:26101/api/v1
+    description: Produksi (app server plant)
+  - url: http://localhost:8080/api/v1
+    description: Pengembangan lokal (vite dev)
+
+security:
+  - ApiKeyAuth: []
+
+tags:
+  - name: Monitoring
+    description: Kesehatan app server, folder jaringan, dan antrean kirim.
+  - name: Captures
+    description: Riwayat foto sampling dari registry MSSQL.
+  - name: Reference
+    description: Taksonomi plant, slot, dan jadwal sesi.
+
+paths:
+  /health:
+    get:
+      tags: [Monitoring]
+      operationId: getHealth
+      summary: Kesehatan app server
+      description: |
+        Memeriksa tiga hal yang menentukan apakah foto bisa tersimpan:
+        folder jaringan, antrean kirim, dan registry MSSQL.
+
+        **Status kamera sengaja tidak ikut.** Canon EOS R50 tidur sendiri saat
+        menganggur -- itu perilaku normal, bukan gangguan -- jadi
+        memasukkannya akan membuat endpoint ini hampir selalu `degraded` dan
+        sinyalnya berhenti dibaca orang.
+
+        Pemeriksaan folder jaringan memakai `stat` + cek hak akses, **bukan**
+        tulis-hapus seperti tombol probe di halaman Storage: monitoring
+        memanggil ini tiap menit, dan menulis berkas percobaan sesering itu ke
+        share produksi menambah beban tanpa menambah kepastian.
+
+        Cocok dipakai sebagai check Zabbix/Nagios/uptime: `200` sehat,
+        `503` ada yang bermasalah.
+      responses:
+        "200":
+          description: Semua pemeriksaan lolos.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+        "503":
+          description: |
+            Ada pemeriksaan yang gagal (`status: "degraded"`), atau API belum
+            diaktifkan (`API_DISABLED`).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/Health"
+                  - $ref: "#/components/schemas/Error"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /plants:
+    get:
+      tags: [Reference]
+      operationId: listPlants
+      summary: Daftar plant, slot, dan jadwal sesi
+      description: |
+        Taksonomi tetap yang dipakai seluruh aplikasi. Berguna untuk konsumen
+        yang membangun tampilan sendiri dan tidak mau menuliskan ulang nama
+        plant atau jam sesi.
+
+        Perhatikan sebutan slot berbeda per plant: Acid Plant menyebutnya
+        **TRAIN**, plant lain menyebutnya **BIN**. Itu istilah lapangan
+        masing-masing, bukan sinonim yang boleh dipertukarkan.
+      responses:
+        "200":
+          description: Taksonomi plant dan sesi.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PlantsResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /captures:
+    get:
+      tags: [Captures]
+      operationId: listCaptures
+      summary: Riwayat capture, terbaru dulu
+      description: |
+        Diurutkan `capturedAt` menurun. Penyaringan dan paginasi dilakukan di
+        SQL Server, jadi `pagination.total` menghitung seluruh baris yang cocok
+        dengan filter, bukan hanya yang ada di halaman ini.
+      parameters:
+        - name: plant
+          in: query
+          description: Nama plant persis, mis. `Acid Plant`.
+          schema: { $ref: "#/components/schemas/PlantName" }
+        - name: session
+          in: query
+          description: Label sesi persis, mis. `14.00`.
+          schema: { $ref: "#/components/schemas/SessionLabel" }
+        - name: status
+          in: query
+          description: |
+            Status simpan. `pending` berarti berkasnya masih di antrean app
+            server dan **belum** sampai di folder jaringan.
+          schema: { $ref: "#/components/schemas/CaptureStatus" }
+        - name: from
+          in: query
+          description: |
+            Batas bawah `capturedAt`, **inklusif**. Terima `YYYY-MM-DD` atau
+            ISO 8601 penuh. Tanggal telanjang dibaca sebagai hari **UTC**;
+            kirim ISO berikut offset (`2026-08-27T00:00:00+08:00`) kalau yang
+            dimaksud hari waktu setempat.
+          schema: { type: string, example: "2026-08-27" }
+        - name: to
+          in: query
+          description: |
+            Batas atas `capturedAt`, **eksklusif**. Tanggal telanjang digeser
+            ke awal hari berikutnya, jadi `from=X&to=X` berarti sepanjang hari
+            X.
+          schema: { type: string, example: "2026-08-27" }
+        - name: limit
+          in: query
+          description: Jumlah baris per halaman. Dibatasi maksimum 500.
+          schema: { type: integer, minimum: 1, maximum: 500, default: 50 }
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0, default: 0 }
+      responses:
+        "200":
+          description: Satu halaman record capture.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CapturesPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/DatabaseUnavailable" }
+
+  /captures/{id}:
+    get:
+      tags: [Captures]
+      operationId: getCapture
+      summary: Satu record capture
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+      responses:
+        "200":
+          description: Record capture.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CaptureRecord" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: Tidak ada record dengan id itu.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503": { $ref: "#/components/responses/DatabaseUnavailable" }
+
+  /sessions:
+    get:
+      tags: [Captures]
+      operationId: getSessionCoverage
+      summary: Cakupan 8 sesi x 2 slot untuk satu tanggal
+      description: |
+        Menjawab pertanyaan yang sebenarnya dipakai orang: **sampling sesi mana
+        yang terlewat hari ini?**
+
+        Dikelompokkan menurut **tanggal sesi**, bukan tanggal jam dinding.
+        Tanggal sesi dibaca dari segmen `YYYY/MM/DD` pada path berkas, yang
+        ditulis saat berkas dinamai dan karenanya tidak membawa zona waktu
+        apa pun. Untuk record lama yang path-nya tidak memuat tanggal, tanggal
+        sesi dihitung dari `capturedAt` dengan memilih hari yang membuat sesi
+        itu paling dekat dengan waktu capture -- itu yang menempatkan capture
+        pukul 00.30 pada sesi 23.00 hari sebelumnya.
+
+        Kalau satu slot punya beberapa percobaan capture, yang dikembalikan
+        **yang terbaru**: capture ulang menimpa berkas di share, jadi tulisan
+        terakhirlah yang menggambarkan berkas yang benar-benar ada di sana.
+      parameters:
+        - name: date
+          in: query
+          description: Tanggal sesi `YYYY-MM-DD`. Bawaan hari ini menurut jam app server.
+          schema: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$', example: "2026-08-27" }
+        - name: plant
+          in: query
+          description: Batasi ke satu plant. Bawaan semua plant.
+          schema: { $ref: "#/components/schemas/PlantName" }
+      responses:
+        "200":
+          description: Cakupan sesi.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionCoverage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/DatabaseUnavailable" }
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: |
+        Kunci statis dari `API_KEYS` di environment app server.
+
+        Sengaja bukan `Authorization: Bearer`: skema Bearer menyiratkan token
+        berumur pendek yang bisa disegarkan, sementara ini kunci statis yang
+        dicabut dengan mengeluarkannya dari `API_KEYS`.
+
+  responses:
+    BadRequest:
+      description: Parameter tidak sah.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: |
+        Header `X-API-Key` tidak ada atau tidak dikenali.
+      headers:
+        WWW-Authenticate:
+          schema: { type: string }
+          example: 'ApiKey header="x-api-key"'
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    DatabaseUnavailable:
+      description: Registry MSSQL belum dikonfigurasi di app server.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: |
+                Kode stabil untuk dicocokkan program. Pesannya boleh berubah,
+                kodenya tidak.
+              enum:
+                - API_DISABLED
+                - INVALID_API_KEY
+                - INVALID_PARAM
+                - NOT_FOUND
+                - METHOD_NOT_ALLOWED
+                - CARDDB_NOT_CONFIGURED
+                - INTERNAL_ERROR
+            message:
+              type: string
+              description: |
+                Penjelasan untuk manusia, berbahasa Indonesia. Detail teknis
+                kegagalan internal sengaja TIDAK disertakan di sini -- pesan
+                MSSQL memuat nama server dan potongan query, dan itu hanya
+                masuk ke log app server.
+      example:
+        error:
+          code: INVALID_PARAM
+          message: "limit harus bilangan bulat >= 1"
+
+    PlantName:
+      type: string
+      enum:
+        - Acid Plant
+        - Chloride Plant
+        - Pyrite Plant
+        - Copper Cathode Plant
+
+    SessionLabel:
+      type: string
+      description: Delapan sesi per hari, berjarak tetap tiga jam.
+      enum: ["02.00", "05.00", "08.00", "11.00", "14.00", "17.00", "20.00", "23.00"]
+
+    CaptureStatus:
+      type: string
+      enum: [saved, pending, downloaded]
+      description: |
+        - `saved` -- berkasnya sudah ada di folder jaringan.
+        - `pending` -- masih di antrean app server, belum sampai di share.
+        - `downloaded` -- diunduh lewat browser operator, tidak lewat share.
+
+    SaveMethod:
+      type: string
+      nullable: true
+      enum: [app-network, spooled, edge-network, browser-folder, browser-download]
+      description: |
+        Jalur yang dipakai menyimpan berkas.
+
+        - `app-network` -- ditulis app server ke folder jaringan. Jalur normal.
+        - `spooled` -- masih menunggu di antrean app server.
+        - `edge-network` -- ditulis oleh edge API (skema lama, sebelum
+          penyimpanan dipindahkan ke app server).
+        - `browser-folder` / `browser-download` -- cadangan lewat browser
+          operator ketika app server tidak bisa menyimpan sama sekali.
+
+        `null` untuk record lama yang metadatanya belum memuat medan ini.
+
+    CaptureRecord:
+      type: object
+      required: [id, fileName, filePath, capturedAt, status, createdAt]
+      properties:
+        id: { type: integer, format: int64 }
+        deviceCode: { type: string, nullable: true, example: EDGE-CAMERA-01 }
+        deviceName: { type: string, nullable: true }
+        plant: { allOf: [{ $ref: "#/components/schemas/PlantName" }], nullable: true }
+        captureBin:
+          type: string
+          nullable: true
+          description: Label slot sebagaimana disimpan, mis. `TRAIN 1` atau `BIN 2`.
+          example: TRAIN 1
+        captureSession:
+          allOf: [{ $ref: "#/components/schemas/SessionLabel" }]
+          nullable: true
+          description: |
+            `null` untuk record dari sebelum skema sesi dipakai -- bukan
+            kelalaian, dan halaman Gallery pun menampilkannya sebagai "—".
+        capturedBy:
+          type: string
+          nullable: true
+          description: |
+            Nama operator yang menekan Capture. Dibaca server dari cookie
+            sesi, tidak pernah dari payload klien, jadi tidak bisa dipalsukan.
+            `null` untuk record dari sebelum atribusi dipasang.
+        station: { type: string, nullable: true }
+        fileName: { type: string, example: "14.00 Train 1.jpg" }
+        filePath:
+          type: string
+          description: |
+            Path tujuan di folder jaringan. Untuk record `pending`, ini masih
+            path yang DITUJU -- berkasnya sendiri belum ada di sana.
+          example: /mnt/mti/ML/MTI/Calcine Project/Calcine Sample Foto/Foto Sampling/Acid Plant/2026/08/27/14.00 Train 1.jpg
+        capturedAt:
+          type: string
+          format: date-time
+          description: Waktu sebenarnya tombol Capture ditekan, UTC.
+        status: { $ref: "#/components/schemas/CaptureStatus" }
+        fileSizeBytes: { type: integer, format: int64, nullable: true }
+        checksumSha256: { type: string, nullable: true }
+        saveMethod: { $ref: "#/components/schemas/SaveMethod" }
+        assetId: { type: string, nullable: true, description: Id media di edge API. }
+        createdAt:
+          type: string
+          format: date-time
+          description: Kapan barisnya masuk registry. Bisa lebih lambat dari `capturedAt`.
+
+    Pagination:
+      type: object
+      required: [limit, offset, total, hasMore]
+      properties:
+        limit: { type: integer }
+        offset: { type: integer }
+        total:
+          type: integer
+          description: Seluruh baris yang cocok dengan filter, bukan hanya halaman ini.
+        hasMore: { type: boolean }
+
+    CapturesPage:
+      type: object
+      required: [items, pagination]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/CaptureRecord" }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+
+    Health:
+      type: object
+      required: [status, checkedAt, checks]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+          description: "`degraded` kalau ada satu saja pemeriksaan yang gagal."
+        checkedAt: { type: string, format: date-time }
+        checks:
+          type: object
+          required: [networkShare, spool, database]
+          properties:
+            networkShare:
+              type: object
+              description: Folder jaringan tujuan akhir (`NETWORK_SAVE_ROOT`).
+              properties:
+                ok: { type: boolean }
+                configured: { type: boolean }
+                targetRoot: { type: string, nullable: true }
+                code:
+                  type: string
+                  nullable: true
+                  description: |
+                    `null` saat sehat. `NOT_CONFIGURED`, `NOT_DIRECTORY`,
+                    `TIMEOUT`, atau kode errno seperti `ENOENT` / `EACCES`.
+                message: { type: string }
+            spool:
+              type: object
+              description: |
+                Antrean kirim di app server. **Antrean yang berisi bukan
+                kegagalan** -- itu justru rancangannya bekerja. Yang membuat
+                `ok: false` adalah kapasitas hampir habis (>90%), sebab di
+                titik itu capture berikutnya akan ditolak.
+              properties:
+                ok: { type: boolean }
+                configured: { type: boolean }
+                pending: { type: integer, description: Jumlah foto yang menunggu. }
+                bytes: { type: integer, format: int64 }
+                capBytes: { type: integer, format: int64 }
+                usedPercent: { type: integer }
+                oldestQueuedAt:
+                  type: string
+                  format: date-time
+                  nullable: true
+                  description: |
+                    Sejak kapan foto tertua menunggu. Nilai yang terus menua
+                    berarti folder jaringan sudah lama tidak terjangkau.
+            database:
+              type: object
+              description: Registry MSSQL (`capture_records`).
+              properties:
+                ok: { type: boolean }
+                configured: { type: boolean }
+                code: { type: string, nullable: true }
+                message: { type: string }
+      example:
+        status: degraded
+        checkedAt: "2026-08-27T09:12:00.000Z"
+        checks:
+          networkShare:
+            ok: false
+            configured: true
+            targetRoot: /mnt/mti/ML/MTI/Calcine Project/Calcine Sample Foto/Foto Sampling
+            code: ENOENT
+            message: "ENOENT: no such file or directory"
+          spool:
+            ok: true
+            configured: true
+            pending: 6
+            bytes: 31457280
+            capBytes: 2147483648
+            usedPercent: 1
+            oldestQueuedAt: "2026-08-27T06:05:11.000Z"
+          database: { ok: true, configured: true, code: null }
+
+    PlantsResponse:
+      type: object
+      required: [plants, sessions]
+      properties:
+        plants:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { $ref: "#/components/schemas/PlantName" }
+              code: { type: string, description: Kode dua huruf untuk nama berkas., example: AP }
+              slots:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    slot: { type: integer, enum: [1, 2] }
+                    label: { type: string, example: TRAIN 1 }
+                    title:
+                      type: string
+                      description: Bentuk berkapital judul yang dipakai di nama berkas.
+                      example: Train 1
+        sessions:
+          type: array
+          items:
+            type: object
+            properties:
+              hour: { type: integer, example: 14 }
+              label: { $ref: "#/components/schemas/SessionLabel" }
+
+    CoverageSummary:
+      type: object
+      required: [expected, captured, missing]
+      properties:
+        expected: { type: integer, description: 8 sesi x 2 slot per plant. }
+        captured: { type: integer }
+        missing: { type: integer }
+
+    SessionCoverage:
+      type: object
+      required: [date, plants, summary]
+      properties:
+        date: { type: string, example: "2026-08-27" }
+        plants:
+          type: array
+          items:
+            type: object
+            required: [plant, sessions, summary]
+            properties:
+              plant: { $ref: "#/components/schemas/PlantName" }
+              sessions:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    session: { $ref: "#/components/schemas/SessionLabel" }
+                    hour: { type: integer }
+                    slots:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          slot: { type: integer, enum: [1, 2] }
+                          label: { type: string, example: Train 1 }
+                          captured: { type: boolean }
+                          record:
+                            allOf: [{ $ref: "#/components/schemas/CaptureRecord" }]
+                            nullable: true
+              summary: { $ref: "#/components/schemas/CoverageSummary" }
+        summary:
+          allOf: [{ $ref: "#/components/schemas/CoverageSummary" }]
+          description: Jumlah seluruh plant yang diminta.

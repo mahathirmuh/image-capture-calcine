@@ -44,14 +44,48 @@ function isH3SwallowedErrorBody(body: string): boolean {
   }
 }
 
+// REST API mesin-ke-mesin. Dicegat di sini, sebelum TanStack Start, karena
+// konsumennya bukan browser: tidak ada router, SSR, maupun CSRF yang berlaku
+// untuk mereka, dan sebuah 500 di sana tidak boleh menjawab halaman HTML.
+//
+// Pencocokan path ditulis inline supaya modulnya (yang menarik mssql) hanya
+// dimuat ketika ada permintaan API sungguhan.
+const API_PREFIX = "/api/v1";
+
+function isApiPath(pathname: string): boolean {
+  return pathname === API_PREFIX || pathname.startsWith(`${API_PREFIX}/`);
+}
+
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
+      if (isApiPath(new URL(request.url).pathname)) {
+        const { handleApiRequest } = await import("./lib/server/api-rest");
+        return await handleApiRequest(request);
+      }
+
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return await normalizeCatastrophicSsrResponse(response);
     } catch (error) {
       console.error(error);
+      // Konsumen API mendapat JSON, bukan halaman HTML: klien mesin yang
+      // menerima <html> pada kegagalan akan melaporkannya sebagai "respons
+      // tidak bisa diurai", bukan sebagai server yang sedang bermasalah.
+      if (isApiPath(new URL(request.url).pathname)) {
+        return new Response(
+          JSON.stringify({
+            error: { code: "INTERNAL_ERROR", message: "Permintaan gagal diproses di app server." },
+          }),
+          {
+            status: 500,
+            headers: {
+              "content-type": "application/json; charset=utf-8",
+              "cache-control": "no-store",
+            },
+          },
+        );
+      }
       return new Response(renderErrorPage(), {
         status: 500,
         headers: { "content-type": "text/html; charset=utf-8" },

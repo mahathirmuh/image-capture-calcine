@@ -35,6 +35,14 @@ services:
       # Saat terlampaui, capture ditolak dengan pesan jelas -- bukan membuang
       # entri terlama.
       CAPTURE_SPOOL_MAX_MB: ${CAPTURE_SPOOL_MAX_MB:-2048}
+      # Kunci REST API baca-saja di /api/v1 (kontraknya di docs/openapi.yaml),
+      # dipisah koma kalau lebih dari satu.
+      #
+      # SENGAJA TANPA NILAI BAWAAN. Kosong berarti API mati dan setiap
+      # permintaan dijawab 503 -- itu keadaan yang benar sampai ada konsumen
+      # yang memang membutuhkannya. Nilai bawaan di sini akan berarti setiap
+      # deployment menyalakan API dengan kunci yang sama dan sudah publik.
+      API_KEYS: ${API_KEYS:-}
     # Reads CAMERA_API_URL/CAMERA_API_TOKEN/NETWORK_SAVE_ROOT from a local .env
     # if present, otherwise the defaults above apply.
     env_file:

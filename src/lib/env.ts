@@ -25,6 +25,14 @@ const serverEnvSchema = z.object({
     emptyStringToUndefined,
     z.coerce.number().int().positive().default(2048),
   ),
+  // Kunci akses REST API baca-saja di /api/v1, dipisah koma kalau lebih dari
+  // satu. KOSONG BERARTI API MATI (setiap permintaan dijawab 503), bukan
+  // terbuka: sebuah API yang menyala diam-diam karena variabelnya lupa diisi
+  // adalah kegagalan yang tidak terlihat sampai ada yang menemukannya.
+  //
+  // Beri satu kunci per konsumen, jangan dipakai bersama -- kunci bersama tidak
+  // bisa dicabut tanpa memutus semua yang lain sekaligus.
+  API_KEYS: z.preprocess(emptyStringToUndefined, z.string().optional()),
   CARDDB_USER: z.preprocess(emptyStringToUndefined, z.string().optional()),
   CARDDB_PASSWORD: z.preprocess(emptyStringToUndefined, z.string().optional()),
   CARDDB_SERVER: z.preprocess(emptyStringToUndefined, z.string().optional()),

@@ -332,7 +332,11 @@ function parseCaptureRecordMetadata(raw: unknown): {
   };
 }
 
-function mapCaptureRecordRow(row: Record<string, unknown>): CaptureRecordView {
+// Diekspor supaya REST API (src/lib/server/api-rest.ts) memetakan baris dengan
+// pemeta yang SAMA seperti halaman Gallery. Menyalin logikanya ke sana akan
+// membuat dua bentuk record yang perlahan berbeda -- persis bug yang pernah
+// menghilangkan `capturedBy` diam-diam di penyimpanan galeri.
+export function mapCaptureRecordRow(row: Record<string, unknown>): CaptureRecordView {
   const metadata = parseCaptureRecordMetadata(row.metadata_json);
   return {
     id: Number(row.id),

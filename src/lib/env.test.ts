@@ -79,6 +79,10 @@ describe("parseServerEnv", () => {
       // dir-nya opsional, dan batas ukurannya punya nilai bawaan.
       CAPTURE_SPOOL_DIR: undefined,
       CAPTURE_SPOOL_MAX_MB: 2048,
+      // Tidak disebut di masukan, jadi REST API /api/v1 tetap mati -- itu
+      // bawaannya, dan disengaja: API yang menyala karena variabelnya lupa
+      // diisi adalah kegagalan yang tidak terlihat.
+      API_KEYS: undefined,
       CARDDB_USER: "capture_app",
       CARDDB_PASSWORD: "db-secret",
       CARDDB_SERVER: "10.60.10.47",
