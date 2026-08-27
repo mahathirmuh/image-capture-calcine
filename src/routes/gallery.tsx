@@ -1927,34 +1927,41 @@ ${storage.path ?? "—"}`}
                     })()}
                   </div>
                   <div className="mt-2 flex justify-end">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <button className="rounded p-1 hover:bg-accent">
-                          <MoreVertical className="h-3.5 w-3.5" />
-                        </button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          disabled={!item.local}
-                          onClick={() => item.local && downloadItem(item.local)}
-                        >
-                          Unduh
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          disabled={!item.local}
-                          onClick={() => item.local && renameItem(item.local)}
-                        >
-                          Ubah nama
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          disabled={!item.local}
-                          onClick={() => item.local && deleteItem(item.local)}
-                          className="text-destructive"
-                        >
-                          Hapus
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    {/* Ubah nama dan Hapus mengubah registry MSSQL, dan itu bukan
+                        wewenang operator. Menyembunyikan seluruh menunya, bukan
+                        menonaktifkan butirnya satu-satu: tombol mati yang tetap
+                        terlihat mengundang orang mencobanya lalu bertanya kenapa
+                        tidak bisa. Unduh tetap terjangkau dari panel detail. */}
+                    {isAdmin && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button className="rounded p-1 hover:bg-accent">
+                            <MoreVertical className="h-3.5 w-3.5" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            disabled={!item.local}
+                            onClick={() => item.local && downloadItem(item.local)}
+                          >
+                            Unduh
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            disabled={!item.local}
+                            onClick={() => item.local && renameItem(item.local)}
+                          >
+                            Ubah nama
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            disabled={!item.local}
+                            onClick={() => item.local && deleteItem(item.local)}
+                            className="text-destructive"
+                          >
+                            Hapus
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
                   </div>
                 </div>
               </div>
@@ -2027,34 +2034,36 @@ ${storage.path ?? "—"}`}
                       <QcBadge />
                     </td>
                     <td className="p-2">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <button className="rounded p-1 hover:bg-accent">
-                            <MoreVertical className="h-3.5 w-3.5" />
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem
-                            disabled={!item.local}
-                            onClick={() => item.local && downloadItem(item.local)}
-                          >
-                            Unduh
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            disabled={!item.local}
-                            onClick={() => item.local && renameItem(item.local)}
-                          >
-                            Ubah nama
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            disabled={!item.local}
-                            onClick={() => item.local && deleteItem(item.local)}
-                            className="text-destructive"
-                          >
-                            Hapus
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                      {isAdmin && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button className="rounded p-1 hover:bg-accent">
+                              <MoreVertical className="h-3.5 w-3.5" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              disabled={!item.local}
+                              onClick={() => item.local && downloadItem(item.local)}
+                            >
+                              Unduh
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              disabled={!item.local}
+                              onClick={() => item.local && renameItem(item.local)}
+                            >
+                              Ubah nama
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              disabled={!item.local}
+                              onClick={() => item.local && deleteItem(item.local)}
+                              className="text-destructive"
+                            >
+                              Hapus
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -2197,18 +2206,20 @@ ${storage.path ?? "—"}`}
           <div className="mb-4">
             <div className="mb-2 flex items-center justify-between">
               <span className="text-xs font-semibold text-muted-foreground">Metadata</span>
-              <button
-                disabled={!detailItem.local}
-                onClick={() => detailItem.local && renameItem(detailItem.local)}
-                className="inline-flex items-center gap-1 rounded-md border border-input px-2 py-1 text-[11px] hover:bg-accent disabled:opacity-40"
-                title={
-                  detailItem.local
-                    ? "Ubah nama berkas"
-                    : "Hanya bisa dari PC tempat capture ini dilakukan"
-                }
-              >
-                <Pencil className="h-3 w-3" /> Edit
-              </button>
+              {isAdmin && (
+                <button
+                  disabled={!detailItem.local}
+                  onClick={() => detailItem.local && renameItem(detailItem.local)}
+                  className="inline-flex items-center gap-1 rounded-md border border-input px-2 py-1 text-[11px] hover:bg-accent disabled:opacity-40"
+                  title={
+                    detailItem.local
+                      ? "Ubah nama berkas"
+                      : "Hanya bisa dari PC tempat capture ini dilakukan"
+                  }
+                >
+                  <Pencil className="h-3 w-3" /> Edit
+                </button>
+              )}
             </div>
             <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs">
               <dt className="text-muted-foreground">Lokasi</dt>
@@ -2368,13 +2379,15 @@ ${storage.path ?? "—"}`}
             >
               {selectedIds.has(detailItem.id) ? "Batalkan pilih" : "Bandingkan"}
             </button>
-            <button
-              disabled={!detailItem.local}
-              onClick={() => detailItem.local && deleteItem(detailItem.local)}
-              className="flex-1 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive hover:bg-destructive/20 disabled:opacity-40"
-            >
-              Hapus
-            </button>
+            {isAdmin && (
+              <button
+                disabled={!detailItem.local}
+                onClick={() => detailItem.local && deleteItem(detailItem.local)}
+                className="flex-1 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive hover:bg-destructive/20 disabled:opacity-40"
+              >
+                Hapus
+              </button>
+            )}
           </div>
         </aside>
       )}
