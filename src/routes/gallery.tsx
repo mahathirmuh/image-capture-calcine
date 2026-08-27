@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   Calendar,
@@ -26,7 +26,12 @@ import {
 } from "lucide-react";
 import { type GalleryItem, loadGallery, saveGallery, removeGalleryItem } from "@/lib/gallery-store";
 import { getDeviceStatus, type DeviceStatus } from "@/lib/camera-api";
-import { createCaptureMediaUrl, createCaptureThumbUrls } from "@/lib/media-access";
+import {
+  createCaptureMediaUrl,
+  createCaptureThumbUrls,
+  saveCaptureThumbnail,
+} from "@/lib/media-access";
+import { blobToBase64, createThumbnailBlob } from "@/lib/thumbnail";
 import { toBinLabel, toBinSlot, type BinSlot } from "@/lib/locations";
 import { getOperatorPlant, type OperatorPlant } from "@/lib/operator-plant";
 import {
@@ -289,12 +294,29 @@ function HistogramChart({ histogram }: { histogram: Histogram }) {
   );
 }
 
-function QcBadge({ className = "" }: { className?: string }) {
+/**
+ * Keadaan simpan sebuah kartu.
+ *
+ * Sebelumnya badge ini selalu bertuliskan "Menunggu" -- sisa tempat untuk fitur
+ * QC yang belum ada. Pada foto yang sudah aman di folder jaringan itu bukan
+ * sekadar tidak berguna, tapi menyesatkan.
+ */
+function QcBadge({
+  saveMethod,
+  className = "",
+}: {
+  saveMethod?: CaptureRecordView["saveMethod"];
+  className?: string;
+}) {
+  const [label, tone] =
+    saveMethod === "app-network" || saveMethod === "edge-network"
+      ? ["Tersimpan", "bg-emerald-500/15 text-emerald-700"]
+      : saveMethod === "spooled"
+        ? ["Menunggu kirim", "bg-amber-500/15 text-amber-700"]
+        : ["Belum diketahui", "bg-muted text-muted-foreground"];
   return (
-    <span
-      className={`rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground ${className}`}
-    >
-      Menunggu
+    <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${tone} ${className}`}>
+      {label}
     </span>
   );
 }
@@ -354,6 +376,14 @@ function GalleryPage() {
   // satu-satu: 24 kartu berarti 24 perjalanan bolak-balik sebelum gambar
   // pertama muncul.
   const [thumbUrls, setThumbUrls] = useState<Record<number, string>>({});
+  // Id yang sudah ditanyakan ke server. Tanpa ini, "tidak ada di thumbUrls"
+  // rancu antara "memang belum punya thumbnail" dan "belum sempat ditanyakan"
+  // -- dan spanduk backfill di bawah akan menghitung yang kedua sebagai yang
+  // pertama.
+  const [thumbChecked, setThumbChecked] = useState<ReadonlySet<number>>(new Set());
+  const [backfilling, setBackfilling] = useState(false);
+  const [backfillDone, setBackfillDone] = useState(0);
+  const backfillStopRef = useRef(false);
   const [remoteImageError, setRemoteImageError] = useState<string | null>(null);
   const [remoteImageLoading, setRemoteImageLoading] = useState(false);
   const [detailDimensions, setDetailDimensions] = useState<{
@@ -525,12 +555,34 @@ function GalleryPage() {
         return;
       }
       setRemoteImageUrls((urls) => ({ ...urls, [recordId]: result.url }));
+
+      // Fotonya sudah ditarik ke browser ini; membuat thumbnail-nya sekarang
+      // praktis gratis, dan menghemat tarikan 11 MB berikutnya untuk siapa pun
+      // yang membuka foto ini setelahnya.
+      if (!thumbUrls[recordId]) {
+        void (async () => {
+          try {
+            const response = await fetch(result.url);
+            if (!response.ok) return;
+            const thumb = await createThumbnailBlob(await response.blob());
+            if (!thumb) return;
+            const saved = await saveCaptureThumbnail({
+              data: { recordId, base64: await blobToBase64(thumb) },
+            });
+            if (!saved.ok) return;
+            const fresh = await createCaptureThumbUrls({ data: { recordIds: [recordId] } });
+            if (fresh.ok) setThumbUrls((urls) => ({ ...urls, ...fresh.urls }));
+          } catch {
+            // Pemercepat saja; gagalnya tidak mengubah apa pun di layar.
+          }
+        })();
+      }
     } catch {
       setRemoteImageError("Gagal meminta gambar dari app server.");
     } finally {
       setRemoteImageLoading(false);
     }
-  }, [detailItem, remoteImageUrls]);
+  }, [detailItem, remoteImageUrls, thumbUrls]);
 
   // Pesan error milik kartu sebelumnya tidak boleh menempel di kartu berikutnya.
   useEffect(() => {
@@ -847,33 +899,105 @@ function GalleryPage() {
   const pageStart = (clampedPage - 1) * pageSize;
   const pageItems = filteredGallery.slice(pageStart, pageStart + pageSize);
 
-  // Satu permintaan untuk seluruh halaman yang sedang tampil.
+  // URL thumbnail untuk SELURUH kartu, bukan hanya halaman yang tampil.
   //
-  // Yang sudah punya blob lokal dilewati -- gambarnya sudah ada di browser ini
-  // dan tidak perlu apa pun dari server. Yang sudah punya URL juga dilewati:
-  // token-nya berumur lima menit, dan meminta ulang setiap kali daftar berubah
-  // akan menghasilkan permintaan tanpa henti saat orang mengetik di pencarian.
+  // Jawabannya cuma peta URL -- ringan -- dan sekali ditanyakan, berpindah
+  // halaman tidak perlu perjalanan baru. Ia juga yang membuat spanduk backfill
+  // di bawah bisa menyebut angka yang benar untuk seluruh galeri, bukan hanya
+  // halaman ini.
+  //
+  // Dipotong 200-an mengikuti batas serverFn-nya.
   useEffect(() => {
-    const wanted = pageItems
+    const wanted = galleryCards
       .filter((card) => !card.local && card.captureRecordId != null)
       .map((card) => card.captureRecordId as number)
-      .filter((id) => !thumbUrls[id]);
+      .filter((id) => !thumbChecked.has(id));
     if (wanted.length === 0) return;
 
     let cancelled = false;
-    createCaptureThumbUrls({ data: { recordIds: wanted } })
-      .then((result) => {
-        if (cancelled || !result.ok) return;
-        setThumbUrls((urls) => ({ ...urls, ...result.urls }));
-      })
-      .catch(() => {
-        // Thumbnail cuma pemercepat. Gagalnya berarti kartu memakai
-        // placeholder, bukan galeri yang rusak.
-      });
+    void (async () => {
+      for (let index = 0; index < wanted.length; index += 200) {
+        const chunk = wanted.slice(index, index + 200);
+        try {
+          const result = await createCaptureThumbUrls({ data: { recordIds: chunk } });
+          if (cancelled) return;
+          if (result.ok) setThumbUrls((urls) => ({ ...urls, ...result.urls }));
+        } catch {
+          // Thumbnail cuma pemercepat. Gagalnya berarti kartu memakai
+          // placeholder, bukan galeri yang rusak.
+        }
+        if (cancelled) return;
+        setThumbChecked((prev) => {
+          const next = new Set(prev);
+          for (const id of chunk) next.add(id);
+          return next;
+        });
+      }
+    })();
     return () => {
       cancelled = true;
     };
-  }, [pageItems, thumbUrls]);
+  }, [galleryCards, thumbChecked]);
+
+  // Kartu yang SUDAH dipastikan tidak punya thumbnail -- record dari sebelum
+  // fitur ini ada. Inilah yang membuat galeri terlihat seperti deretan kotak
+  // kosong sampai dibuatkan.
+  const missingThumbCards = useMemo(
+    () =>
+      galleryCards.filter(
+        (card) =>
+          !card.local &&
+          card.captureRecordId != null &&
+          thumbChecked.has(card.captureRecordId) &&
+          !thumbUrls[card.captureRecordId],
+      ),
+    [galleryCards, thumbChecked, thumbUrls],
+  );
+
+  /**
+   * Buat thumbnail untuk foto lama.
+   *
+   * Fotonya ditarik ukuran penuh sekali, diperkecil di browser ini, lalu
+   * hasilnya dititipkan ke app server -- persis jalur yang dipakai capture
+   * baru, hanya sumbernya folder jaringan alih-alih kamera. Setelah itu foto
+   * itu ringan selamanya, untuk semua orang di semua PC.
+   *
+   * SATU PER SATU, bukan paralel: tiap berkas ~11 MB lewat CIFS, dan
+   * menembakkan 24 sekaligus akan membuat link ke 10.1.1.44 tersendat untuk
+   * semua orang, termasuk capture yang sedang berjalan.
+   */
+  const runThumbnailBackfill = useCallback(async () => {
+    backfillStopRef.current = false;
+    setBackfilling(true);
+    setBackfillDone(0);
+    try {
+      for (const card of missingThumbCards) {
+        if (backfillStopRef.current) break;
+        const recordId = card.captureRecordId;
+        if (recordId == null) continue;
+        try {
+          const signed = await createCaptureMediaUrl({ data: { recordId } });
+          if (!signed.ok) continue;
+          const response = await fetch(signed.url);
+          if (!response.ok) continue;
+          const thumb = await createThumbnailBlob(await response.blob());
+          if (!thumb) continue;
+          const saved = await saveCaptureThumbnail({
+            data: { recordId, base64: await blobToBase64(thumb) },
+          });
+          if (!saved.ok) continue;
+          const fresh = await createCaptureThumbUrls({ data: { recordIds: [recordId] } });
+          if (fresh.ok) setThumbUrls((urls) => ({ ...urls, ...fresh.urls }));
+        } catch {
+          // Satu foto yang gagal tidak menghentikan sisanya -- berkasnya bisa
+          // saja sudah dipindah orang, dan yang lain tetap layak dibuatkan.
+        }
+        setBackfillDone((done) => done + 1);
+      }
+    } finally {
+      setBackfilling(false);
+    }
+  }, [missingThumbCards]);
 
   // Navigasi maju-mundur di panel detail.
   //
@@ -1542,6 +1666,43 @@ ${storage.path ?? "—"}`}
           </div>
         </div>
 
+        {/* Foto lama dari sebelum thumbnail ada. Tanpa spanduk ini, galerinya
+            hanya tampak sebagai deretan kotak kosong tanpa penjelasan dan
+            tanpa jalan keluar. */}
+        {missingThumbCards.length > 0 && (
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-md border bg-card px-3 py-2 text-xs">
+            <div className="text-muted-foreground">
+              {backfilling ? (
+                <>
+                  Membuat thumbnail... <span className="font-medium">{backfillDone}</span> dari{" "}
+                  {missingThumbCards.length}. Tiap foto ditarik ukuran penuh sekali dari folder
+                  jaringan, jadi ini butuh waktu — halaman boleh ditinggal terbuka.
+                </>
+              ) : (
+                <>
+                  <span className="font-medium text-foreground">
+                    {missingThumbCards.length} foto
+                  </span>{" "}
+                  belum punya thumbnail, jadi kartunya tampil kosong. Ini capture dari sebelum
+                  thumbnail dipakai — sekali dibuatkan, ringan selamanya untuk semua PC.
+                </>
+              )}
+            </div>
+            <button
+              onClick={() => {
+                if (backfilling) {
+                  backfillStopRef.current = true;
+                  return;
+                }
+                void runThumbnailBackfill();
+              }}
+              className="shrink-0 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+            >
+              {backfilling ? "Hentikan" : "Buat thumbnail"}
+            </button>
+          </div>
+        )}
+
         {/* Foto yang disembunyikan tetap diumumkan jumlahnya. Menyembunyikan
             tanpa memberi tahu akan membuat operator mengira capture-nya tidak
             pernah terjadi -- padahal justru foto inilah yang perlu tindakan. */}
@@ -1594,7 +1755,7 @@ ${storage.path ?? "—"}`}
                   aria-label={`Pilih ${item.name}`}
                   title={item.local ? "Pilih" : "Perbandingan butuh salinan di browser ini"}
                 />
-                <QcBadge className="absolute right-2 top-2 z-10" />
+                <QcBadge saveMethod={item.saveMethod} className="absolute right-2 top-2 z-10" />
                 <button
                   onClick={() => setDetailItem(item)}
                   className="block aspect-square w-full overflow-hidden bg-muted"
