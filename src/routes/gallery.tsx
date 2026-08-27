@@ -384,6 +384,10 @@ function GalleryPage() {
   const [backfilling, setBackfilling] = useState(false);
   const [backfillDone, setBackfillDone] = useState(0);
   const backfillStopRef = useRef(false);
+  // Sudah pernah dijalankan otomatis pada pembukaan halaman ini. Menahan dua
+  // hal sekaligus: efeknya menyalakan ulang setiap kali daftar menyusut, dan
+  // backfill yang dihentikan orang menyala lagi dengan sendirinya.
+  const backfillAutoStartedRef = useRef(false);
   const [remoteImageError, setRemoteImageError] = useState<string | null>(null);
   const [remoteImageLoading, setRemoteImageLoading] = useState(false);
   const [detailDimensions, setDetailDimensions] = useState<{
@@ -392,6 +396,8 @@ function GalleryPage() {
   } | null>(null);
   const [detailHistogram, setDetailHistogram] = useState<Histogram | null>(null);
   const [fullscreenUrl, setFullscreenUrl] = useState<string | null>(null);
+  // Sedang menukar gambar layar penuh dari thumbnail ke resolusi penuh.
+  const [fullscreenUpgrading, setFullscreenUpgrading] = useState(false);
 
   const [sortOption, setSortOption] = useState<GallerySortOption>(
     DEFAULT_GALLERY_VIEW_STATE.sortOption,
@@ -999,6 +1005,65 @@ function GalleryPage() {
     }
   }, [missingThumbCards]);
 
+  /**
+   * Buka layar penuh dari sebuah kartu.
+   *
+   * Bertahap, dan itu yang penting: thumbnail 640 px ditampilkan SEKETIKA
+   * supaya klik terasa langsung menjawab, lalu ditukar ke resolusi penuh
+   * begitu berkasnya sampai. Menunggu 11 MB sebelum menampilkan apa pun akan
+   * terasa seperti tombol yang rusak.
+   *
+   * Kartu yang blob-nya ada di browser ini sudah resolusi penuh sejak awal --
+   * tidak ada yang perlu ditukar.
+   */
+  const openFullscreen = useCallback(
+    async (card: GalleryCard) => {
+      const recordId = card.captureRecordId;
+      const immediate =
+        card.local?.url ?? (recordId != null ? (thumbUrls[recordId] ?? null) : null);
+      if (!immediate) return;
+      setFullscreenUrl(immediate);
+      if (card.local || recordId == null) return;
+
+      const cached = remoteImageUrls[recordId];
+      if (cached) {
+        setFullscreenUrl(cached);
+        return;
+      }
+
+      setFullscreenUpgrading(true);
+      try {
+        const signed = await createCaptureMediaUrl({ data: { recordId } });
+        if (!signed.ok) return;
+        setRemoteImageUrls((urls) => ({ ...urls, [recordId]: signed.url }));
+        // Hanya ditukar kalau yang sedang tampil masih gambar yang sama --
+        // orang bisa saja sudah menutupnya atau berpindah ke foto lain.
+        setFullscreenUrl((current) => (current === immediate ? signed.url : current));
+      } catch {
+        // Thumbnail-nya tetap terpampang; tidak ada yang perlu dibatalkan.
+      } finally {
+        setFullscreenUpgrading(false);
+      }
+    },
+    [remoteImageUrls, thumbUrls],
+  );
+
+  // Dijalankan sendiri, tanpa menunggu diklik.
+  //
+  // Semula ini tombol opt-in karena menarik ulang foto lama berarti ratusan MB
+  // lewat CIFS. Tapi tombol di atas halaman yang panjang ternyata tidak
+  // ditemukan orang, dan galeri yang terlihat rusak jauh lebih merugikan
+  // daripada satu kali lalu lintas yang memang harus terjadi cepat atau lambat.
+  //
+  // Ongkosnya sekali seumur hidup per foto, satu berkas pada satu waktu, dan
+  // bisa dihentikan kapan saja lewat tombol yang sama.
+  useEffect(() => {
+    if (backfillAutoStartedRef.current || backfilling) return;
+    if (missingThumbCards.length === 0) return;
+    backfillAutoStartedRef.current = true;
+    void runThumbnailBackfill();
+  }, [backfilling, missingThumbCards, runThumbnailBackfill]);
+
   // Navigasi maju-mundur di panel detail.
   //
   // Dicari lewat id, bukan menyimpan indeks di state: daftar bisa berubah di
@@ -1223,48 +1288,56 @@ function GalleryPage() {
           />
         </section>
 
-        <section
-          className={`mb-4 rounded-lg border px-4 py-3 ${deviceStatusTone}`}
-          aria-live="polite"
-        >
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs font-semibold uppercase tracking-wide">Status Edge</span>
-                <span className="rounded-full bg-background/80 px-2 py-0.5 text-[11px] font-medium text-foreground">
-                  {deviceStatusBadgeLabel}
-                </span>
-                {deviceStatus?.online ? null : <AlertTriangle className="h-3.5 w-3.5" />}
+        {/* Status edge device itu urusan yang mengelola perangkat, bukan yang
+            memakai galeri. Operator sudah punya panel status di sidebar, dan
+            di halaman Capture -- tempat status itu memang menentukan apakah ia
+            bisa bekerja. Di sini ia cuma kebisingan. */}
+        {isAdmin && (
+          <section
+            className={`mb-4 rounded-lg border px-4 py-3 ${deviceStatusTone}`}
+            aria-live="polite"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-semibold uppercase tracking-wide">Status Edge</span>
+                  <span className="rounded-full bg-background/80 px-2 py-0.5 text-[11px] font-medium text-foreground">
+                    {deviceStatusBadgeLabel}
+                  </span>
+                  {deviceStatus?.online ? null : <AlertTriangle className="h-3.5 w-3.5" />}
+                </div>
+                <p className="mt-1 text-sm font-medium text-foreground">{deviceStatusDetail}</p>
+                <p className="mt-1 text-xs text-foreground/70">
+                  Cek terakhir: {deviceCheckedAtLabel}
+                  {deviceStatus?.deviceId ? ` • Device ID: ${deviceStatus.deviceId}` : ""}
+                </p>
               </div>
-              <p className="mt-1 text-sm font-medium text-foreground">{deviceStatusDetail}</p>
-              <p className="mt-1 text-xs text-foreground/70">
-                Cek terakhir: {deviceCheckedAtLabel}
-                {deviceStatus?.deviceId ? ` • Device ID: ${deviceStatus.deviceId}` : ""}
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  void refreshDeviceStatus();
-                }}
-                disabled={deviceStatusLoading}
-                className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent disabled:opacity-60"
-              >
-                <RefreshCw className={`h-3.5 w-3.5 ${deviceStatusLoading ? "animate-spin" : ""}`} />
-                {deviceStatusLoading ? "Menyegarkan..." : "Refresh Device"}
-              </button>
-              {isAdmin && (
-                <Link
-                  to="/devices"
-                  className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent"
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    void refreshDeviceStatus();
+                  }}
+                  disabled={deviceStatusLoading}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent disabled:opacity-60"
                 >
-                  Buka Devices
-                </Link>
-              )}
+                  <RefreshCw
+                    className={`h-3.5 w-3.5 ${deviceStatusLoading ? "animate-spin" : ""}`}
+                  />
+                  {deviceStatusLoading ? "Menyegarkan..." : "Refresh Device"}
+                </button>
+                {isAdmin && (
+                  <Link
+                    to="/devices"
+                    className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent"
+                  >
+                    Buka Devices
+                  </Link>
+                )}
+              </div>
             </div>
-          </div>
-        </section>
+          </section>
+        )}
 
         <section className="mb-4 rounded-xl border bg-card shadow-sm p-4">
           <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
@@ -1683,8 +1756,8 @@ ${storage.path ?? "—"}`}
                   <span className="font-medium text-foreground">
                     {missingThumbCards.length} foto
                   </span>{" "}
-                  belum punya thumbnail, jadi kartunya tampil kosong. Ini capture dari sebelum
-                  thumbnail dipakai — sekali dibuatkan, ringan selamanya untuk semua PC.
+                  belum punya thumbnail. Pembuatannya dihentikan — tekan Lanjutkan untuk meneruskan.
+                  Yang sudah jadi tetap tersimpan.
                 </>
               )}
             </div>
@@ -1698,7 +1771,7 @@ ${storage.path ?? "—"}`}
               }}
               className="shrink-0 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
             >
-              {backfilling ? "Hentikan" : "Buat thumbnail"}
+              {backfilling ? "Hentikan" : "Lanjutkan"}
             </button>
           </div>
         )}
@@ -1756,19 +1829,43 @@ ${storage.path ?? "—"}`}
                   title={item.local ? "Pilih" : "Perbandingan butuh salinan di browser ini"}
                 />
                 <QcBadge saveMethod={item.saveMethod} className="absolute right-2 top-2 z-10" />
-                <button
-                  onClick={() => setDetailItem(item)}
-                  className="block aspect-square w-full overflow-hidden bg-muted"
-                  title="Buka"
-                >
-                  <CardThumb
-                    card={item}
-                    thumbUrl={
-                      item.captureRecordId != null ? thumbUrls[item.captureRecordId] : undefined
-                    }
-                    className="h-full w-full object-cover transition group-hover:scale-105"
-                  />
-                </button>
+                {/* Pembungkus relatif sendiri: tombol layar penuh dijangkarkan
+                    ke AREA GAMBAR, bukan ke kartu. Kalau diukur dari kartu,
+                    posisinya ikut bergeser mengikuti tinggi blok metadata di
+                    bawahnya -- yang berubah-ubah tergantung panjang path. */}
+                <div className="relative">
+                  <button
+                    onClick={() => setDetailItem(item)}
+                    className="block aspect-square w-full overflow-hidden bg-muted"
+                    title="Buka"
+                  >
+                    <CardThumb
+                      card={item}
+                      thumbUrl={
+                        item.captureRecordId != null ? thumbUrls[item.captureRecordId] : undefined
+                      }
+                      className="h-full w-full object-cover transition group-hover:scale-105"
+                    />
+                  </button>
+                  {/* Layar penuh langsung dari grid, tanpa mampir ke panel
+                      detail. Bersebelahan dengan tombol gambar, bukan di
+                      dalamnya: tombol di dalam tombol bukan HTML yang sah, dan
+                      stopPropagation saja tidak memperbaikinya. */}
+                  {(item.local ||
+                    (item.captureRecordId != null && thumbUrls[item.captureRecordId])) && (
+                    <button
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void openFullscreen(item);
+                      }}
+                      className="absolute bottom-2 right-2 rounded-md bg-background/85 p-1.5 opacity-0 transition hover:bg-background focus:opacity-100 group-hover:opacity-100"
+                      title="Lihat layar penuh"
+                      aria-label={`Lihat ${item.name} layar penuh`}
+                    >
+                      <Maximize2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
                 <div className="p-2">
                   <div className="mb-1 flex items-center gap-1 text-[10px] text-muted-foreground">
                     <Calendar className="h-2.5 w-2.5" /> {formatDateTime(item.createdAt)}
@@ -2024,7 +2121,7 @@ ${storage.path ?? "—"}`}
             )}
             {detailImageUrl && (
               <button
-                onClick={() => setFullscreenUrl(detailImageUrl)}
+                onClick={() => void openFullscreen(detailItem)}
                 className="absolute right-2 top-2 rounded-md bg-background/80 p-1.5 hover:bg-background"
                 title="Layar penuh"
               >
@@ -2264,6 +2361,11 @@ ${storage.path ?? "—"}`}
           onClick={() => setFullscreenUrl(null)}
         >
           <img src={fullscreenUrl} alt="" className="max-h-full max-w-full object-contain" />
+          {fullscreenUpgrading && (
+            <span className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-md bg-background/85 px-3 py-1.5 text-xs font-medium">
+              Memuat resolusi penuh...
+            </span>
+          )}
           <button
             onClick={() => setFullscreenUrl(null)}
             className="absolute right-4 top-4 rounded-md bg-background/80 p-2 hover:bg-background"
