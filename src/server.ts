@@ -59,9 +59,23 @@ function isApiPath(pathname: string): boolean {
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
-      if (isApiPath(new URL(request.url).pathname)) {
+      const { pathname } = new URL(request.url);
+
+      if (isApiPath(pathname)) {
         const { handleApiRequest } = await import("./lib/server/api-rest");
         return await handleApiRequest(request);
+      }
+
+      // Gambar capture, dilayani langsung dari folder jaringan supaya galeri
+      // menampilkan foto yang sama dari PC mana pun -- bukan hanya dari
+      // browser yang kebetulan melakukan capture-nya.
+      //
+      // Dicegat di sini, sama seperti API, karena `<img src>` tidak membawa
+      // header apa pun: izinnya sudah diputuskan lebih dulu oleh serverFn
+      // createCaptureMediaUrl dan dititipkan ke URL sebagai tanda tangan.
+      if (pathname.startsWith("/media/")) {
+        const { handleMediaRequest } = await import("./lib/server/media-serve");
+        return await handleMediaRequest(request);
       }
 
       const handler = await getServerEntry();

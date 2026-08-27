@@ -9,8 +9,10 @@ import {
   Columns2,
   Download,
   HardDrive,
+  ImageOff,
   LayoutGrid,
   List,
+  Loader2,
   Maximize2,
   MapPin,
   MoreVertical,
@@ -24,6 +26,7 @@ import {
 } from "lucide-react";
 import { type GalleryItem, loadGallery, saveGallery, removeGalleryItem } from "@/lib/gallery-store";
 import { getDeviceStatus, type DeviceStatus } from "@/lib/camera-api";
+import { createCaptureMediaUrl } from "@/lib/media-access";
 import { toBinLabel, toBinSlot, type BinSlot } from "@/lib/locations";
 import { getOperatorPlant, type OperatorPlant } from "@/lib/operator-plant";
 import {
@@ -56,6 +59,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+
+/** Sejauh mana galeri dan tabel riwayat bisa ditelusuri dari halaman ini. */
+const RECORD_FETCH_LIMIT = 1000;
 
 export const Route = createFileRoute("/gallery")({
   component: GalleryPage,
@@ -146,6 +152,54 @@ function formatCaptureRecordStatus(status: string): string {
 //
 // Path jalur jaringan ditampilkan seperti yang dilihat app server (mis.
 // /mnt/mti/...), bukan bentuk UNC-nya -- itu memang yang tercatat di registry.
+/**
+ * Satu kartu di galeri.
+ *
+ * Bentuknya sengaja memakai nama medan yang sama dengan `GalleryItem` supaya
+ * kartu yang datang dari registry dan yang datang dari IndexedDB dirender oleh
+ * kode yang sama persis. Bedanya cuma satu: `local`.
+ *
+ * `local === null` berarti browser ini tidak punya blob-nya -- capture-nya
+ * dilakukan di PC lain. Kartunya tetap lengkap; gambarnya diambil dari folder
+ * jaringan saat dibuka. Semua tindakan yang membutuhkan berkas lokal (unduh,
+ * ubah nama, hapus, histogram) ikut menyesuaikan.
+ */
+type GalleryCard = {
+  id: string;
+  name: string;
+  folder: string;
+  bin?: string;
+  createdAt: number;
+  captureRecordId: number | null;
+  persistedPath: string | null;
+  saveMethod: CaptureRecordView["saveMethod"];
+  capturedBy: string | null;
+  local: GalleryItem | null;
+};
+
+/**
+ * Gambar kartu. Dua keadaan, dan bedanya bukan kosmetik:
+ *
+ * - `local` ada  -> blob dari IndexedDB, tampil seketika tanpa menyentuh server
+ * - `local` null -> browser ini tidak punya salinannya; gambarnya di folder
+ *                   jaringan, diambil saat kartunya dibuka
+ *
+ * Placeholder-nya menjelaskan sebabnya, bukan sekadar kotak abu-abu: "tidak
+ * ada di PC ini" dan "capture-nya gagal" dua hal yang sangat berbeda, dan
+ * operator perlu bisa membedakannya sekilas.
+ */
+function CardThumb({ card, className }: { card: GalleryCard; className?: string }) {
+  if (card.local) {
+    return <img src={card.local.url} alt={card.name} className={className} />;
+  }
+  return (
+    <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-muted px-2 text-center text-muted-foreground">
+      <ImageOff className="h-5 w-5" />
+      <span className="text-[10px] leading-tight">Klik untuk memuat dari folder jaringan</span>
+    </div>
+  );
+}
+
 function describeStorage(
   rawPath?: string | null,
   saveMethod?: CaptureRecordView["saveMethod"],
@@ -271,7 +325,13 @@ function GalleryPage() {
   const viewerPlant = operatorPlant?.locked ? (operatorPlant.plant ?? "") : "";
   const binLabel = (slot: BinSlot) => toBinLabel(viewerPlant, slot);
 
-  const [detailItem, setDetailItem] = useState<GalleryItem | null>(null);
+  const [detailItem, setDetailItem] = useState<GalleryCard | null>(null);
+  // URL bertanda tangan untuk gambar yang tidak ada di browser ini, per record.
+  // Umurnya lima menit, jadi disimpan per sesi buka halaman saja -- tidak perlu
+  // dan tidak boleh diawetkan.
+  const [remoteImageUrls, setRemoteImageUrls] = useState<Record<number, string>>({});
+  const [remoteImageError, setRemoteImageError] = useState<string | null>(null);
+  const [remoteImageLoading, setRemoteImageLoading] = useState(false);
   const [detailDimensions, setDetailDimensions] = useState<{
     width: number;
     height: number;
@@ -336,7 +396,12 @@ function GalleryPage() {
     loadGallery().then((items) => {
       if (!cancelled) setGallery(items);
     });
-    listCaptureRecords({ data: { limit: 200 } }).then((result) => {
+    // 200 hanya menutup sekitar tiga hari (8 sesi x 2 slot x 4 plant = 64
+    // capture/hari). Sekarang galeri DAN tabel sama-sama bersumber dari sini,
+    // jadi batasnya menentukan seberapa jauh ke belakang keduanya bisa dilihat.
+    // Untuk riwayat yang lebih dalam, pakai /api/v1/captures yang berpaginasi
+    // di SQL -- menarik seluruh tabel ke browser bukan jalan keluarnya.
+    listCaptureRecords({ data: { limit: RECORD_FETCH_LIMIT } }).then((result) => {
       if (cancelled) return;
       if (!result.ok) {
         setCaptureRecordsError(result.message);
@@ -381,8 +446,13 @@ function GalleryPage() {
 
   // Real values computed on demand for whichever item is open in the detail
   // panel -- dimensions + a histogram read straight from the pixels.
+  //
+  // Hanya untuk kartu yang blob-nya ada di browser ini. Menghitungnya untuk
+  // gambar jauh berarti mengunduh 11 MB demi sebuah grafik -- keduanya
+  // ditampilkan sebagai "tidak tersedia" saja, dan itu jujur.
   useEffect(() => {
-    if (!detailItem) {
+    const blob = detailItem?.local?.blob ?? null;
+    if (!blob) {
       setDetailDimensions(null);
       setDetailHistogram(null);
       return;
@@ -390,16 +460,53 @@ function GalleryPage() {
     let cancelled = false;
     setDetailDimensions(null);
     setDetailHistogram(null);
-    getImageDimensions(detailItem.blob).then((dims) => {
+    getImageDimensions(blob).then((dims) => {
       if (!cancelled) setDetailDimensions(dims);
     });
-    computeHistogram(detailItem.blob).then((hist) => {
+    computeHistogram(blob).then((hist) => {
       if (!cancelled) setDetailHistogram(hist);
     });
     return () => {
       cancelled = true;
     };
   }, [detailItem]);
+
+  // Ambil URL bertanda tangan begitu kartu tanpa salinan lokal dibuka.
+  //
+  // Sengaja hanya di panel detail, bukan di grid: berkasnya foto penuh ~11 MB,
+  // dan memuat 24 sekaligus untuk satu halaman grid akan menarik ratusan MB
+  // hanya untuk dilihat sekilas. Satu per satu, saat memang dibuka.
+  useEffect(() => {
+    const recordId = detailItem?.captureRecordId ?? null;
+    if (!detailItem || detailItem.local || recordId === null) {
+      setRemoteImageError(null);
+      setRemoteImageLoading(false);
+      return;
+    }
+    if (remoteImageUrls[recordId]) return;
+
+    let cancelled = false;
+    setRemoteImageError(null);
+    setRemoteImageLoading(true);
+    createCaptureMediaUrl({ data: { recordId } })
+      .then((result) => {
+        if (cancelled) return;
+        if (!result.ok) {
+          setRemoteImageError(result.message);
+          return;
+        }
+        setRemoteImageUrls((urls) => ({ ...urls, [recordId]: result.url }));
+      })
+      .catch(() => {
+        if (!cancelled) setRemoteImageError("Gagal meminta gambar dari app server.");
+      })
+      .finally(() => {
+        if (!cancelled) setRemoteImageLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [detailItem, remoteImageUrls]);
 
   async function persist(items: GalleryItem[]) {
     setGallery(items);
@@ -485,7 +592,9 @@ function GalleryPage() {
           ),
         );
       }
-      if (detailItem?.id === item.id) setDetailItem(updated);
+      if (detailItem?.id === item.id) {
+        setDetailItem({ ...detailItem, name: updated.name, local: updated });
+      }
       if (!captureRename.ok && captureRename.code !== "CAPTURE_RECORD_NOT_FOUND") {
         alert(`Nama file lokal berubah, tetapi sinkron DB gagal: ${captureRename.message}`);
       }
@@ -579,19 +688,79 @@ function GalleryPage() {
     ),
   ).sort();
 
-  // Galeri hanya memajang foto yang sampai (atau sedang dalam perjalanan) ke
-  // folder jaringan. Hasil jalur cadangan -- unduhan browser atau folder
-  // pilihan operator -- tidak ditampilkan: ia hanya ada di satu PC, jadi
-  // memajangnya di sini memberi kesan foto itu sudah tersimpan bersama yang
-  // lain, padahal tidak.
+  // Kartu galeri dibangun dari RECORD MSSQL, bukan dari isi IndexedDB.
   //
-  // Yang disembunyikan TIDAK dibuang: barisnya tetap ada di tabel Riwayat
-  // Registry DB di atas, lengkap dengan statusnya, supaya foto yang perlu
-  // dipindahkan manual tidak hilang dari pandangan.
-  const networkGallery = gallery.filter((item) => !isLocalOnlySave(item.saveMethod));
-  const localOnlyCount = gallery.length - networkGallery.length;
+  // Ini pembalikan yang disengaja. Dulu IndexedDB yang menentukan apa yang
+  // tampil, padahal ia cuma cache milik satu browser di satu PC: capture yang
+  // dilakukan operator di area plant tidak pernah muncul di layar supervisor,
+  // walau barisnya jelas ada di tabel registry tepat di atasnya. Registry-lah
+  // yang berlaku untuk semua orang, jadi registry yang menentukan daftarnya.
+  //
+  // IndexedDB turun pangkat jadi pemercepat: kalau browser ini kebetulan punya
+  // blob-nya, gambar tampil seketika tanpa menyentuh server. Kalau tidak,
+  // kartunya tetap ada dan gambarnya diambil dari folder jaringan saat dibuka.
+  //
+  // Foto jalur cadangan (unduhan browser / folder pilihan) tidak ikut: ia hanya
+  // ada di satu PC, jadi memajangnya memberi kesan sudah tersimpan bersama yang
+  // lain, padahal tidak. Barisnya tetap utuh di tabel Riwayat Registry DB.
+  const galleryCards = useMemo<GalleryCard[]>(() => {
+    const unmatched = new Map<string, GalleryItem>();
+    const localByRecordId = new Map<number, GalleryItem>();
+    for (const item of gallery) {
+      unmatched.set(item.id, item);
+      if (item.captureRecordId != null) localByRecordId.set(item.captureRecordId, item);
+    }
 
-  const sortedGallery = [...networkGallery].sort((a, b) => {
+    const fromRecords = captureRecords
+      .filter((record) => !isLocalOnlySave(record.saveMethod))
+      .map((record): GalleryCard => {
+        const local = localByRecordId.get(record.id) ?? null;
+        if (local) unmatched.delete(local.id);
+        return {
+          id: local?.id ?? `record-${record.id}`,
+          name: record.fileName,
+          folder: record.plant ?? "",
+          bin: record.captureBin ?? undefined,
+          createdAt: Date.parse(record.capturedAt),
+          captureRecordId: record.id,
+          persistedPath: record.filePath,
+          saveMethod: record.saveMethod,
+          capturedBy: record.capturedBy,
+          local,
+        };
+      });
+
+    // Entri lokal tanpa pasangan record: pencatatan ke registry gagal, atau
+    // record-nya sudah dihapus. Tetap ditampilkan supaya foto yang ada di
+    // browser ini tidak lenyap hanya karena registry tidak mengenalinya.
+    const orphans = [...unmatched.values()]
+      .filter((item) => !isLocalOnlySave(item.saveMethod))
+      .map(
+        (item): GalleryCard => ({
+          id: item.id,
+          name: item.name,
+          folder: item.folder,
+          bin: item.bin,
+          createdAt: item.createdAt,
+          captureRecordId: item.captureRecordId ?? null,
+          persistedPath: item.persistedPath ?? null,
+          saveMethod: item.saveMethod ?? null,
+          capturedBy: item.capturedBy ?? null,
+          local: item,
+        }),
+      );
+
+    return [...fromRecords, ...orphans];
+  }, [captureRecords, gallery]);
+
+  // Dihitung dari registry, bukan dari IndexedDB: jumlah foto yang tidak sampai
+  // ke folder jaringan sama untuk semua orang, dan justru perlu terlihat dari
+  // PC yang BUKAN tempat capture-nya dilakukan.
+  const localOnlyCount = captureRecords.filter((record) =>
+    isLocalOnlySave(record.saveMethod),
+  ).length;
+
+  const sortedGallery = [...galleryCards].sort((a, b) => {
     switch (sortOption) {
       case "name-asc":
         return a.name.localeCompare(b.name);
@@ -669,7 +838,7 @@ function GalleryPage() {
       // dilihat.
       setPage(Math.floor(index / pageSize) + 1);
       // Layar penuh ikut berganti gambar HANYA kalau ia sedang terbuka.
-      setFullscreenUrl((current) => (current ? next.url : null));
+      setFullscreenUrl((current) => (current ? (next.local?.url ?? null) : null));
     },
     [filteredGallery, pageSize],
   );
@@ -694,7 +863,13 @@ function GalleryPage() {
   }, [detailIndex, showDetailAt]);
   const selectedItems = gallery.filter((item) => selectedIds.has(item.id));
   const totalBytes = gallery.reduce((sum, item) => sum + item.blob.size, 0);
-  const filteredBytes = filteredGallery.reduce((sum, item) => sum + item.blob.size, 0);
+  // Hanya menjumlahkan kartu yang blob-nya ada di browser ini. Ukuran foto
+  // yang tersimpan di share tidak diketahui tanpa menariknya, dan menariknya
+  // hanya demi angka ini jelas tidak sepadan.
+  const filteredBytes = filteredGallery.reduce(
+    (sum, card) => sum + (card.local?.blob.size ?? 0),
+    0,
+  );
   const selectedBytes = selectedItems.reduce((sum, item) => sum + item.blob.size, 0);
   const cameraStateLabel = deviceStatus?.online
     ? deviceStatus.camera?.connected
@@ -767,6 +942,15 @@ function GalleryPage() {
           return Math.abs(new Date(record.capturedAt).getTime() - detailItem.createdAt) < 120_000;
         }) ?? null);
 
+  // Sumber gambar panel detail: blob lokal kalau ada, kalau tidak URL
+  // bertanda tangan yang sudah diambil dari app server. `null` berarti belum
+  // ada -- entah sedang diminta, entah gagal, dan panelnya membedakan keduanya.
+  const detailImageUrl =
+    detailItem?.local?.url ??
+    (detailItem?.captureRecordId != null
+      ? (remoteImageUrls[detailItem.captureRecordId] ?? null)
+      : null);
+
   if (!hydrated) {
     return (
       <div className="p-6">
@@ -820,7 +1004,7 @@ function GalleryPage() {
             icon={Search}
             label="Hasil Tersaring"
             value={filteredGallery.length}
-            hint={`${networkGallery.length} image di folder jaringan`}
+            hint={`${galleryCards.length} image di folder jaringan`}
           />
           <OverviewCard
             icon={CheckSquare}
@@ -1300,13 +1484,14 @@ ${storage.path ?? "—"}`}
             pernah terjadi -- padahal justru foto inilah yang perlu tindakan. */}
         {localOnlyCount > 0 && (
           <div className="mb-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-800">
-            {localOnlyCount} foto tidak ditampilkan karena belum masuk folder jaringan — hanya ada
-            di folder Unduhan PC ini. Detailnya ada di tabel Riwayat Registry DB di atas, bertanda{" "}
+            {localOnlyCount} foto tidak ditampilkan karena tidak pernah masuk folder jaringan —
+            berkasnya hanya ada di folder Unduhan PC yang melakukan capture. Detailnya ada di tabel
+            Riwayat Registry DB di atas, bertanda{" "}
             <span className="font-medium">Browser download</span>.
           </div>
         )}
 
-        {networkGallery.length === 0 ? (
+        {galleryCards.length === 0 ? (
           <div className="rounded-md border border-dashed py-10 text-center text-sm text-muted-foreground">
             <p>Hasil capture tersimpan akan muncul di sini.</p>
             <div className="mt-3 flex flex-wrap justify-center gap-2">
@@ -1341,8 +1526,10 @@ ${storage.path ?? "—"}`}
                   type="checkbox"
                   checked={selectedIds.has(item.id)}
                   onChange={() => toggleSelect(item.id)}
-                  className="absolute left-2 top-2 z-10 h-4 w-4 rounded"
+                  disabled={!item.local}
+                  className="absolute left-2 top-2 z-10 h-4 w-4 rounded disabled:opacity-30"
                   aria-label={`Pilih ${item.name}`}
+                  title={item.local ? "Pilih" : "Perbandingan butuh salinan di browser ini"}
                 />
                 <QcBadge className="absolute right-2 top-2 z-10" />
                 <button
@@ -1350,9 +1537,8 @@ ${storage.path ?? "—"}`}
                   className="block aspect-square w-full overflow-hidden bg-muted"
                   title="Buka"
                 >
-                  <img
-                    src={item.url}
-                    alt={item.name}
+                  <CardThumb
+                    card={item}
                     className="h-full w-full object-cover transition group-hover:scale-105"
                   />
                 </button>
@@ -1399,14 +1585,21 @@ ${storage.path ?? "—"}`}
                         </button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => downloadItem(item)}>
+                        <DropdownMenuItem
+                          disabled={!item.local}
+                          onClick={() => item.local && downloadItem(item.local)}
+                        >
                           Unduh
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => renameItem(item)}>
+                        <DropdownMenuItem
+                          disabled={!item.local}
+                          onClick={() => item.local && renameItem(item.local)}
+                        >
                           Ubah nama
                         </DropdownMenuItem>
                         <DropdownMenuItem
-                          onClick={() => deleteItem(item)}
+                          disabled={!item.local}
+                          onClick={() => item.local && deleteItem(item.local)}
                           className="text-destructive"
                         >
                           Hapus
@@ -1450,11 +1643,7 @@ ${storage.path ?? "—"}`}
                         onClick={() => setDetailItem(item)}
                         className="block h-10 w-10 overflow-hidden rounded bg-muted"
                       >
-                        <img
-                          src={item.url}
-                          alt={item.name}
-                          className="h-full w-full object-cover"
-                        />
+                        <CardThumb card={item} className="h-full w-full object-cover" />
                       </button>
                     </td>
                     <td className="max-w-xs truncate p-2 font-medium">{item.name}</td>
@@ -1488,14 +1677,21 @@ ${storage.path ?? "—"}`}
                           </button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => downloadItem(item)}>
+                          <DropdownMenuItem
+                            disabled={!item.local}
+                            onClick={() => item.local && downloadItem(item.local)}
+                          >
                             Unduh
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => renameItem(item)}>
+                          <DropdownMenuItem
+                            disabled={!item.local}
+                            onClick={() => item.local && renameItem(item.local)}
+                          >
                             Ubah nama
                           </DropdownMenuItem>
                           <DropdownMenuItem
-                            onClick={() => deleteItem(item)}
+                            disabled={!item.local}
+                            onClick={() => item.local && deleteItem(item.local)}
                             className="text-destructive"
                           >
                             Hapus
@@ -1570,18 +1766,36 @@ ${storage.path ?? "—"}`}
           </div>
 
           <div className="relative mb-2 overflow-hidden rounded-md border bg-muted">
-            <img
-              src={detailItem.url}
-              alt={detailItem.name}
-              className="aspect-video w-full object-contain"
-            />
-            <button
-              onClick={() => setFullscreenUrl(detailItem.url)}
-              className="absolute right-2 top-2 rounded-md bg-background/80 p-1.5 hover:bg-background"
-              title="Layar penuh"
-            >
-              <Maximize2 className="h-3.5 w-3.5" />
-            </button>
+            {detailImageUrl ? (
+              <img
+                src={detailImageUrl}
+                alt={detailItem.name}
+                className="aspect-video w-full object-contain"
+              />
+            ) : (
+              <div className="flex aspect-video w-full flex-col items-center justify-center gap-2 px-4 text-center text-xs text-muted-foreground">
+                {remoteImageLoading ? (
+                  <>
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                    <span>Mengambil gambar dari folder jaringan...</span>
+                  </>
+                ) : (
+                  <>
+                    <ImageOff className="h-5 w-5" />
+                    <span>{remoteImageError ?? "Gambar tidak tersedia."}</span>
+                  </>
+                )}
+              </div>
+            )}
+            {detailImageUrl && (
+              <button
+                onClick={() => setFullscreenUrl(detailImageUrl)}
+                className="absolute right-2 top-2 rounded-md bg-background/80 p-1.5 hover:bg-background"
+                title="Layar penuh"
+              >
+                <Maximize2 className="h-3.5 w-3.5" />
+              </button>
+            )}
             <button
               onClick={() => showDetailAt(detailIndex - 1)}
               disabled={detailIndex <= 0}
@@ -1609,8 +1823,14 @@ ${storage.path ?? "—"}`}
             <div className="mb-2 flex items-center justify-between">
               <span className="text-xs font-semibold text-muted-foreground">Metadata</span>
               <button
-                onClick={() => renameItem(detailItem)}
-                className="inline-flex items-center gap-1 rounded-md border border-input px-2 py-1 text-[11px] hover:bg-accent"
+                disabled={!detailItem.local}
+                onClick={() => detailItem.local && renameItem(detailItem.local)}
+                className="inline-flex items-center gap-1 rounded-md border border-input px-2 py-1 text-[11px] hover:bg-accent disabled:opacity-40"
+                title={
+                  detailItem.local
+                    ? "Ubah nama berkas"
+                    : "Hanya bisa dari PC tempat capture ini dilakukan"
+                }
               >
                 <Pencil className="h-3 w-3" /> Edit
               </button>
@@ -1644,7 +1864,13 @@ ${storage.path ?? "—"}`}
                   "—"}
               </dd>
               <dt className="text-muted-foreground">Ukuran File</dt>
-              <dd className="text-right font-medium">{formatBytes(detailItem.blob.size)}</dd>
+              <dd className="text-right font-medium">
+                {detailItem.local
+                  ? formatBytes(detailItem.local.blob.size)
+                  : detailRecord?.fileSizeBytes
+                    ? formatBytes(detailRecord.fileSizeBytes)
+                    : "—"}
+              </dd>
               <dt className="text-muted-foreground">Tersimpan di</dt>
               <dd className="text-right font-medium">
                 {
@@ -1754,8 +1980,10 @@ ${storage.path ?? "—"}`}
 
           <div className="flex gap-2">
             <button
-              onClick={() => downloadItem(detailItem)}
-              className="flex-1 rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+              disabled={!detailItem.local}
+              onClick={() => detailItem.local && downloadItem(detailItem.local)}
+              className="flex-1 rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
+              title={detailItem.local ? "Unduh salinan lokal" : "Tidak ada salinan di browser ini"}
             >
               Unduh
             </button>
@@ -1766,8 +1994,9 @@ ${storage.path ?? "—"}`}
               {selectedIds.has(detailItem.id) ? "Batalkan pilih" : "Bandingkan"}
             </button>
             <button
-              onClick={() => deleteItem(detailItem)}
-              className="flex-1 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive hover:bg-destructive/20"
+              disabled={!detailItem.local}
+              onClick={() => detailItem.local && deleteItem(detailItem.local)}
+              className="flex-1 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive hover:bg-destructive/20 disabled:opacity-40"
             >
               Hapus
             </button>
