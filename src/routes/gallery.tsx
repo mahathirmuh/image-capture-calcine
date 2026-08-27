@@ -65,6 +65,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { toast } from "sonner";
+
 import {
   AlertDialog,
   AlertDialogAction,
@@ -692,6 +694,15 @@ function GalleryPage() {
 
       if (captureDelete.ok) {
         setCaptureRecords((prev) => prev.filter((record) => record.id !== captureDelete.recordId));
+        if (captureDelete.fileLeftOnShare) {
+          // Kartunya hilang dari galeri, berkasnya tidak. Itu harus dikatakan,
+          // bukan didiamkan -- kalau tidak, orang menyangka share-nya sudah
+          // bersih padahal tidak.
+          toast.warning("Record dihapus, berkasnya dibiarkan", {
+            description: `${captureDelete.fileLeftOnShare} berada di luar folder yang dikelola app (capture lama), jadi tidak disentuh. Hapus manual dari share kalau memang tidak dipakai lagi.`,
+            duration: 15000,
+          });
+        }
       }
 
       if (local) {

@@ -75,6 +75,18 @@ describe("deleteShareFile", () => {
     expect(await exists(stray)).toBe(true);
   });
 
+  // Kasus sungguhan dari produksi: capture 25 Agustus 2026 tersimpan sebagai
+  // /mnt/mti/ML/MTI/2026/08/25/... -- dari masa NETWORK_SAVE_ROOT belum
+  // menunjuk "Calcine Project/.../Foto Sampling". Berkasnya memang tidak boleh
+  // disentuh dari sini, tapi jawabannya harus OUTSIDE_ROOT (yang oleh
+  // deleteCaptureRecord dilewati) dan BUKAN kegagalan yang menahan penghapusan
+  // record -- kalau tidak, kartu lama itu tidak akan pernah bisa dibuang.
+  it("menandai capture lama di luar root sebagai OUTSIDE_ROOT, bukan galat lain", async () => {
+    const legacy = join(root, "..", "2026", "08", "25", "25 August 2026 21.04 AP BIN1.jpg");
+    const result = await deleteShareFile(legacy);
+    expect(result).toMatchObject({ ok: false, code: "OUTSIDE_ROOT" });
+  });
+
   it("melewati path semu unduhan browser", async () => {
     expect(await deleteShareFile("browser-download/11.00 Train 1.jpg")).toEqual({
       ok: true,

@@ -1375,10 +1375,18 @@ export const renameCaptureRecord = createServerFn({ method: "POST" })
       const { renameShareFile } = await import("./server/share-file");
       const moved = await renameShareFile(currentFilePath, nextFilePath);
       if (!moved.ok) {
+        // Ubah nama sengaja TIDAK dilonggarkan seperti hapus. Kalau nama di
+        // registry berubah sementara berkasnya tidak, registry menunjuk nama
+        // yang tidak ada -- dan penghapusan berikutnya akan menyasar path baru
+        // itu, menganggapnya sudah hilang, lalu meninggalkan berkas aslinya
+        // yatim tanpa jejak.
         return {
           ok: false as const,
           code: moved.code,
-          message: `Nama tidak diubah karena berkasnya gagal dipindah: ${moved.message}`,
+          message:
+            moved.code === "OUTSIDE_ROOT"
+              ? "Capture lama ini tersimpan di luar folder yang dikelola app, jadi namanya tidak bisa diubah dari sini."
+              : `Nama tidak diubah karena berkasnya gagal dipindah: ${moved.message}`,
         };
       }
 
@@ -1454,12 +1462,29 @@ export const deleteCaptureRecord = createServerFn({ method: "POST" })
       // siapa pun lagi. Sebaliknya, gagal yang dilaporkan masih bisa diulang.
       const { deleteShareFile } = await import("./server/share-file");
       const removed = await deleteShareFile(existingFilePath);
+
+      // OUTSIDE_ROOT TIDAK boleh ikut menahan penghapusan record.
+      //
+      // Capture lama -- dari masa NETWORK_SAVE_ROOT masih menunjuk folder lain
+      // (/mnt/mti/ML/MTI/YYYY/MM/DD, sebelum "Calcine Project/.../Foto
+      // Sampling") -- path-nya berada di luar root yang dikelola sekarang, dan
+      // app memang tidak berhak menyentuh berkasnya. Tapi baris registry-nya
+      // jelas milik app ini. Menolak menghapusnya berarti kartu itu tidak akan
+      // pernah bisa dibuang siapa pun, selamanya.
+      //
+      // Kegagalan lain (izin ditolak, mount lepas) TETAP menahan: di sana
+      // berkasnya ada dan sebenarnya bisa dihapus, jadi meninggalkannya yatim
+      // adalah pilihan yang buruk, bukan keharusan.
+      let fileLeftOnShare: string | null = null;
       if (!removed.ok) {
-        return {
-          ok: false as const,
-          code: removed.code,
-          message: `Record tidak dihapus karena berkasnya gagal dibuang: ${removed.message}`,
-        };
+        if (removed.code !== "OUTSIDE_ROOT") {
+          return {
+            ok: false as const,
+            code: removed.code,
+            message: `Record tidak dihapus karena berkasnya gagal dibuang: ${removed.message}`,
+          };
+        }
+        fileLeftOnShare = existingFilePath;
       }
 
       await pool.request().input("recordId", sql.BigInt, recordId).query(`
@@ -1480,6 +1505,10 @@ export const deleteCaptureRecord = createServerFn({ method: "POST" })
       return {
         ok: true as const,
         recordId,
+        // Diberitahukan ke pemanggil, bukan didiamkan: berkas yang ditinggal
+        // tidak akan pernah disebut record mana pun lagi, jadi kalau tidak
+        // dilaporkan sekarang tidak ada lagi yang bisa menemukannya.
+        fileLeftOnShare,
       };
     } catch (error) {
       return {
