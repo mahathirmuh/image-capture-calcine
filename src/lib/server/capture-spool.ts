@@ -38,6 +38,16 @@ export type SpoolFlushResult = {
 
 export type SpoolStatus = {
   configured: boolean;
+  /**
+   * Apakah proses ini benar-benar boleh menulis di sana.
+   *
+   * Diperiksa terpisah karena keberadaan folder TIDAK menjamin izinnya:
+   * named volume Docker yang dipasang ke path yang belum ada di image dibuat
+   * milik root, sementara container jalan sebagai `node`. `mkdir -p` pada
+   * folder semacam itu tetap berhasil, dan kegagalannya baru muncul saat
+   * capture pertama -- terlalu terlambat untuk dilihat siapa pun.
+   */
+  writable: boolean;
   pending: number;
   bytes: number;
   capBytes: number;
@@ -85,10 +95,28 @@ async function listEntryIds(dir: string): Promise<string[]> {
     .sort(compareSpoolEntryIds);
 }
 
+/** Izin tulis sungguhan, bukan sekadar "foldernya ada". */
+async function isWritable(dir: string): Promise<boolean> {
+  try {
+    const [{ access }, { constants }] = await Promise.all([fs(), import("node:fs")]);
+    await access(dir, constants.W_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function getSpoolStatus(): Promise<SpoolStatus> {
   const dir = spoolDir();
   if (!dir) {
-    return { configured: false, pending: 0, bytes: 0, capBytes: capBytes(), oldestQueuedAt: null };
+    return {
+      configured: false,
+      writable: false,
+      pending: 0,
+      bytes: 0,
+      capBytes: capBytes(),
+      oldestQueuedAt: null,
+    };
   }
   try {
     const { stat } = await fs();
@@ -104,13 +132,21 @@ export async function getSpoolStatus(): Promise<SpoolStatus> {
     const oldest = ids[0] ? Number(ids[0].split("-")[0]) : null;
     return {
       configured: true,
+      writable: await isWritable(dir),
       pending: ids.length,
       bytes,
       capBytes: capBytes(),
       oldestQueuedAt: Number.isFinite(oldest) ? oldest : null,
     };
   } catch {
-    return { configured: true, pending: 0, bytes: 0, capBytes: capBytes(), oldestQueuedAt: null };
+    return {
+      configured: true,
+      writable: await isWritable(dir),
+      pending: 0,
+      bytes: 0,
+      capBytes: capBytes(),
+      oldestQueuedAt: null,
+    };
   }
 }
 

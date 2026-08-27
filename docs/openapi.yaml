@@ -526,6 +526,14 @@ components:
               properties:
                 ok: { type: boolean }
                 configured: { type: boolean }
+                writable:
+                  type: boolean
+                  description: |
+                    Izin tulis sungguhan, bukan sekadar "foldernya ada".
+                    `false` berarti **setiap capture akan gagal** menulis
+                    antrean dan jatuh ke unduhan browser -- biasanya karena
+                    named volume Docker terbuat milik root sementara container
+                    jalan sebagai `node`.
                 pending: { type: integer, description: Jumlah foto yang menunggu. }
                 bytes: { type: integer, format: int64 }
                 capBytes: { type: integer, format: int64 }

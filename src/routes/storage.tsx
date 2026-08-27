@@ -462,6 +462,30 @@ function StoragePage() {
         />
       </section>
 
+      {/* Antrean yang tidak bisa ditulis. Lebih gawat daripada antrean yang
+          menumpuk: di sini SETIAP capture gagal masuk antrean dan jatuh ke
+          unduhan browser, jadi tidak ada satu pun foto yang sampai ke folder
+          jaringan sampai izinnya dibetulkan. `pending` tetap 0 dalam keadaan
+          ini -- itu sebabnya ia butuh peringatan sendiri, bukan menumpang
+          kartu kuning di bawah. */}
+      {spool?.configured && !spool.writable && (
+        <section className="mb-6 rounded-xl border border-destructive/40 bg-destructive/10 p-4">
+          <div className="text-sm font-semibold text-destructive">
+            Antrean kirim tidak bisa ditulis
+          </div>
+          <p className="mt-1 text-xs text-destructive/90">
+            App server tidak punya izin menulis di folder antrean, jadi setiap capture gagal
+            tersimpan ke folder jaringan dan jatuh ke unduhan browser. Umumnya ini terjadi karena
+            volume Docker-nya terbuat milik <code>root</code> sementara container berjalan sebagai{" "}
+            <code>node</code>. Jalankan di server:{" "}
+            <code>
+              docker compose run --rm --user root web chown -R node:node /var/lib/capture-spool
+            </code>
+            , lalu <code>docker compose up -d</code>.
+          </p>
+        </section>
+      )}
+
       {/* Antrean kirim. Ditaruh SEBELUM kartu lain karena ia satu-satunya
           tanda bahwa share sedang bermasalah -- halaman Capture tidak lagi
           menunjukkan gejala apa pun sejak semua capture lewat antrean. */}

@@ -30,13 +30,13 @@ export const getStorageConfigSummary = createServerFn({ method: "GET" }).handler
   };
 });
 
-export type SpoolSummary = {
-  configured: boolean;
-  pending: number;
-  bytes: number;
-  capBytes: number;
-  oldestQueuedAt: number | null;
-};
+// Diturunkan, bukan disalin. Bentuk yang sama pernah ditulis dua kali di sini
+// dan di capture-spool.ts, dan medan yang ditambahkan di satu sisi diam-diam
+// hilang dari sisi lain. `import type` terhapus seluruhnya saat kompilasi,
+// jadi modul server-only itu tidak ikut tertarik ke bundle browser.
+import type { SpoolStatus } from "./server/capture-spool";
+
+export type SpoolSummary = SpoolStatus;
 
 /**
  * Isi antrean kirim di app server.

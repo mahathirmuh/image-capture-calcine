@@ -173,10 +173,15 @@ async function checkSpool(): Promise<HealthCheck> {
     const status = await getSpoolStatus();
     return {
       // Antrean yang berisi bukan kegagalan -- itu justru rancangannya bekerja.
-      // Yang menjadikannya "tidak ok" adalah kapasitas yang hampir habis, sebab
-      // di titik itu capture berikutnya akan DITOLAK.
-      ok: status.bytes < status.capBytes * 0.9,
+      // Yang menjadikannya "tidak ok" ada dua: foldernya tidak bisa ditulis
+      // (setiap capture akan gagal), atau kapasitasnya hampir habis (capture
+      // berikutnya akan DITOLAK).
+      //
+      // Antrean yang memang sengaja dimatikan tidak dihitung gagal: itu mode
+      // "tulis langsung ke share" yang sah.
+      ok: !status.configured || (status.writable && status.bytes < status.capBytes * 0.9),
       configured: status.configured,
+      writable: status.writable,
       pending: status.pending,
       bytes: status.bytes,
       capBytes: status.capBytes,
