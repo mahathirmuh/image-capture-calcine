@@ -19,6 +19,11 @@ info:
     ke antrean kirim, maupun ke folder jaringan. Kunci API yang bocor tidak
     bisa dipakai menghapus capture atau mengubah berkas.
 
+    ## Halaman dokumentasi
+
+    Versi yang bisa diklik dan dicoba langsung ada di **`/api/v1/docs`**
+    (Swagger UI), dan spesifikasi mentahnya di **`/api/v1/openapi.yaml`**.
+
     ## Otentikasi
 
     Setiap permintaan wajib membawa header `X-API-Key`. Kuncinya diambil dari
@@ -50,6 +55,11 @@ info:
     name: Merdeka Group -- MTI Data Analytics
 
 servers:
+  # Pertama dan relatif, supaya tombol "Try it out" di halaman /api/v1/docs
+  # selalu memanggil host yang sedang membuka halaman itu -- bukan alamat
+  # produksi yang kebetulan tertulis di sini.
+  - url: /api/v1
+    description: Host yang sama dengan halaman dokumentasi ini
   - url: http://10.60.10.59:26101/api/v1
     description: Produksi (app server plant)
   - url: http://localhost:8080/api/v1
@@ -59,6 +69,8 @@ security:
   - ApiKeyAuth: []
 
 tags:
+  - name: Dokumentasi
+    description: Halaman Swagger UI dan spesifikasi mentah. Dua-duanya tanpa kunci.
   - name: Monitoring
     description: Kesehatan app server, folder jaringan, dan antrean kirim.
   - name: Captures
@@ -67,6 +79,62 @@ tags:
     description: Taksonomi plant, slot, dan jadwal sesi.
 
 paths:
+  /docs:
+    get:
+      tags: [Dokumentasi]
+      operationId: getDocsPage
+      summary: Halaman Swagger UI
+      description: |
+        Dokumentasi yang bisa diklik dan dicoba langsung, dibangun dari
+        spesifikasi ini juga.
+
+        **Tanpa kunci API.** Browser tidak bisa menyisipkan header `X-API-Key`
+        saat membuka sebuah URL, jadi mensyaratkannya di sini berarti halaman
+        ini tidak akan pernah bisa dibuka -- termasuk tombol *Authorize* di
+        dalamnya, tempat kunci itu semestinya dimasukkan. Yang terbuka hanya
+        bentuk API-nya; seluruh endpoint data tetap menuntut kunci.
+
+        Tetap ikut mati kalau `API_KEYS` kosong.
+
+        Aset Swagger UI dilayani dari app server sendiri (`/api-docs/`), bukan
+        dari CDN, supaya halaman ini tetap tampil di jaringan pabrik yang tidak
+        punya jalan ke internet.
+      security: []
+      responses:
+        "200":
+          description: Halaman HTML Swagger UI.
+          content:
+            text/html:
+              schema: { type: string }
+        "503":
+          description: API belum diaktifkan (`API_KEYS` kosong).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /openapi.yaml:
+    get:
+      tags: [Dokumentasi]
+      operationId: getSpec
+      summary: Spesifikasi ini, mentah
+      description: |
+        Berkas yang sama dengan `docs/openapi.yaml` di repo -- diimpor ke dalam
+        bundel server sebagai teks, jadi tidak mungkin tertinggal versi lama.
+
+        Impor langsung ke Postman, Insomnia, atau Swagger Editor dari URL ini.
+      security: []
+      responses:
+        "200":
+          description: Spesifikasi OpenAPI dalam YAML.
+          content:
+            application/yaml:
+              schema: { type: string }
+        "503":
+          description: API belum diaktifkan (`API_KEYS` kosong).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /health:
     get:
       tags: [Monitoring]

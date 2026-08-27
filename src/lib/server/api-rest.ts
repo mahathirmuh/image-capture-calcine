@@ -12,13 +12,19 @@
 // antrean, maupun ke folder jaringan.
 import sql from "mssql";
 
+// Spesifikasinya diimpor sebagai teks, bukan dibaca dari disk saat runtime:
+// dengan begini isinya ikut masuk ke bundel server, jadi tidak ada berkas yang
+// bisa tertinggal saat image Docker dibangun -- dan halaman dokumentasi tidak
+// mungkin menggambarkan versi yang berbeda dari yang ada di repo.
+import openapiSpec from "../../../docs/openapi.yaml?raw";
 import { getCardDbPool, getCardDbSchema, isCardDbConfigured } from "../carddb";
 import { mapCaptureRecordRow, type CaptureRecordView } from "../capture-records";
 import { CAPTURE_SESSION_HOURS, formatSessionLabel } from "../capture-session";
 import { getServerEnv } from "../env";
 import { BIN_SLOTS, PLANTS, toBinLabel, toBinTitle, toLocationToken } from "../locations";
 import { buildSessionCoverage, toLocalDateKey, type CoverageRecord } from "../session-coverage";
-import { API_KEY_HEADER, authenticateApiRequest } from "./api-auth";
+import { API_KEY_HEADER, authenticateApiRequest, isApiEnabled } from "./api-auth";
+import { renderApiDocsPage } from "./api-docs-page";
 
 export const API_PREFIX = "/api/v1";
 
@@ -228,6 +234,25 @@ async function handleHealth(): Promise<Response> {
   );
 }
 
+// --- GET /api/v1/docs & /api/v1/openapi.yaml ----------------------------------
+
+function handleSpec(): Response {
+  return new Response(openapiSpec, {
+    headers: {
+      // Bentuk resmi sejak RFC 9512. Ditulis lengkap dengan charset supaya
+      // Swagger UI tidak menebak encoding-nya sendiri.
+      "content-type": "application/yaml; charset=utf-8",
+      "cache-control": "no-store",
+    },
+  });
+}
+
+function handleDocs(): Response {
+  return new Response(renderApiDocsPage(`${API_PREFIX}/openapi.yaml`), {
+    headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+  });
+}
+
 // --- GET /api/v1/plants -------------------------------------------------------
 
 function handlePlants(): Response {
@@ -427,6 +452,8 @@ async function handleSessions(url: URL): Promise<Response> {
 type Route = { method: string; pattern: RegExp; handle: (url: URL, params: string[]) => unknown };
 
 const ROUTES: Route[] = [
+  { method: "GET", pattern: /^\/docs$/, handle: () => handleDocs() },
+  { method: "GET", pattern: /^\/openapi\.yaml$/, handle: () => handleSpec() },
   { method: "GET", pattern: /^\/health$/, handle: () => handleHealth() },
   { method: "GET", pattern: /^\/plants$/, handle: () => handlePlants() },
   { method: "GET", pattern: /^\/captures$/, handle: (url) => handleCapturesList(url) },
@@ -438,19 +465,36 @@ const ROUTES: Route[] = [
  * ketika CARDDB belum dikonfigurasi, alih-alih 500 dari koneksi yang gagal. */
 const NEEDS_DATABASE = /^\/(captures|sessions)/;
 
+/**
+ * Dua endpoint yang dibuka tanpa kunci: halaman Swagger UI dan spesifikasinya.
+ *
+ * Browser tidak bisa menyisipkan header `X-API-Key` saat membuka sebuah URL,
+ * jadi mensyaratkan kunci di sini berarti halaman dokumentasinya tidak akan
+ * pernah bisa dibuka orang -- dan tombol "Authorize" di dalamnya, tempat kunci
+ * itu semestinya dimasukkan, ikut tidak terjangkau.
+ *
+ * Yang terbuka hanya BENTUK API-nya, bukan datanya: seluruh endpoint data
+ * tetap menuntut kunci, dan spesifikasi yang sama sudah ada di repo. Keduanya
+ * pun tetap ikut mati kalau API_KEYS kosong -- tidak ada gunanya memajang
+ * dokumentasi untuk API yang sedang tidak melayani siapa pun.
+ */
+const PUBLIC_PATHS = new Set(["/docs", "/openapi.yaml"]);
+
 export async function handleApiRequest(request: Request): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname.slice(API_PREFIX.length) || "/";
 
-  const auth = authenticateApiRequest(request);
-  if (!auth.ok) {
-    return json(
-      { error: { code: auth.code, message: auth.message } },
-      auth.status,
-      // Menyebut skema yang dipakai, supaya klien yang gagal tahu harus
-      // mengirim apa tanpa perlu membuka dokumentasi.
-      auth.status === 401 ? { "www-authenticate": `ApiKey header="${API_KEY_HEADER}"` } : {},
-    );
+  if (!(PUBLIC_PATHS.has(path) && isApiEnabled())) {
+    const auth = authenticateApiRequest(request);
+    if (!auth.ok) {
+      return json(
+        { error: { code: auth.code, message: auth.message } },
+        auth.status,
+        // Menyebut skema yang dipakai, supaya klien yang gagal tahu harus
+        // mengirim apa tanpa perlu membuka dokumentasi.
+        auth.status === 401 ? { "www-authenticate": `ApiKey header="${API_KEY_HEADER}"` } : {},
+      );
+    }
   }
 
   const matched = ROUTES.find((route) => route.pattern.test(path));
