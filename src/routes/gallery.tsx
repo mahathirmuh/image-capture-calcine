@@ -398,6 +398,11 @@ function GalleryPage() {
   const [fullscreenUrl, setFullscreenUrl] = useState<string | null>(null);
   // Sedang menukar gambar layar penuh dari thumbnail ke resolusi penuh.
   const [fullscreenUpgrading, setFullscreenUpgrading] = useState(false);
+  // Dibaca dari dalam showDetailAt, yang tidak boleh ikut dibuat ulang setiap
+  // kali gambar layar penuh berganti -- ia dipakai juga oleh pendengar papan
+  // ketik, dan mendaftar ulang listener pada tiap perpindahan gambar itu
+  // pemborosan yang tidak perlu.
+  const fullscreenOpenRef = useRef(false);
 
   const [sortOption, setSortOption] = useState<GallerySortOption>(
     DEFAULT_GALLERY_VIEW_STATE.sortOption,
@@ -1021,7 +1026,17 @@ function GalleryPage() {
       const recordId = card.captureRecordId;
       const immediate =
         card.local?.url ?? (recordId != null ? (thumbUrls[recordId] ?? null) : null);
-      if (!immediate) return;
+      if (!immediate) {
+        // Tidak ada yang bisa ditampilkan. Menutup lebih jujur daripada
+        // membiarkan gambar sebelumnya terpampang seolah itu kartu ini.
+        setFullscreenUrl(null);
+        return;
+      }
+      // Kartu aktif ikut ditetapkan. Panah maju/mundur di layar penuh bekerja
+      // atas posisi `detailItem`; tanpa ini, layar penuh yang dibuka langsung
+      // dari grid muncul TANPA panah sama sekali -- indeksnya -1, dan kedua
+      // tombol jadi nonaktif.
+      setDetailItem(card);
       setFullscreenUrl(immediate);
       if (card.local || recordId == null) return;
 
@@ -1071,6 +1086,10 @@ function GalleryPage() {
   // urutan -- dan indeks tersimpan akan menunjuk gambar yang salah tanpa ada
   // tanda apa pun. `-1` berarti gambar yang dibuka sudah tidak ada di daftar,
   // dan tombolnya ikut mati dengan sendirinya.
+  useEffect(() => {
+    fullscreenOpenRef.current = fullscreenUrl !== null;
+  }, [fullscreenUrl]);
+
   const detailIndex = detailItem
     ? filteredGallery.findIndex((item) => item.id === detailItem.id)
     : -1;
@@ -1085,9 +1104,15 @@ function GalleryPage() {
       // dilihat.
       setPage(Math.floor(index / pageSize) + 1);
       // Layar penuh ikut berganti gambar HANYA kalau ia sedang terbuka.
-      setFullscreenUrl((current) => (current ? (next.local?.url ?? null) : null));
+      //
+      // Lewat openFullscreen(), bukan `next.local?.url` seperti dulu: sejak
+      // galeri menampilkan kartu dari registry, kebanyakan kartu TIDAK punya
+      // blob lokal. Cara lama menghasilkan null untuk kartu semacam itu, dan
+      // menekan panah justru menutup layar penuh alih-alih maju ke gambar
+      // berikutnya.
+      if (fullscreenOpenRef.current) void openFullscreen(next);
     },
-    [filteredGallery, pageSize],
+    [filteredGallery, openFullscreen, pageSize],
   );
 
   useEffect(() => {
