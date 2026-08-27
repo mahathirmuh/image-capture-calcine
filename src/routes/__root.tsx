@@ -15,6 +15,15 @@ import { type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
+
+/**
+ * Lama toast tampil, dalam milidetik.
+ *
+ * Ditetapkan sekali di sini, bukan per pemanggilan. Sebelumnya tiap tempat
+ * memilih angkanya sendiri (3s, 6s, 8s, 15s) dan yang terpanjang menutupi
+ * kartu galeri cukup lama untuk mengganggu.
+ */
+const TOAST_DURATION_MS = 3000;
 import { SidebarProvider, SidebarTrigger, SidebarInset, useSidebar } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { findNavItem, SUB_PAGE_TITLES } from "@/lib/nav-items";
@@ -220,7 +229,7 @@ function RootComponent() {
     return (
       <QueryClientProvider client={queryClient}>
         <Outlet />
-        <Toaster richColors />
+        <Toaster richColors duration={TOAST_DURATION_MS} />
       </QueryClientProvider>
     );
   }
@@ -249,7 +258,7 @@ function RootComponent() {
             </div>
           </SidebarInset>
         </div>
-        <Toaster richColors />
+        <Toaster richColors duration={TOAST_DURATION_MS} />
       </SidebarProvider>
     </QueryClientProvider>
   );

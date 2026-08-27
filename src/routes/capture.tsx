@@ -538,7 +538,7 @@ function CapturePage() {
       // tombol hanya berhenti abu-abu, yang sama persis dengan tampilan gagal
       // diam. Kegagalannya sendiri sudah lewat banner error yang tetap tampil.
       setStatus("Fokus selesai");
-      toast.success("Fokus selesai", { duration: 3000 });
+      toast.success("Fokus selesai");
     } catch (error: unknown) {
       const message = getErrorMessage(error, "Autofocus gagal");
       const issue = describeCameraRuntimeIssue(getRuntimeErrorCode(error), message);
@@ -770,7 +770,7 @@ function CapturePage() {
         if (saveMethod === "app-network") {
           const headline = `${binLabel(bin)} tersimpan ke folder jaringan`;
           setStatus(`${headline}: ${savedNetworkPath}`);
-          toast.success(headline, { description: savedNetworkPath, duration: 6000 });
+          toast.success(headline, { description: savedNetworkPath });
         } else if (saveMethod === "spooled") {
           // Sengaja bukan hijau. Foto memang aman, tapi menyebutnya
           // "tersimpan" untuk berkas yang belum sampai di share persis
@@ -779,13 +779,11 @@ function CapturePage() {
           setStatus(`${headline} (${pendingForward} foto dalam antrean)`);
           toast.warning(headline, {
             description: `Folder jaringan sedang tidak terjangkau. ${pendingForward} foto menunggu dan akan terkirim sendiri begitu koneksinya pulih.`,
-            duration: 8000,
           });
         } else {
           setStatus(`${binLabel(bin)} tersimpan ke folder browser: ${savedNetworkPath}`);
           toast.warning(`${binLabel(bin)} tersimpan ke folder browser`, {
             description: `${savedNetworkPath} — belum masuk folder jaringan.`,
-            duration: 8000,
           });
         }
       } else {
@@ -798,7 +796,6 @@ function CapturePage() {
         setStatus(`${binLabel(bin)} diunduh lokal: ${filename} — belum masuk folder jaringan.`);
         toast.warning(`${binLabel(bin)} diunduh lokal`, {
           description: `${filename} belum masuk folder jaringan. Pindahkan manual bila diperlukan.`,
-          duration: 8000,
         });
         persistedPath = `browser-download/${filename}`;
         if (fallbackReasons.length > 0 || dirHandle || !supportsFS) {

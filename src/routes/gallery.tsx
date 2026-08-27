@@ -700,7 +700,6 @@ function GalleryPage() {
           // bersih padahal tidak.
           toast.warning("Record dihapus, berkasnya dibiarkan", {
             description: `${captureDelete.fileLeftOnShare} berada di luar folder yang dikelola app (capture lama), jadi tidak disentuh. Hapus manual dari share kalau memang tidak dipakai lagi.`,
-            duration: 15000,
           });
         }
       }
