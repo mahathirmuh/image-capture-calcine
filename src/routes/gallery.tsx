@@ -384,6 +384,15 @@ function GalleryPage() {
   const binLabel = (slot: BinSlot) => toBinLabel(viewerPlant, slot);
 
   const [detailItem, setDetailItem] = useState<GalleryCard | null>(null);
+
+  // Kartu aktif dan panel detail dipisah, karena keduanya bukan hal yang sama.
+  //
+  // `detailItem` menandai kartu mana yang sedang disorot -- layar penuh
+  // memakainya untuk tahu posisi maju/mundurnya. Panel samping punya sakelar
+  // sendiri, supaya membuka gambar layar penuh tidak ikut memunculkan panel
+  // metadata di belakangnya. Panel itu hanya muncul kalau memang diminta lewat
+  // tombol Detail.
+  const [detailPanelOpen, setDetailPanelOpen] = useState(false);
   // URL bertanda tangan untuk gambar yang tidak ada di browser ini, per record.
   // Umurnya lima menit, jadi disimpan per sesi buka halaman saja -- tidak perlu
   // dan tidak boleh diawetkan.
@@ -653,6 +662,16 @@ function GalleryPage() {
    * justru membuang satu-satunya salinan yang tersisa sementara fotonya tetap
    * ada di share.
    */
+  function openDetail(card: GalleryCard) {
+    setDetailItem(card);
+    setDetailPanelOpen(true);
+  }
+
+  function closeDetail() {
+    setDetailPanelOpen(false);
+    setDetailItem(null);
+  }
+
   /** Path berkasnya di share, atau null kalau capture ini tidak pernah ke sana. */
   function sharePathOf(card: GalleryCard): string | null {
     const path = card.persistedPath;
@@ -726,7 +745,7 @@ function GalleryPage() {
         await removeGalleryItem(local.id);
       }
 
-      if (detailItem?.id === card.id) setDetailItem(null);
+      if (detailItem?.id === card.id) closeDetail();
       setSelectedIds((prev) => {
         if (!prev.has(card.id)) return prev;
         const next = new Set(prev);
@@ -1593,10 +1612,15 @@ function GalleryPage() {
               <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Riwayat Registry DB
               </div>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Menampilkan metadata capture yang tercatat di MSSQL. Preview gambar tetap berasal
-                dari browser gallery lokal.
-              </p>
+              {/* Penjelasan sumber data hanya berarti bagi yang mengurus
+                  sistemnya. Bagi operator, "MSSQL" dan "browser gallery lokal"
+                  adalah istilah yang tidak menuntun ke tindakan apa pun. */}
+              {isAdmin && (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Menampilkan metadata capture yang tercatat di MSSQL. Preview gambar tetap berasal
+                  dari browser gallery lokal.
+                </p>
+              )}
             </div>
             <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-medium text-primary">
               {filteredCaptureRecords.length} record cocok filter
@@ -2101,9 +2125,9 @@ ${storage.path ?? "—"}`}
                     bawahnya -- yang berubah-ubah tergantung panjang path. */}
                 <div className="relative">
                   <button
-                    onClick={() => setDetailItem(item)}
+                    onClick={() => void openFullscreen(item)}
                     className="block aspect-square w-full overflow-hidden bg-muted"
-                    title="Buka"
+                    title="Lihat layar penuh"
                   >
                     <CardThumb
                       card={item}
@@ -2167,7 +2191,21 @@ ${storage.path ?? "—"}`}
                       );
                     })()}
                   </div>
-                  <div className="mt-2 flex justify-end">
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    {/* Panel metadata sekarang HANYA terbuka dari sini.
+                        Sebelumnya ia ikut muncul setiap kali gambarnya
+                        diklik -- termasuk saat orang cuma ingin melihat
+                        fotonya lebih besar, dan panel yang tidak diminta itu
+                        menutupi galerinya. Terlihat untuk semua peran: di
+                        sinilah operator menemukan path simpan dan tombol
+                        Unduh. */}
+                    <button
+                      onClick={() => openDetail(item)}
+                      className="rounded-md border border-input px-2 py-1 text-[10px] font-medium hover:bg-accent"
+                      title={`Lihat detail ${item.name}`}
+                    >
+                      Detail
+                    </button>
                     {/* Ubah nama dan Hapus mengubah registry MSSQL, dan itu bukan
                         wewenang operator. Menyembunyikan seluruh menunya, bukan
                         menonaktifkan butirnya satu-satu: tombol mati yang tetap
@@ -2233,8 +2271,9 @@ ${storage.path ?? "—"}`}
                     </td>
                     <td className="p-2">
                       <button
-                        onClick={() => setDetailItem(item)}
+                        onClick={() => void openFullscreen(item)}
                         className="block h-10 w-10 overflow-hidden rounded bg-muted"
+                        title="Lihat layar penuh"
                       >
                         <CardThumb
                           card={item}
@@ -2271,32 +2310,46 @@ ${storage.path ?? "—"}`}
                       <QcBadge />
                     </td>
                     <td className="p-2">
-                      {isAdmin && (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <button className="rounded p-1 hover:bg-accent">
-                              <MoreVertical className="h-3.5 w-3.5" />
-                            </button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              disabled={downloadingId === item.id}
-                              onClick={() => void downloadCard(item)}
-                            >
-                              {downloadingId === item.id ? "Menyiapkan..." : "Unduh"}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => askRename(item)}>
-                              Ubah nama
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => askDelete(item)}
-                              className="text-destructive"
-                            >
-                              Hapus
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      )}
+                      <div className="flex items-center justify-end gap-1">
+                        {/* Sama seperti di grid: panel detail hanya terbuka
+                            dari tombol ini, dan tombolnya terlihat untuk semua
+                            peran -- menu di sebelahnya khusus admin, jadi
+                            tanpa ini operator tidak punya jalan ke panel sama
+                            sekali di mode list. */}
+                        <button
+                          onClick={() => openDetail(item)}
+                          className="rounded-md border border-input px-2 py-1 text-[10px] font-medium hover:bg-accent"
+                          title={`Lihat detail ${item.name}`}
+                        >
+                          Detail
+                        </button>
+                        {isAdmin && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button className="rounded p-1 hover:bg-accent">
+                                <MoreVertical className="h-3.5 w-3.5" />
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                disabled={downloadingId === item.id}
+                                onClick={() => void downloadCard(item)}
+                              >
+                                {downloadingId === item.id ? "Menyiapkan..." : "Unduh"}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => askRename(item)}>
+                                Ubah nama
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => askDelete(item)}
+                                className="text-destructive"
+                              >
+                                Hapus
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -2350,16 +2403,13 @@ ${storage.path ?? "—"}`}
       </div>
 
       {/* Detail side panel */}
-      {detailItem && (
+      {detailItem && detailPanelOpen && (
         <aside className="hidden w-80 shrink-0 overflow-y-auto border-l bg-card p-4 lg:block">
           <div className="mb-3 flex items-center justify-between gap-2">
             <span className="truncate text-sm font-semibold" title={detailItem.name}>
               {detailItem.name}
             </span>
-            <button
-              onClick={() => setDetailItem(null)}
-              className="shrink-0 rounded p-1 hover:bg-accent"
-            >
+            <button onClick={closeDetail} className="shrink-0 rounded p-1 hover:bg-accent">
               <X className="h-4 w-4" />
             </button>
           </div>
