@@ -2,6 +2,32 @@ import { z } from "zod";
 
 const GALLERY_VIEW_STATE_KEY = "capture-system:gallery-view-state:v1";
 const GALLERY_SAVED_VIEW_KEY = "capture-system:gallery-saved-view:v1";
+const GALLERY_IMAGE_QUALITY_KEY = "capture-system:gallery-image-quality:v1";
+
+/**
+ * Kualitas gambar saat foto dibuka.
+ *
+ * - `hemat` -> pakai thumbnail (~50 KB dari disk app server)
+ * - `hd`    -> tarik foto ukuran penuh (~11 MB lewat CIFS dari 10.1.1.44)
+ *
+ * SENGAJA BUKAN BAGIAN DARI GalleryViewState. Isi state itu adalah filter dan
+ * tata letak, dan setiap Saved View membawa salinan lengkapnya -- kalau
+ * kualitas ikut masuk ke sana, berpindah view diam-diam mengubah berapa
+ * megabita yang ditarik operator. Ini preferensi perangkat, bukan bagian dari
+ * pencarian.
+ */
+export const GALLERY_IMAGE_QUALITY_OPTIONS = ["hemat", "hd"] as const;
+export type GalleryImageQuality = (typeof GALLERY_IMAGE_QUALITY_OPTIONS)[number];
+
+/**
+ * Hemat sebagai bawaan.
+ *
+ * Satu halaman grid 24 kartu berisi ~264 MB foto penuh lewat jaringan pabrik.
+ * Yang dibutuhkan untuk mengenali sampel hampir selalu cukup dari thumbnail;
+ * HD baru berarti saat seseorang memang ingin memeriksa butirannya, dan itu
+ * keputusan yang layak diambil sadar, bukan bawaan yang menagih di setiap klik.
+ */
+export const DEFAULT_GALLERY_IMAGE_QUALITY: GalleryImageQuality = "hemat";
 
 export const GALLERY_SORT_OPTIONS = ["newest", "oldest", "name-asc", "name-desc"] as const;
 export type GallerySortOption = (typeof GALLERY_SORT_OPTIONS)[number];
@@ -148,6 +174,24 @@ export function loadGallerySavedViewPreference(): GallerySavedViewPreference {
 export function saveGallerySavedViewPreference(savedView: GallerySavedViewPreference): void {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(GALLERY_SAVED_VIEW_KEY, savedView);
+}
+
+const galleryImageQualitySchema = z.enum(GALLERY_IMAGE_QUALITY_OPTIONS);
+
+export function loadGalleryImageQuality(): GalleryImageQuality {
+  if (typeof window === "undefined") return DEFAULT_GALLERY_IMAGE_QUALITY;
+  try {
+    const raw = window.localStorage.getItem(GALLERY_IMAGE_QUALITY_KEY);
+    if (!raw) return DEFAULT_GALLERY_IMAGE_QUALITY;
+    return galleryImageQualitySchema.parse(raw);
+  } catch {
+    return DEFAULT_GALLERY_IMAGE_QUALITY;
+  }
+}
+
+export function saveGalleryImageQuality(quality: GalleryImageQuality): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(GALLERY_IMAGE_QUALITY_KEY, quality);
 }
 
 export function getGallerySavedViewById(

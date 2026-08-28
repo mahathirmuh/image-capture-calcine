@@ -43,9 +43,13 @@ import {
   type CaptureRecordView,
 } from "@/lib/capture-records";
 import {
+  DEFAULT_GALLERY_IMAGE_QUALITY,
   DEFAULT_GALLERY_VIEW_STATE,
   GALLERY_PAGE_SIZE_OPTIONS,
   GALLERY_SAVED_VIEWS,
+  type GalleryImageQuality,
+  loadGalleryImageQuality,
+  saveGalleryImageQuality,
   type GallerySavedViewPreference,
   type GallerySortOption,
   type GalleryViewState,
@@ -410,6 +414,14 @@ function GalleryPage() {
   const [fullscreenUrl, setFullscreenUrl] = useState<string | null>(null);
   // Sedang menukar gambar layar penuh dari thumbnail ke resolusi penuh.
   const [fullscreenUpgrading, setFullscreenUpgrading] = useState(false);
+
+  // Bawaannya hemat: foto dibuka dari thumbnail (~50 KB dari disk app server),
+  // bukan berkas asli (~11 MB lewat CIFS dari 10.1.1.44). HD ditarik hanya
+  // ketika diminta -- entah lewat pilihan ini, atau tombol "Muat HD" pada satu
+  // gambar saja.
+  const [imageQuality, setImageQuality] = useState<GalleryImageQuality>(
+    DEFAULT_GALLERY_IMAGE_QUALITY,
+  );
   // Dibaca dari dalam showDetailAt, yang tidak boleh ikut dibuat ulang setiap
   // kali gambar layar penuh berganti -- ia dipakai juga oleh pendengar papan
   // ketik, dan mendaftar ulang listener pada tiap perpindahan gambar itu
@@ -482,6 +494,7 @@ function GalleryPage() {
     setFilterLocation(savedViewState.filterLocation);
     setFilterBin(savedViewState.filterBin);
     setSavedViewPreference(savedView);
+    setImageQuality(loadGalleryImageQuality());
     setGalleryViewLoaded(true);
     loadGallery().then((items) => {
       if (!cancelled) setGallery(items);
@@ -1204,6 +1217,11 @@ function GalleryPage() {
       setFullscreenUrl(immediate);
       if (card.local || recordId == null) return;
 
+      // Inilah yang dulu membuat galeri terasa berat: setiap kali gambar
+      // dibuka, foto 11 MB ditarik dari share tanpa ada yang memintanya.
+      // Sekarang itu hanya terjadi kalau operator memang memilih HD.
+      if (imageQuality !== "hd") return;
+
       const cached = remoteImageUrls[recordId];
       if (cached) {
         setFullscreenUrl(cached);
@@ -1224,8 +1242,49 @@ function GalleryPage() {
         setFullscreenUpgrading(false);
       }
     },
-    [remoteImageUrls, thumbUrls],
+    [imageQuality, remoteImageUrls, thumbUrls],
   );
+
+  /**
+   * Tarik berkas asli untuk SATU gambar yang sedang dibuka.
+   *
+   * Ini yang membuat mode hemat tetap layak dipakai: bawaannya ringan, tapi
+   * siapa pun yang benar-benar perlu memeriksa butiran sampel tinggal menekan
+   * sekali -- tanpa mengubah preferensi, dan tanpa menyeret 11 MB untuk setiap
+   * gambar lain yang kebetulan ia buka.
+   */
+  const upgradeFullscreenToHd = useCallback(async () => {
+    const recordId = detailItem?.captureRecordId ?? null;
+    if (recordId == null) return;
+
+    const cached = remoteImageUrls[recordId];
+    if (cached) {
+      setFullscreenUrl(cached);
+      return;
+    }
+
+    setFullscreenUpgrading(true);
+    try {
+      const signed = await createCaptureMediaUrl({ data: { recordId } });
+      if (!signed.ok) return;
+      setRemoteImageUrls((urls) => ({ ...urls, [recordId]: signed.url }));
+      setFullscreenUrl(signed.url);
+    } catch {
+      // Thumbnail-nya tetap terpampang; tidak ada yang perlu dibatalkan.
+    } finally {
+      setFullscreenUpgrading(false);
+    }
+  }, [detailItem, remoteImageUrls]);
+
+  // Tombol "Muat HD" hanya muncul kalau memang ada yang bisa dinaikkan:
+  // kartu dengan salinan lokal sudah menampilkan berkas aslinya, dan gambar
+  // yang sudah di-HD tidak perlu ditawari lagi.
+  const fullscreenRecordId = detailItem?.captureRecordId ?? null;
+  const showUpgradeButton =
+    fullscreenUrl !== null &&
+    !detailItem?.local &&
+    fullscreenRecordId != null &&
+    fullscreenUrl !== remoteImageUrls[fullscreenRecordId];
 
   // Dijalankan sendiri, tanpa menunggu diklik.
   //
@@ -1795,7 +1854,25 @@ ${storage.path ?? "—"}`}
               Bersihkan Filter
             </button>
           </div>
-          <div className="sm:col-span-3 lg:col-span-6">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">
+              Kualitas gambar
+            </label>
+            <select
+              value={imageQuality}
+              onChange={(e) => {
+                const next = e.target.value as GalleryImageQuality;
+                setImageQuality(next);
+                saveGalleryImageQuality(next);
+              }}
+              className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-xs"
+              title="Hemat memakai thumbnail (~50 KB). HD menarik berkas asli (~11 MB) dari folder jaringan."
+            >
+              <option value="hemat">Hemat (cepat)</option>
+              <option value="hd">HD (berkas asli)</option>
+            </select>
+          </div>
+          <div className="sm:col-span-2 lg:col-span-5">
             <label className="mb-1 block text-xs font-medium text-muted-foreground">
               Cari nama file
             </label>
@@ -2553,10 +2630,26 @@ ${storage.path ?? "—"}`}
           onClick={() => setFullscreenUrl(null)}
         >
           <img src={fullscreenUrl} alt="" className="max-h-full max-w-full object-contain" />
-          {fullscreenUpgrading && (
+          {fullscreenUpgrading ? (
             <span className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-md bg-background/85 px-3 py-1.5 text-xs font-medium">
               Memuat resolusi penuh...
             </span>
+          ) : (
+            // Mode hemat tanpa jalan keluar sama saja melumpuhkan galeri: orang
+            // membuka foto sampel justru untuk memeriksa butirannya. Jadi HD
+            // tetap terjangkau, hanya untuk gambar ini saja, sekali klik.
+            showUpgradeButton && (
+              <button
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void upgradeFullscreenToHd();
+                }}
+                className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-md bg-background/85 px-3 py-1.5 text-xs font-medium hover:bg-background"
+                title="Tarik berkas asli dari folder jaringan (~11 MB)"
+              >
+                Muat HD
+              </button>
+            )
           )}
           <button
             onClick={() => setFullscreenUrl(null)}

@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  DEFAULT_GALLERY_IMAGE_QUALITY,
   DEFAULT_GALLERY_VIEW_STATE,
   galleryViewStateMatchesSavedView,
+  loadGalleryImageQuality,
+  saveGalleryImageQuality,
   loadGallerySavedViewPreference,
   loadGalleryViewState,
   saveGallerySavedViewPreference,
@@ -121,5 +124,30 @@ describe("gallery-preferences", () => {
         "compact-audit",
       ),
     ).toBe(false);
+  });
+});
+
+describe("preferensi kualitas gambar", () => {
+  it("bawaannya hemat, bukan HD", () => {
+    // Bukan sekadar selera: HD berarti ~11 MB per gambar lewat CIFS dari
+    // 10.1.1.44. Bawaan yang salah di sini terasa di setiap klik operator.
+    expect(DEFAULT_GALLERY_IMAGE_QUALITY).toBe("hemat");
+  });
+
+  it("mengembalikan bawaan kalau belum pernah disimpan", () => {
+    window.localStorage.clear();
+    expect(loadGalleryImageQuality()).toBe("hemat");
+  });
+
+  it("mengingat pilihan operator", () => {
+    saveGalleryImageQuality("hd");
+    expect(loadGalleryImageQuality()).toBe("hd");
+    saveGalleryImageQuality("hemat");
+    expect(loadGalleryImageQuality()).toBe("hemat");
+  });
+
+  it("jatuh ke bawaan kalau nilainya rusak", () => {
+    window.localStorage.setItem("capture-system:gallery-image-quality:v1", "ultra");
+    expect(loadGalleryImageQuality()).toBe("hemat");
   });
 });
