@@ -57,7 +57,16 @@ export async function listEdgeDevices(): Promise<EdgeDevice[]> {
   return result.recordset.map((row: Record<string, unknown>) => mapDevice(row));
 }
 
-async function findEdgeDevice(deviceId: number): Promise<EdgeDevice | null> {
+/**
+ * Diekspor untuk REST API, yang perlu alamat edge sebuah device TANPA melewati
+ * pemeriksaan plant milik pengguna -- kunci API baca-saja memang sudah boleh
+ * membaca data seluruh plant, dan status kamera tidak lebih sensitif dari itu.
+ *
+ * Sengaja terpisah dari resolveEdgeTarget, bukan sebuah opsi di dalamnya:
+ * pintasan yang hidup di dalam resolver akan cepat sekali dipakai jalur tulis
+ * juga, dan di sanalah penguncian plant justru berarti.
+ */
+export async function findEdgeDevice(deviceId: number): Promise<EdgeDevice | null> {
   const { pool, schema } = await db();
   const result = await pool
     .request()
@@ -79,7 +88,18 @@ async function findEdgeDevice(deviceId: number): Promise<EdgeDevice | null> {
  * disegel saat login dan tidak berubah sampai login berikutnya, jadi operator
  * yang baru dipindah plant masih membawa plant lamanya di dalam cookie.
  */
-export async function resolveEdgeTarget(deviceId?: number | null): Promise<EdgeTargetResult> {
+/**
+ * @param actorUserId Identitas pemanggil kalau SUDAH diketahui di luar cookie
+ *   sesi -- dipakai REST API, yang mengenali penggunanya lewat token bearer dan
+ *   tidak punya cookie jar sama sekali. Dibiarkan kosong oleh halaman aplikasi,
+ *   yang identitasnya memang dibaca dari sesi. Pengunciannya ke plant milik
+ *   user berlaku sama untuk kedua jalur -- itulah gunanya lewat sini, bukan
+ *   membuat resolver kedua yang lebih longgar.
+ */
+export async function resolveEdgeTarget(
+  deviceId?: number | null,
+  actorUserId?: number,
+): Promise<EdgeTargetResult> {
   const fallback = getServerEnv().CAMERA_API_URL;
 
   const [{ isCardDbConfigured }, { getAppSession, isSessionConfigured }] = await Promise.all([
@@ -101,12 +121,14 @@ export async function resolveEdgeTarget(deviceId?: number | null): Promise<EdgeT
     };
   }
 
-  let sessionUserId: number | undefined;
-  try {
-    const session = await getAppSession();
-    sessionUserId = session.data.user?.id;
-  } catch {
-    sessionUserId = undefined;
+  let sessionUserId: number | undefined = actorUserId;
+  if (sessionUserId === undefined) {
+    try {
+      const session = await getAppSession();
+      sessionUserId = session.data.user?.id;
+    } catch {
+      sessionUserId = undefined;
+    }
   }
 
   if (sessionUserId === undefined) {

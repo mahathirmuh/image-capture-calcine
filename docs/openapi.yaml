@@ -13,11 +13,25 @@ info:
   title: Capture Calcine API
   version: "1.0.0"
   description: |
-    API baca-saja untuk data foto sampling calcine.
+    API untuk data foto sampling calcine.
 
-    **Baca-saja tanpa kecuali.** Tidak ada endpoint yang menulis ke registry,
-    ke antrean kirim, maupun ke folder jaringan. Kunci API yang bocor tidak
-    bisa dipakai menghapus capture atau mengubah berkas.
+    ## Dua tingkat hak
+
+    | Kredensial | Boleh |
+    | --- | --- |
+    | `X-API-Key` | **Baca saja, tanpa kecuali** |
+    | `Authorization: Bearer` dari `/auth/login` | Baca **dan** kendali kamera |
+
+    Pemisahan itu disengaja dan bukan formalitas. Kunci API adalah rahasia
+    bersama yang tinggal di berkas konfigurasi sistem lain, sering tersalin ke
+    skrip dan tiket -- ia tidak pernah bisa memicu rana, menulis ke folder
+    jaringan, atau bertindak atas nama seseorang.
+
+    Endpoint tulis menuntut token pengguna karena setiap capture menyimpan
+    `capturedBy`, dan pertanyaan "siapa yang mengambil foto ini" harus tetap
+    terjawab. Token itu juga membawa plant milik akunnya, sehingga operator
+    Acid Plant tidak bisa memerintah kamera Chloride Plant lewat API -- aturan
+    yang sama persis dengan yang berlaku di halaman aplikasi.
 
     ## Halaman dokumentasi
 
@@ -26,9 +40,11 @@ info:
 
     ## Otentikasi
 
-    Setiap permintaan wajib membawa header `X-API-Key`. Kuncinya diambil dari
-    variabel environment `API_KEYS` di app server (dipisah koma kalau lebih
-    dari satu).
+    Permintaan baca membawa header `X-API-Key`. Kuncinya diambil dari variabel
+    environment `API_KEYS` di app server (dipisah koma kalau lebih dari satu).
+
+    Permintaan tulis membawa `Authorization: Bearer <token>` dari
+    `POST /auth/login`. Token berlaku 12 jam.
 
     Kalau `API_KEYS` kosong, **seluruh API mati** dan setiap permintaan dijawab
     `503 API_DISABLED`. Itu disengaja: API yang menyala diam-diam karena
@@ -75,6 +91,14 @@ tags:
     description: Kesehatan app server, folder jaringan, dan antrean kirim.
   - name: Captures
     description: Riwayat foto sampling dari registry MSSQL.
+  - name: Otentikasi
+    description: |
+      Token pengguna. Hanya jalur ini yang boleh menulis -- kunci API
+      selamanya baca-saja.
+  - name: Kamera
+    description: |
+      Kendali kamera di lantai pabrik. Menuntut token pengguna, dan tunduk
+      pada penguncian plant milik akun tersebut.
   - name: Pelaporan
     description: Angka agregat, dihitung SQL supaya dasbor tidak menarik ribuan record.
   - name: Perangkat
@@ -408,6 +432,276 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "503": { $ref: "#/components/responses/DatabaseUnavailable" }
 
+  /auth/login:
+    post:
+      tags: [Otentikasi]
+      operationId: login
+      summary: Tukar username/password dengan token 12 jam
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [identifier, password]
+              properties:
+                identifier:
+                  type: string
+                  description: Username atau email.
+                  example: operator.ap
+                password: { type: string, format: password }
+      responses:
+        "200":
+          description: Token diterbitkan.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoginResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401":
+          description: |
+            Username atau password salah. Pesannya sengaja tidak membedakan
+            keduanya -- membedakannya memberi tahu penebak bahwa sebuah akun
+            memang ada.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: Akun dinonaktifkan.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503": { $ref: "#/components/responses/DatabaseUnavailable" }
+
+  /auth/me:
+    get:
+      tags: [Otentikasi]
+      operationId: getMe
+      summary: Identitas pemegang token
+      description: |
+        Datanya dibaca **ulang dari database**, bukan diambil dari klaim di
+        dalam token: peran bisa diturunkan dan akun bisa dinonaktifkan setelah
+        token terbit, dan token yang masih berlaku tidak boleh membuat
+        perubahan itu tak terlihat.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Identitas dan masa berlaku token.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MeResponse" }
+        "401":
+          description: Token tidak sah, kedaluwarsa, dicabut, atau akun dinonaktifkan.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403": { $ref: "#/components/responses/UserTokenRequired" }
+
+  /auth/logout:
+    post:
+      tags: [Otentikasi]
+      operationId: logout
+      summary: Cabut token yang sedang dipakai
+      description: |
+        Mencabut **token ini saja**; token lain milik akun yang sama tetap
+        hidup.
+
+        Daftar cabutan disimpan di memori proses, jadi ia hilang saat container
+        di-restart -- token yang dicabut bisa hidup lagi sampai kedaluwarsa
+        sendiri dalam 12 jam. Pencabutan yang pasti dan bertahan melewati
+        restart dilakukan dengan menonaktifkan akunnya.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Token dicabut.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, example: true }
+                  revokedAt: { type: string, format: date-time }
+        "403": { $ref: "#/components/responses/UserTokenRequired" }
+
+  /devices/{code}/status:
+    get:
+      tags: [Perangkat]
+      operationId: getDeviceStatus
+      summary: Status langsung kamera dari edge
+      description: |
+        Ditanyakan langsung ke service kamera di area plant, bukan dibaca dari
+        registry -- jadi jawabannya menggambarkan keadaan saat ini, termasuk
+        saat kameranya tercabut atau tertidur.
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema: { type: string, example: edge-camera-01 }
+      responses:
+        "200":
+          description: Status perangkat.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeviceStatus" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: Device tidak ada di registry.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "502": { $ref: "#/components/responses/EdgeUnavailable" }
+        "503": { $ref: "#/components/responses/DatabaseUnavailable" }
+
+  /jobs/{jobId}:
+    get:
+      tags: [Kamera]
+      operationId: getJob
+      summary: Status job capture atau autofocus
+      description: |
+        `POST /camera/capture` dan `/camera/autofocus` menjawab **job**, bukan
+        hasil. Endpoint ini yang menungguinya sampai `succeeded` atau `failed`.
+
+        Sebabnya fisik: capture Canon butuh beberapa detik, dan menahan koneksi
+        HTTP selama itu membuat klien yang timeout menyangka capture-nya gagal
+        padahal rananya sudah terlanjur jatuh.
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Status job.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: Job tidak dikenal edge.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "502": { $ref: "#/components/responses/EdgeUnavailable" }
+
+  /camera/session:
+    post:
+      tags: [Kamera]
+      operationId: createCameraSession
+      summary: Ambil sewa eksklusif atas kamera
+      description: |
+        **Wajib dilakukan lebih dulu** sebelum capture atau autofocus. Kamera
+        Canon mengunci sesinya: dua pemanggil yang memotret bersamaan
+        menghasilkan `PTP Device Busy`, dan sewa inilah yang mencegahnya.
+
+        `ownerId` diambil dari token, **bukan** dari badan permintaan -- kalau
+        klien boleh menyebutkannya sendiri, sesi kamera bisa diklaim atas nama
+        orang lain.
+      security:
+        - BearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                leaseSeconds:
+                  type: integer
+                  default: 120
+                  description: Lama sewa. Habis sendiri kalau tidak dilepas.
+                deviceId:
+                  type: integer
+                  description: |
+                    Wajib hanya kalau ada lebih dari satu kamera aktif yang
+                    boleh diakses akun ini. Dengan satu kandidat, resolver
+                    memilihkannya; dengan dua, ia menolak menebak.
+      responses:
+        "200":
+          description: Sewa diberikan.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CameraSession" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/UserTokenRequired" }
+        "409":
+          description: |
+            Kamera sedang dipakai client lain, atau pilihan device ambigu.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "502": { $ref: "#/components/responses/EdgeUnavailable" }
+
+  /camera/capture:
+    post:
+      tags: [Kamera]
+      operationId: triggerCapture
+      summary: Picu rana kamera
+      description: |
+        **Menjatuhkan rana kamera sungguhan di lantai pabrik.**
+
+        Menjawab `202` dengan sebuah job; tunggui lewat `GET /jobs/{jobId}`.
+        Berkasnya diturunkan ke edge, lalu ditarik dan disimpan aplikasi ke
+        folder jaringan dengan penamaan sesi yang berlaku.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [leaseToken]
+              properties:
+                leaseToken:
+                  type: string
+                  description: Dari `POST /camera/session`.
+                deviceId: { type: integer }
+      responses:
+        "202":
+          description: Job dibuat.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JobAccepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/UserTokenRequired" }
+        "502": { $ref: "#/components/responses/EdgeUnavailable" }
+
+  /camera/autofocus:
+    post:
+      tags: [Kamera]
+      operationId: triggerAutofocus
+      summary: Jalankan autofocus
+      description: |
+        Bentuk jawabannya sama dengan capture -- sebuah job yang ditunggui
+        lewat `GET /jobs/{jobId}` -- tetapi hasilnya tidak menghasilkan berkas
+        apa pun.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [leaseToken]
+              properties:
+                leaseToken: { type: string }
+                deviceId: { type: integer }
+      responses:
+        "202":
+          description: Job dibuat.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JobAccepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/UserTokenRequired" }
+        "502": { $ref: "#/components/responses/EdgeUnavailable" }
+
 components:
   securitySchemes:
     ApiKeyAuth:
@@ -421,7 +715,42 @@ components:
         berumur pendek yang bisa disegarkan, sementara ini kunci statis yang
         dicabut dengan mengeluarkannya dari `API_KEYS`.
 
+        **Baca-saja, tanpa kecuali.** Kunci ini tidak pernah bisa memicu rana,
+        menulis ke folder jaringan, atau bertindak atas nama seseorang. Kunci
+        yang bocor bisa membaca riwayat sampling -- tidak lebih.
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        Token pengguna dari `POST /auth/login`, berlaku 12 jam.
+
+        **Wajib untuk semua endpoint tulis.** Alasannya bukan formalitas:
+        setiap capture menyimpan `capturedBy`, dan pertanyaan "siapa yang
+        mengambil foto ini" harus tetap terjawab. Kunci API tidak punya orang
+        di belakangnya; token ini punya.
+
+        Ia juga membawa plant milik akunnya, sehingga operator Acid Plant tidak
+        bisa memerintah kamera Chloride Plant lewat API -- aturan yang sama
+        persis dengan yang berlaku di halaman aplikasi.
+
+        Dicabut lewat `POST /auth/logout`, atau seketika dan permanen dengan
+        menonaktifkan akunnya (diperiksa ulang dari database di `/auth/me`).
+
   responses:
+    UserTokenRequired:
+      description: |
+        Endpoint ini menuntut token pengguna; kunci API ditolak. Ini batas
+        baca/tulis API-nya, bukan kekeliruan konfigurasi.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    EdgeUnavailable:
+      description: |
+        Service kamera di area plant tidak terjangkau atau menolak permintaan.
+        App server sendiri sehat -- yang diam adalah mesin di sisi kamera.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
     BadRequest:
       description: Parameter tidak sah.
       content:
@@ -444,6 +773,96 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
 
   schemas:
+    LoginResponse:
+      type: object
+      required: [token, tokenType, expiresAt, user]
+      properties:
+        token: { type: string }
+        tokenType: { type: string, example: Bearer }
+        expiresAt: { type: string, format: date-time }
+        user: { $ref: "#/components/schemas/SessionUser" }
+
+    SessionUser:
+      type: object
+      properties:
+        id: { type: integer }
+        username: { type: string }
+        fullName: { type: string }
+        email: { type: string, nullable: true }
+        role: { type: string, example: operator }
+
+    MeResponse:
+      type: object
+      properties:
+        user:
+          allOf:
+            - $ref: "#/components/schemas/SessionUser"
+            - type: object
+              properties:
+                plant:
+                  type: string
+                  nullable: true
+                  description: |
+                    Plant yang boleh diakses akun ini. `ALL` berarti tidak
+                    dibatasi. Nilai inilah yang mengunci kamera mana yang boleh
+                    diperintah lewat endpoint /camera.
+        token:
+          type: object
+          properties:
+            issuedAt: { type: string, format: date-time }
+            expiresAt: { type: string, format: date-time }
+
+    DeviceStatus:
+      type: object
+      properties:
+        deviceCode: { type: string }
+        deviceName: { type: string, nullable: true }
+        plant: { type: string, nullable: true }
+        edge:
+          type: object
+          description: Jawaban mentah dari service kamera, diteruskan apa adanya.
+          additionalProperties: true
+
+    CameraSession:
+      type: object
+      properties:
+        deviceCode: { type: string, nullable: true }
+        plant: { type: string, nullable: true }
+        ownerId:
+          type: string
+          description: Diambil dari token, bukan dari badan permintaan.
+        session:
+          type: object
+          properties:
+            sessionId: { type: string }
+            leaseToken:
+              type: string
+              description: Dibawa di setiap perintah kamera berikutnya.
+            expiresAt: { type: string, format: date-time }
+
+    JobAccepted:
+      type: object
+      properties:
+        deviceCode: { type: string, nullable: true }
+        job: { $ref: "#/components/schemas/Job" }
+
+    Job:
+      type: object
+      properties:
+        jobId: { type: string }
+        status:
+          type: string
+          enum: [queued, running, succeeded, failed]
+        result:
+          type: object
+          additionalProperties: true
+        error:
+          type: object
+          nullable: true
+          properties:
+            code: { type: string }
+            message: { type: string }
+
     Summary:
       type: object
       required: [generatedAt, timezone, totals, windows, byStatus, byPlant]

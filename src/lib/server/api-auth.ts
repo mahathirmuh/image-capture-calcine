@@ -6,13 +6,31 @@
 // menyimpan password operator, dan mencabut aksesnya berarti mematikan akun
 // orang.
 //
-// API ini BACA-SAJA. Tidak ada satu pun endpoint yang mengubah data, jadi kunci
-// yang bocor tidak bisa dipakai menghapus capture atau menulis ke share.
+// DUA JENIS PEMANGGIL, DENGAN HAK YANG BERBEDA:
+//
+//   - kunci API (x-api-key)      -> BACA-SAJA, selamanya. Rahasia bersama tanpa
+//                                   orang di belakangnya; kunci yang bocor
+//                                   tidak boleh bisa menghapus capture,
+//                                   memicu rana, atau menulis ke share.
+//   - token bearer (/auth/login) -> orang sungguhan, dengan id, peran, dan
+//                                   plant-nya. Hanya ini yang boleh menulis,
+//                                   supaya `capturedBy` tetap bisa menjawab
+//                                   pertanyaan "siapa".
+//
+// Pemisahan itu ditegakkan di daftar route (`requiresUser`), bukan di dalam
+// masing-masing handler: penjagaan yang tersebar akan terlewat pada endpoint
+// berikutnya yang ditambahkan orang.
 import { getServerEnv } from "../env";
+import { verifyApiToken, type ApiTokenClaims } from "./api-token";
+
+export type ApiPrincipal = { kind: "api-key" } | { kind: "user"; claims: ApiTokenClaims };
 
 export type ApiAuthResult =
-  | { ok: true }
+  | { ok: true; principal: ApiPrincipal }
   | { ok: false; status: 401 | 503; code: string; message: string };
+
+/** Header token pengguna. Bearer, karena ini memang berumur pendek. */
+export const API_BEARER_PREFIX = "Bearer ";
 
 /** Header tempat kunci dikirim. Bukan `Authorization`, supaya tidak tertukar
  * dengan skema Bearer yang menyiratkan token berumur pendek -- ini kunci statis. */
@@ -68,8 +86,20 @@ export function isApiEnabled(): boolean {
   return parseApiKeys(getServerEnv().API_KEYS).length > 0;
 }
 
-export function authenticateApiRequest(request: Request): ApiAuthResult {
+const TOKEN_REJECTIONS: Record<string, string> = {
+  EXPIRED: "Token sudah kedaluwarsa. Login lagi lewat POST /auth/login.",
+  REVOKED: "Token sudah dicabut lewat logout.",
+  BAD_SIGNATURE: "Tanda tangan token tidak sah.",
+  MALFORMED: "Bentuk token tidak dikenali.",
+  NOT_CONFIGURED: "SESSION_SECRET belum diisi, jadi token tidak bisa diverifikasi.",
+};
+
+export async function authenticateApiRequest(request: Request): Promise<ApiAuthResult> {
   const keys = parseApiKeys(getServerEnv().API_KEYS);
+  // API_KEYS tetap SATU SAKELAR untuk seluruh API, termasuk jalur token. Nilai
+  // kosong berarti mati sepenuhnya -- API yang menyala diam-diam karena satu
+  // variabel terlupa adalah kegagalan yang tidak terlihat sampai ada yang
+  // menemukannya.
   if (keys.length === 0) {
     return {
       ok: false,
@@ -80,15 +110,31 @@ export function authenticateApiRequest(request: Request): ApiAuthResult {
     };
   }
 
+  // Token diperiksa lebih dulu: pemanggil yang mengirim keduanya jelas
+  // bermaksud bertindak sebagai orang, dan hak itu yang lebih sempit.
+  const authorization = request.headers.get("authorization");
+  if (authorization && authorization.startsWith(API_BEARER_PREFIX)) {
+    const check = await verifyApiToken(authorization.slice(API_BEARER_PREFIX.length).trim());
+    if (!check.ok) {
+      return {
+        ok: false,
+        status: 401,
+        code: `TOKEN_${check.code}`,
+        message: TOKEN_REJECTIONS[check.code] ?? "Token tidak sah.",
+      };
+    }
+    return { ok: true, principal: { kind: "user", claims: check.claims } };
+  }
+
   const presented = request.headers.get(API_KEY_HEADER);
   if (!presented || !matchesAnyApiKey(presented, keys)) {
     return {
       ok: false,
       status: 401,
       code: "INVALID_API_KEY",
-      message: `Kunci API tidak dikenali. Kirim header ${API_KEY_HEADER}.`,
+      message: `Kunci API tidak dikenali. Kirim header ${API_KEY_HEADER}, atau Authorization: Bearer <token> untuk bertindak sebagai pengguna.`,
     };
   }
 
-  return { ok: true };
+  return { ok: true, principal: { kind: "api-key" } };
 }

@@ -8,8 +8,18 @@
 // Di sini permukaannya tetap kecil, eksplisit, dan cocok satu-satu dengan
 // docs/openapi.yaml.
 //
-// BACA-SAJA, tanpa kecuali. Tidak ada endpoint yang menulis ke registry, ke
-// antrean, maupun ke folder jaringan.
+// DUA TINGKAT HAK, bukan satu:
+//
+//   - Kunci API (x-api-key) -> BACA-SAJA, tanpa kecuali. Tidak satu pun
+//     endpoint tulis terbuka untuknya. Kunci yang bocor tidak bisa menghapus
+//     capture, memicu rana, atau menulis ke folder jaringan.
+//   - Token bearer dari POST /auth/login -> orang sungguhan. Hanya jalur ini
+//     yang boleh menyentuh kamera, dan `capturedBy` pada capture yang
+//     dihasilkannya adalah nama orang itu, bukan "api".
+//
+// Batasnya ditegakkan di tabel ROUTES lewat `requiresUser`, satu tempat, bukan
+// di dalam masing-masing handler -- penjagaan yang tersebar akan terlewat pada
+// endpoint berikutnya yang ditambahkan orang.
 import sql from "mssql";
 
 // Spesifikasinya diimpor sebagai teks, bukan dibaca dari disk saat runtime:
@@ -23,7 +33,13 @@ import { CAPTURE_SESSION_HOURS, formatSessionLabel } from "../capture-session";
 import { getServerEnv } from "../env";
 import { BIN_SLOTS, PLANTS, toBinLabel, toBinTitle, toLocationToken } from "../locations";
 import { buildSessionCoverage, toLocalDateKey, type CoverageRecord } from "../session-coverage";
-import { API_KEY_HEADER, authenticateApiRequest, isApiEnabled } from "./api-auth";
+import {
+  API_KEY_HEADER,
+  authenticateApiRequest,
+  isApiEnabled,
+  type ApiPrincipal,
+} from "./api-auth";
+import { isApiTokenConfigured } from "./api-token";
 import { renderApiDocsPage } from "./api-docs-page";
 
 export const API_PREFIX = "/api/v1";
@@ -416,7 +432,7 @@ function toCoverageRecord(view: CaptureRecordView): CoverageRecord {
  * penyaji galeri -- `file_path` datang dari database, tapi database bukan
  * alasan untuk melayani berkas apa pun di luar folder jaringan.
  */
-async function handleCaptureImage(rawId: string): Promise<Response> {
+async function handleCaptureImage(rawId: string, headOnly = false): Promise<Response> {
   const id = Number(rawId);
   if (!Number.isInteger(id) || id < 1) {
     return apiError(400, "INVALID_PARAM", `id capture tidak sah: ${rawId}`);
@@ -457,15 +473,20 @@ async function handleCaptureImage(rawId: string): Promise<Response> {
     return apiError(404, "FILE_NOT_READY", "Berkasnya belum ada di folder jaringan.");
   }
 
+  const headers = {
+    "content-type": contentTypeFor(record.fileName),
+    "content-length": String(size),
+    "cache-control": "no-store",
+    "content-disposition": `inline; filename="${encodeURIComponent(record.fileName)}"`,
+  };
+
+  // HEAD dijawab tanpa membuka berkasnya sama sekali. Itu gunanya: memeriksa
+  // apakah fotonya sudah mendarat dan berapa besarnya, tanpa menarik 11 MB
+  // lewat CIFS -- dan tanpa meninggalkan file descriptor yang isinya dibuang.
+  if (headOnly) return new Response(null, { headers });
+
   const stream = Readable.toWeb(createReadStream(record.filePath)) as ReadableStream;
-  return new Response(stream, {
-    headers: {
-      "content-type": contentTypeFor(record.fileName),
-      "content-length": String(size),
-      "cache-control": "no-store",
-      "content-disposition": `inline; filename="${encodeURIComponent(record.fileName)}"`,
-    },
-  });
+  return new Response(stream, { headers });
 }
 
 /**
@@ -625,6 +646,403 @@ async function handleDevices(): Promise<Response> {
   return json({ total: devices.length, devices });
 }
 
+/** Header untuk memanggil edge API, sama dengan yang dipakai halaman capture. */
+function edgeHeaders(extra?: HeadersInit): Headers {
+  const headers = new Headers(extra);
+  const token = getServerEnv().CAMERA_API_TOKEN;
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  return headers;
+}
+
+async function readJsonBody(request: Request): Promise<Record<string, unknown>> {
+  try {
+    const body: unknown = await request.json();
+    return body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+  } catch {
+    // Badan kosong atau bukan JSON. Dikembalikan sebagai objek kosong supaya
+    // pemeriksaan field yang wajib yang menghasilkan pesannya, bukan "JSON
+    // tidak sah" yang tidak menuntun ke mana-mana.
+    return {};
+  }
+}
+
+function text(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+/**
+ * Alamat edge untuk pemanggil REST.
+ *
+ * Lewat resolveEdgeTarget yang sama dengan halaman aplikasi, dengan identitas
+ * dioper eksplisit -- itu yang membuat penguncian ke plant milik user berlaku
+ * juga di sini. Resolver kedua yang lebih longgar akan jadi jalan memutar
+ * mengelilingi aturan yang justru sedang dijaga.
+ */
+async function resolveEdgeForUser(principal: ApiPrincipal, deviceId?: number | null) {
+  const { resolveEdgeTarget } = await import("./edge-target");
+  const actorId = principal.kind === "user" ? principal.claims.userId : undefined;
+  return resolveEdgeTarget(deviceId ?? null, actorId);
+}
+
+/**
+ * Alamat edge untuk endpoint BACA yang dipanggil kunci API.
+ *
+ * resolveEdgeTarget menuntut identitas orang karena ia menegakkan penguncian
+ * plant -- benar untuk kendali kamera, tapi salah untuk monitoring: sistem
+ * pemantau memang tidak punya orang di belakangnya, dan kunci API baca-saja
+ * sudah boleh membaca data seluruh plant. Jadi status kamera dan status job
+ * dibaca lewat jalur ini, dan HANYA jalur baca yang memakainya.
+ */
+async function resolveEdgeForRead(principal: ApiPrincipal, deviceId?: number | null) {
+  if (principal.kind === "user") return resolveEdgeForUser(principal, deviceId);
+
+  const { findEdgeDevice } = await import("./edge-target");
+  const fallback = getServerEnv().CAMERA_API_URL;
+
+  if (deviceId == null) {
+    return {
+      ok: true as const,
+      deviceId: null,
+      deviceCode: null,
+      deviceName: null,
+      plant: null,
+      baseUrl: fallback,
+    };
+  }
+
+  const device = await findEdgeDevice(deviceId);
+  if (!device) {
+    return {
+      ok: false as const,
+      code: "DEVICE_NOT_FOUND",
+      message: "Device tidak ada di registry.",
+    };
+  }
+  return {
+    ok: true as const,
+    deviceId: device.id,
+    deviceCode: device.code,
+    deviceName: device.name,
+    plant: device.plant,
+    baseUrl: device.edgeApiUrl ?? fallback,
+  };
+}
+
+/** Terjemahkan kegagalan resolver jadi jawaban HTTP yang sesuai sebabnya. */
+function edgeFailure(result: { code: string; message: string }): Response {
+  const status =
+    result.code === "UNAUTHENTICATED" ? 401 : result.code === "DEVICE_NOT_FOUND" ? 404 : 409;
+  return apiError(status, result.code, result.message);
+}
+
+// --- Otentikasi ---------------------------------------------------------------
+
+const LOGIN_REJECTED = "Username atau password salah.";
+
+/**
+ * Hash buangan supaya username yang tidak ada memakan waktu yang sama dengan
+ * yang ada. Tanpa ini selisih waktu respons sudah cukup untuk memetakan daftar
+ * akun. Nilainya sama dengan yang dipakai halaman login.
+ */
+const DUMMY_HASH =
+  "scrypt$16384$8$1$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+
+async function handleLogin(request: Request): Promise<Response> {
+  if (!isApiTokenConfigured()) {
+    return apiError(
+      503,
+      "SESSION_SECRET_MISSING",
+      "SESSION_SECRET belum diisi di app server ini, jadi token tidak bisa diterbitkan.",
+    );
+  }
+
+  const body = await readJsonBody(request);
+  const identifier = text(body.identifier);
+  const password = typeof body.password === "string" ? body.password : "";
+  if (!identifier || !password) {
+    return apiError(400, "INVALID_BODY", "Field `identifier` dan `password` wajib diisi.");
+  }
+
+  const [{ findUserForLogin, markUserLogin }, { verifyPassword }, { recordActivity }] =
+    await Promise.all([import("./users"), import("./password"), import("./activity")]);
+
+  const record = await findUserForLogin(identifier);
+
+  if (!record) {
+    await verifyPassword(password, DUMMY_HASH);
+    // Yang diketik sengaja TIDAK dicatat saat akunnya tidak dikenal: orang
+    // sering mengetik password di kolom username, dan menyimpannya apa adanya
+    // berarti menaruh password terbaca di jejak audit.
+    await recordActivity({
+      action: "login.failed",
+      severity: "warning",
+      detail: "API: username atau email tidak dikenal",
+    });
+    return apiError(401, "INVALID_CREDENTIALS", LOGIN_REJECTED);
+  }
+
+  if (!(await verifyPassword(password, record.passwordHash))) {
+    await recordActivity({
+      action: "login.failed",
+      severity: "warning",
+      actorId: record.user.id,
+      actorUsername: record.user.username,
+      detail: "API: password salah",
+    });
+    return apiError(401, "INVALID_CREDENTIALS", LOGIN_REJECTED);
+  }
+
+  if (!record.isActive) {
+    await recordActivity({
+      action: "login.blocked",
+      severity: "warning",
+      actorId: record.user.id,
+      actorUsername: record.user.username,
+      detail: "API: akun dinonaktifkan",
+    });
+    return apiError(403, "ACCOUNT_DISABLED", "Akun ini dinonaktifkan.");
+  }
+
+  const { createApiToken } = await import("./api-token");
+  const issued = await createApiToken(record.user);
+  if (!issued) {
+    return apiError(503, "SESSION_SECRET_MISSING", "Token tidak bisa ditandatangani.");
+  }
+
+  await markUserLogin(record.user.id).catch(() => undefined);
+  await recordActivity({
+    action: "login.success",
+    actorId: record.user.id,
+    actorUsername: record.user.username,
+    detail: "API token diterbitkan",
+  });
+
+  return json({
+    token: issued.token,
+    tokenType: "Bearer",
+    expiresAt: new Date(issued.claims.expiresAt).toISOString(),
+    user: record.user,
+  });
+}
+
+/**
+ * Identitas pemegang token.
+ *
+ * Datanya dibaca ULANG dari database, tidak diambil dari klaim di dalam token:
+ * peran bisa diturunkan dan akun bisa dinonaktifkan setelah token terbit, dan
+ * token yang masih berlaku tidak boleh membuat perubahan itu tak terlihat.
+ * Inilah pencabutan yang pasti dan bertahan melewati restart.
+ */
+async function handleMe(principal: ApiPrincipal): Promise<Response> {
+  if (principal.kind !== "user") {
+    return apiError(
+      403,
+      "USER_TOKEN_REQUIRED",
+      "Endpoint ini mengenali orang, bukan kunci API. Login lewat POST /auth/login.",
+    );
+  }
+
+  const { findUserById } = await import("./users");
+  const user = await findUserById(principal.claims.userId);
+  if (!user || !user.isActive) {
+    return apiError(401, "ACCOUNT_DISABLED", "Akun ini sudah tidak aktif.");
+  }
+
+  return json({
+    user: {
+      id: user.id,
+      username: user.username,
+      fullName: user.fullName,
+      email: user.email,
+      role: user.role,
+      plant: user.plant,
+    },
+    token: {
+      issuedAt: new Date(principal.claims.issuedAt).toISOString(),
+      expiresAt: new Date(principal.claims.expiresAt).toISOString(),
+    },
+  });
+}
+
+async function handleLogout(principal: ApiPrincipal): Promise<Response> {
+  if (principal.kind !== "user") {
+    return apiError(403, "USER_TOKEN_REQUIRED", "Tidak ada token pengguna untuk dicabut.");
+  }
+  const { revokeApiToken } = await import("./api-token");
+  revokeApiToken(principal.claims);
+
+  const { recordActivity } = await import("./activity");
+  await recordActivity({
+    action: "logout",
+    actorId: principal.claims.userId,
+    actorUsername: principal.claims.username,
+    detail: "API token dicabut",
+  });
+
+  return json({ ok: true, revokedAt: new Date().toISOString() });
+}
+
+// --- Perangkat & job ----------------------------------------------------------
+
+async function handleDeviceStatus(principal: ApiPrincipal, rawCode: string): Promise<Response> {
+  const code = decodeURIComponent(rawCode).trim();
+  if (!code) return apiError(400, "INVALID_PARAM", "Kode device wajib diisi.");
+
+  const schema = `[${getCardDbSchema()}]`;
+  const pool = await getCardDbPool();
+  const found = await pool.request().input("code", sql.NVarChar(100), code).query(`
+    SELECT TOP 1 d.id FROM ${schema}.devices d
+    WHERE d.code = @code AND d.is_deleted = 0;`);
+  const deviceId = found.recordset[0]?.id;
+  if (deviceId == null) {
+    return apiError(404, "NOT_FOUND", `Device ${code} tidak ada di registry.`);
+  }
+
+  const target = await resolveEdgeForRead(principal, Number(deviceId));
+  if (!target.ok) return edgeFailure(target);
+
+  let res: Response;
+  try {
+    res = await fetch(`${target.baseUrl}/v1/device`, { headers: edgeHeaders() });
+  } catch {
+    // Edge tidak terjangkau bukan 500: app server sendiri sehat, yang diam
+    // adalah mesin di area plant. 502 menyebutkan itu apa adanya.
+    return apiError(502, "EDGE_UNREACHABLE", "Tidak bisa menjangkau service kamera.");
+  }
+  if (!res.ok) {
+    return apiError(502, "EDGE_REQUEST_FAILED", `Service kamera menjawab ${res.status}.`);
+  }
+
+  return json({
+    deviceCode: target.deviceCode ?? code,
+    deviceName: target.deviceName,
+    plant: target.plant,
+    edge: (await res.json()) as unknown,
+  });
+}
+
+async function handleJob(principal: ApiPrincipal, rawJobId: string): Promise<Response> {
+  const jobId = decodeURIComponent(rawJobId).trim();
+  if (!jobId) return apiError(400, "INVALID_PARAM", "jobId wajib diisi.");
+
+  const target = await resolveEdgeForRead(principal);
+  if (!target.ok) return edgeFailure(target);
+
+  let res: Response;
+  try {
+    res = await fetch(`${target.baseUrl}/v1/jobs/${encodeURIComponent(jobId)}`, {
+      headers: edgeHeaders(),
+    });
+  } catch {
+    return apiError(502, "EDGE_UNREACHABLE", "Tidak bisa menjangkau service kamera.");
+  }
+  if (res.status === 404) return apiError(404, "NOT_FOUND", `Job ${jobId} tidak dikenal.`);
+  if (!res.ok) {
+    return apiError(502, "EDGE_REQUEST_FAILED", `Service kamera menjawab ${res.status}.`);
+  }
+  return json((await res.json()) as unknown);
+}
+
+// --- Kendali kamera -----------------------------------------------------------
+//
+// Ketiganya menuntut token pengguna. Selain soal jejak audit, ada alasan fisik:
+// kamera Canon mengunci sesinya, dan dua pemanggil yang memotret bersamaan
+// menghasilkan "PTP Device Busy". Sesi didapat lewat POST /camera/session dan
+// leaseToken-nya dibawa di setiap perintah berikutnya -- persis seperti yang
+// dilakukan halaman capture.
+
+async function handleCameraSession(principal: ApiPrincipal, request: Request): Promise<Response> {
+  const body = await readJsonBody(request);
+  const leaseSeconds = typeof body.leaseSeconds === "number" ? body.leaseSeconds : 120;
+  const deviceId = typeof body.deviceId === "number" ? body.deviceId : null;
+
+  const target = await resolveEdgeForUser(principal, deviceId);
+  if (!target.ok) return edgeFailure(target);
+
+  // ownerId diambil dari token, TIDAK dari badan permintaan. Kalau klien boleh
+  // menyebutkannya sendiri, sesi kamera bisa diklaim atas nama orang lain.
+  const ownerId = principal.kind === "user" ? principal.claims.username : "api";
+
+  let res: Response;
+  try {
+    res = await fetch(`${target.baseUrl}/v1/sessions`, {
+      method: "POST",
+      headers: edgeHeaders({ "content-type": "application/json" }),
+      body: JSON.stringify({ ownerType: "operator", ownerId, leaseSeconds }),
+    });
+  } catch {
+    return apiError(502, "EDGE_UNREACHABLE", "Tidak bisa menjangkau service kamera.");
+  }
+  if (res.status === 409) {
+    return apiError(409, "SESSION_CONFLICT", "Kamera sedang dipakai client lain.");
+  }
+  if (!res.ok) {
+    return apiError(502, "EDGE_REQUEST_FAILED", `Service kamera menjawab ${res.status}.`);
+  }
+
+  return json({
+    deviceCode: target.deviceCode,
+    plant: target.plant,
+    ownerId,
+    session: (await res.json()) as unknown,
+  });
+}
+
+async function handleCameraCommand(
+  principal: ApiPrincipal,
+  request: Request,
+  kind: "capture" | "autofocus",
+): Promise<Response> {
+  const body = await readJsonBody(request);
+  const leaseToken = text(body.leaseToken);
+  if (!leaseToken) {
+    return apiError(
+      400,
+      "INVALID_BODY",
+      "Field `leaseToken` wajib diisi. Ambil dulu lewat POST /camera/session.",
+    );
+  }
+  const deviceId = typeof body.deviceId === "number" ? body.deviceId : null;
+
+  const target = await resolveEdgeForUser(principal, deviceId);
+  if (!target.ok) return edgeFailure(target);
+
+  let res: Response;
+  try {
+    res =
+      kind === "capture"
+        ? await fetch(`${target.baseUrl}/v1/captures`, {
+            method: "POST",
+            headers: edgeHeaders({
+              "content-type": "application/json",
+              "X-Session-Token": leaseToken,
+            }),
+            body: JSON.stringify({
+              captureTarget: "memoryCard",
+              downloadToEdge: true,
+              keepOnCamera: true,
+            }),
+          })
+        : // Sengaja TANPA content-type: permintaan ini tidak berbadan, dan
+          // Fastify di edge menolak "application/json" yang badannya kosong.
+          await fetch(`${target.baseUrl}/v1/camera/focus/autofocus`, {
+            method: "POST",
+            headers: edgeHeaders({ "X-Session-Token": leaseToken }),
+          });
+  } catch {
+    return apiError(502, "EDGE_UNREACHABLE", "Tidak bisa menjangkau service kamera.");
+  }
+  if (!res.ok) {
+    return apiError(502, "EDGE_REQUEST_FAILED", `Service kamera menjawab ${res.status}.`);
+  }
+
+  // Jawabannya SEBUAH JOB, bukan foto. Pemanggil menunggunya lewat
+  // GET /jobs/{jobId}; capture Canon butuh beberapa detik dan menahan koneksi
+  // HTTP selama itu membuat klien yang timeout menyangka capture-nya gagal
+  // padahal rananya sudah terlanjur jatuh.
+  return json({ deviceCode: target.deviceCode, job: (await res.json()) as unknown }, 202);
+}
+
 async function handleSessions(url: URL): Promise<Response> {
   const rawDate = url.searchParams.get("date");
   if (rawDate !== null && !BARE_DATE.test(rawDate.trim())) {
@@ -672,36 +1090,102 @@ async function handleSessions(url: URL): Promise<Response> {
 
 // --- pengarah -----------------------------------------------------------------
 
-type Route = { method: string; pattern: RegExp; handle: (url: URL, params: string[]) => unknown };
+type RouteContext = {
+  url: URL;
+  params: string[];
+  request: Request;
+  /** Null hanya pada jalur publik (/docs, /openapi.yaml). */
+  principal: ApiPrincipal | null;
+};
+
+type Route = {
+  method: string;
+  pattern: RegExp;
+  /**
+   * Menuntut token pengguna; kunci API ditolak 403.
+   *
+   * Ditulis di sini, satu tempat, supaya batas baca/tulis terbaca sekali
+   * pandang dari tabel ini -- bukan tersembunyi di dalam masing-masing
+   * handler, tempat endpoint berikutnya pasti lupa memasangnya.
+   */
+  requiresUser?: boolean;
+  handle: (ctx: RouteContext) => unknown;
+};
 
 const ROUTES: Route[] = [
   { method: "GET", pattern: /^\/docs$/, handle: () => handleDocs() },
   { method: "GET", pattern: /^\/openapi\.yaml$/, handle: () => handleSpec() },
   { method: "GET", pattern: /^\/health$/, handle: () => handleHealth() },
   { method: "GET", pattern: /^\/plants$/, handle: () => handlePlants() },
-  { method: "GET", pattern: /^\/captures$/, handle: (url) => handleCapturesList(url) },
-  { method: "GET", pattern: /^\/captures\/([^/]+)$/, handle: (_url, p) => handleCaptureById(p[0]) },
+
+  // --- Otentikasi ---
+  { method: "POST", pattern: /^\/auth\/login$/, handle: (c) => handleLogin(c.request) },
+  {
+    method: "GET",
+    pattern: /^\/auth\/me$/,
+    requiresUser: true,
+    handle: (c) => handleMe(c.principal!),
+  },
+  {
+    method: "POST",
+    pattern: /^\/auth\/logout$/,
+    requiresUser: true,
+    handle: (c) => handleLogout(c.principal!),
+  },
+
+  // --- Baca ---
+  { method: "GET", pattern: /^\/captures$/, handle: (c) => handleCapturesList(c.url) },
+  {
+    method: "GET",
+    pattern: /^\/captures\/([^/]+)$/,
+    handle: (c) => handleCaptureById(c.params[0]),
+  },
   {
     method: "GET",
     pattern: /^\/captures\/([^/]+)\/image$/,
-    handle: (_url, p) => handleCaptureImage(p[0]),
+    handle: (c) => handleCaptureImage(c.params[0], c.request.method === "HEAD"),
   },
-  { method: "GET", pattern: /^\/sessions$/, handle: (url) => handleSessions(url) },
+  { method: "GET", pattern: /^\/sessions$/, handle: (c) => handleSessions(c.url) },
   { method: "GET", pattern: /^\/summary$/, handle: () => handleSummary() },
   { method: "GET", pattern: /^\/devices$/, handle: () => handleDevices() },
+  {
+    method: "GET",
+    pattern: /^\/devices\/([^/]+)\/status$/,
+    handle: (c) => handleDeviceStatus(c.principal!, c.params[0]),
+  },
+  {
+    method: "GET",
+    pattern: /^\/jobs\/([^/]+)$/,
+    handle: (c) => handleJob(c.principal!, c.params[0]),
+  },
+
+  // --- Kendali kamera: token pengguna saja ---
+  {
+    method: "POST",
+    pattern: /^\/camera\/session$/,
+    requiresUser: true,
+    handle: (c) => handleCameraSession(c.principal!, c.request),
+  },
+  {
+    method: "POST",
+    pattern: /^\/camera\/capture$/,
+    requiresUser: true,
+    handle: (c) => handleCameraCommand(c.principal!, c.request, "capture"),
+  },
+  {
+    method: "POST",
+    pattern: /^\/camera\/autofocus$/,
+    requiresUser: true,
+    handle: (c) => handleCameraCommand(c.principal!, c.request, "autofocus"),
+  },
 ];
 
 /** Endpoint yang membaca registry; dipakai untuk menjawab 503 yang jelas
  * ketika CARDDB belum dikonfigurasi, alih-alih 500 dari koneksi yang gagal. */
-const NEEDS_DATABASE = /^\/(captures|sessions|summary|devices)/;
+const NEEDS_DATABASE = /^\/(captures|sessions|summary|devices|auth|jobs|camera)/;
 
 /**
  * Dua endpoint yang dibuka tanpa kunci: halaman Swagger UI dan spesifikasinya.
- *
- * Browser tidak bisa menyisipkan header `X-API-Key` saat membuka sebuah URL,
- * jadi mensyaratkan kunci di sini berarti halaman dokumentasinya tidak akan
- * pernah bisa dibuka orang -- dan tombol "Authorize" di dalamnya, tempat kunci
- * itu semestinya dimasukkan, ikut tidak terjangkau.
  *
  * Yang terbuka hanya BENTUK API-nya, bukan datanya: seluruh endpoint data
  * tetap menuntut kunci, dan spesifikasi yang sama sudah ada di repo. Keduanya
@@ -714,8 +1198,13 @@ export async function handleApiRequest(request: Request): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname.slice(API_PREFIX.length) || "/";
 
+  // HEAD dilayani oleh route GET yang sama. Handler-nya diberi tahu supaya
+  // tidak membuka berkas 11 MB hanya untuk membuang isinya.
+  const lookupMethod = request.method === "HEAD" ? "GET" : request.method;
+
+  let principal: ApiPrincipal | null = null;
   if (!(PUBLIC_PATHS.has(path) && isApiEnabled())) {
-    const auth = authenticateApiRequest(request);
+    const auth = await authenticateApiRequest(request);
     if (!auth.ok) {
       return json(
         { error: { code: auth.code, message: auth.message } },
@@ -725,22 +1214,34 @@ export async function handleApiRequest(request: Request): Promise<Response> {
         auth.status === 401 ? { "www-authenticate": `ApiKey header="${API_KEY_HEADER}"` } : {},
       );
     }
+    principal = auth.principal;
   }
 
   const matched = ROUTES.find((route) => route.pattern.test(path));
   if (!matched) {
     return apiError(404, "NOT_FOUND", `Endpoint tidak dikenal: ${request.method} ${url.pathname}`);
   }
-  if (request.method !== matched.method) {
+  if (lookupMethod !== matched.method) {
     return json(
       {
         error: {
           code: "METHOD_NOT_ALLOWED",
-          message: `${url.pathname} hanya menerima ${matched.method}. API ini baca-saja.`,
+          message: `${url.pathname} hanya menerima ${matched.method}.`,
         },
       },
       405,
-      { allow: matched.method },
+      { allow: matched.method === "GET" ? "GET, HEAD" : matched.method },
+    );
+  }
+
+  // Batas baca/tulis. Kunci API tidak pernah boleh menyentuh kamera atau
+  // bertindak atas nama seseorang, sebanyak apa pun endpoint yang ditambahkan
+  // nanti -- pemeriksaannya di sini, bukan di dalam handler.
+  if (matched.requiresUser && principal?.kind !== "user") {
+    return apiError(
+      403,
+      "USER_TOKEN_REQUIRED",
+      "Endpoint ini menuntut token pengguna. Ambil lewat POST /auth/login, lalu kirim Authorization: Bearer <token>.",
     );
   }
 
@@ -754,7 +1255,7 @@ export async function handleApiRequest(request: Request): Promise<Response> {
 
   try {
     const params = matched.pattern.exec(path)?.slice(1) ?? [];
-    return (await matched.handle(url, params)) as Response;
+    return (await matched.handle({ url, params, request, principal })) as Response;
   } catch (error: unknown) {
     // Pesan aslinya dicatat di log server, bukan dikirim ke klien: pesan error
     // MSSQL memuat nama server, database, dan kadang potongan query.
