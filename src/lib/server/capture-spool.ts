@@ -218,7 +218,115 @@ export async function enqueueCapture(
  * mencoba 200 entri sisanya hanya menghabiskan waktu untuk gagal 200 kali.
  * Berhenti juga menjaga urutan -- entri yang gagal tetap di depan antrean.
  */
+/**
+ * Alasan berhenti yang TERAKHIR sudah dicatat.
+ *
+ * Peredam, dan ia memang harus ada: flush berjalan tiap 5 menit, jadi tanpa
+ * ini gangguan setengah hari meninggalkan enam puluh baris yang isinya sama
+ * persis -- jejak yang justru menenggelamkan kejadian lain di sekitarnya.
+ * Yang dicatat adalah PERUBAHAN keadaan: saat mulai gagal, saat sebabnya
+ * berganti, dan saat pulih.
+ *
+ * Hidup di memori proses, jadi hilang saat restart. Itu disengaja: setelah
+ * restart, keadaan yang masih rusak memang layak diumumkan sekali lagi.
+ */
+let lastLoggedStop: string | null = null;
+
+/** Hanya untuk pengujian. */
+export function resetFlushLogState(): void {
+  lastLoggedStop = null;
+}
+
+/**
+ * Catat perubahan keadaan pengiriman antrean ke jejak aktivitas.
+ *
+ * Tidak pernah melempar dan tidak pernah mengubah hasil flush -- pencatatan
+ * adalah pengamat, bukan peserta.
+ */
+export type FlushLogDecision =
+  | { kind: "none" }
+  | { kind: "failed"; reason: string; pending: number }
+  | { kind: "recovered"; previous: string; forwarded: number };
+
+/**
+ * Apa yang layak dicatat dari satu hasil flush.
+ *
+ * Murni dan tanpa efek samping supaya peredamnya bisa diuji apa adanya --
+ * bagian yang menarik di sini memang keputusannya, bukan pemanggilan database
+ * yang mengikutinya.
+ */
+export function decideFlushLog(
+  result: SpoolFlushResult,
+  lastLoggedStop: string | null,
+): FlushLogDecision {
+  // Antrean mati atau share belum dikonfigurasi bukan gangguan, melainkan
+  // keadaan yang memang dipilih.
+  if (
+    result.stoppedBecause === "SPOOL_NOT_CONFIGURED" ||
+    result.stoppedBecause === "NETWORK_SAVE_NOT_CONFIGURED"
+  ) {
+    return { kind: "none" };
+  }
+
+  if (result.stoppedBecause !== null && result.pending > 0) {
+    // Sebab yang sama dengan yang sudah dicatat tidak diulang. Inilah
+    // peredamnya: gangguan setengah hari meninggalkan satu baris, bukan enam
+    // puluh baris yang isinya sama persis.
+    if (result.stoppedBecause === lastLoggedStop) return { kind: "none" };
+    return { kind: "failed", reason: result.stoppedBecause, pending: result.pending };
+  }
+
+  // Pulih hanya berarti kalau sebelumnya memang sempat tercatat gagal -- tanpa
+  // syarat itu, setiap flush yang berhasil akan menulis satu baris.
+  if (lastLoggedStop !== null && result.forwarded > 0) {
+    return { kind: "recovered", previous: lastLoggedStop, forwarded: result.forwarded };
+  }
+
+  return { kind: "none" };
+}
+
+/**
+ * Catat perubahan keadaan pengiriman antrean ke jejak aktivitas.
+ *
+ * Tidak pernah melempar dan tidak pernah mengubah hasil flush -- pencatatan
+ * adalah pengamat, bukan peserta.
+ */
+async function noteFlushOutcome(result: SpoolFlushResult): Promise<void> {
+  const decision = decideFlushLog(result, lastLoggedStop);
+  if (decision.kind === "none") return;
+
+  try {
+    const { recordActivity } = await import("./activity");
+
+    if (decision.kind === "failed") {
+      lastLoggedStop = decision.reason;
+      await recordActivity({
+        action: "storage.forward_failed",
+        severity: "warning",
+        detail:
+          `${decision.pending} capture tertahan di antrean. Sebab: ${decision.reason}. ` +
+          `Tujuan: ${getServerEnv().NETWORK_SAVE_ROOT ?? "—"}`,
+      });
+      return;
+    }
+
+    lastLoggedStop = null;
+    await recordActivity({
+      action: "storage.forward_recovered",
+      detail: `${decision.forwarded} capture tertahan berhasil terkirim. Sebelumnya gagal: ${decision.previous}.`,
+    });
+  } catch {
+    // Jejak yang gagal ditulis tidak boleh menggagalkan pengiriman.
+  }
+}
+
 export async function flushSpool(): Promise<SpoolFlushResult> {
+  const result = await runFlush();
+  await noteFlushOutcome(result);
+  return result;
+}
+
+async function runFlush(): Promise<SpoolFlushResult> {
   const dir = spoolDir();
   const targetRoot = getServerEnv().NETWORK_SAVE_ROOT;
   if (!dir) return { forwarded: 0, pending: 0, stoppedBecause: "SPOOL_NOT_CONFIGURED" };

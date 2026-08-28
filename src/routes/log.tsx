@@ -8,6 +8,8 @@ import {
   LogOut,
   RefreshCw,
   Search,
+  CloudOff,
+  CloudUpload,
   HardDrive,
   PenLine,
   ShieldAlert,
@@ -86,6 +88,8 @@ const ACTION_ICONS: Record<ActivityAction, LucideIcon> = {
   "capture.deleted": Trash2,
   "capture.renamed": PenLine,
   "storage.target_changed": HardDrive,
+  "storage.forward_failed": CloudOff,
+  "storage.forward_recovered": CloudUpload,
 };
 
 const SEMUA = "__semua__";

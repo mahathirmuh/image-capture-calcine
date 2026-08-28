@@ -17,6 +17,12 @@ export const ACTIVITY_ACTIONS = [
   "capture.deleted",
   "capture.renamed",
   "storage.target_changed",
+  // Kejadian sistem, tanpa pelaku manusia. Dicatat karena kegagalan kirim
+  // antrean tidak punya tempat lain untuk terlihat: ia terjadi di latar
+  // belakang tiap 5 menit, dan tanpa jejak ini satu-satunya gejalanya adalah
+  // capture yang menumpuk berjam-jam tanpa penjelasan.
+  "storage.forward_failed",
+  "storage.forward_recovered",
 ] as const;
 
 export type ActivityAction = (typeof ACTIVITY_ACTIONS)[number];
@@ -34,6 +40,8 @@ export const ACTION_LABELS: Record<ActivityAction, string> = {
   "capture.deleted": "Capture dihapus",
   "capture.renamed": "Capture diubah nama",
   "storage.target_changed": "Alamat edge diubah",
+  "storage.forward_failed": "Antrean gagal terkirim",
+  "storage.forward_recovered": "Antrean pulih",
 };
 
 export type ActivityEntry = {
