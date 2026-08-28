@@ -712,7 +712,37 @@ export const recordCaptureResult = createServerFn({ method: "POST" })
       }
 
       const metadataJson = JSON.stringify(buildCaptureRecordMetadata(data, operator));
-      const result = await pool
+
+      // SATU BERKAS DI SHARE = SATU RECORD.
+      //
+      // Capture ulang dalam sesi yang sama MENIMPA berkasnya -- itu perilaku
+      // yang memang diminta. Tapi sampai sebelum ini registry tetap menambah
+      // baris baru setiap kali, jadi tiga kali capture sesi 14.00 menghasilkan
+      // tiga kartu galeri yang semuanya menunjuk berkas yang sama. Dua di
+      // antaranya hantu: thumbnail-nya memperlihatkan gambar lama yang byte-nya
+      // sudah tertimpa, dan membukanya justru menampilkan foto yang terakhir.
+      // Jumlah record pun berhenti cocok dengan jumlah berkas di folder.
+      //
+      // Path adalah identitas berkasnya, jadi path itu pula yang dipakai
+      // mencocokkan. Jalur cadangan browser dikecualikan: `browser-download/...`
+      // bukan lokasi di server mana pun melainkan folder Unduhan masing-masing
+      // PC, sehingga dua operator berbeda yang kebetulan menghasilkan nama sama
+      // memang dua kejadian yang berbeda.
+      const replacesExisting = !isLocalOnlySave(data.saveMethod);
+      let recordId: number | null = null;
+
+      if (replacesExisting) {
+        const existing = await pool.request().input("filePath", sql.NVarChar(500), data.filePath)
+          .query(`
+            SELECT TOP 1 id FROM ${schema}.capture_records
+            WHERE file_path = @filePath
+            ORDER BY id DESC;
+          `);
+        const found = existing.recordset[0]?.id;
+        if (found != null) recordId = Number(found);
+      }
+
+      const write = pool
         .request()
         .input("deviceId", sql.BigInt, deviceId)
         .input("locationId", sql.BigInt, locationId)
@@ -722,7 +752,30 @@ export const recordCaptureResult = createServerFn({ method: "POST" })
         .input("status", sql.NVarChar(30), toCaptureRecordStatus(data.saveMethod))
         .input("fileSizeBytes", sql.BigInt, data.fileSizeBytes)
         .input("checksumSha256", sql.NVarChar(64), data.checksumSha256 ?? null)
-        .input("metadataJson", sql.NVarChar(sql.MAX), metadataJson).query(`
+        .input("metadataJson", sql.NVarChar(sql.MAX), metadataJson);
+
+      if (recordId !== null) {
+        // Diperbarui seluruhnya, termasuk capturedAt dan operatornya: yang ada
+        // di share sekarang adalah hasil capture TERAKHIR, jadi record-nya
+        // harus menggambarkan capture itu, bukan yang pertama.
+        await write.input("recordId", sql.BigInt, recordId).query(`
+          UPDATE ${schema}.capture_records
+          SET
+            device_id = @deviceId,
+            location_id = @locationId,
+            captured_at = @capturedAt,
+            file_name = @fileName,
+            status = @status,
+            file_size_bytes = @fileSizeBytes,
+            checksum_sha256 = @checksumSha256,
+            metadata_json = @metadataJson
+          WHERE id = @recordId;
+        `);
+
+        return { ok: true as const, recordId, locationId, replaced: true };
+      }
+
+      const result = await write.query(`
           INSERT INTO ${schema}.capture_records (
             device_id,
             location_id,
@@ -752,6 +805,7 @@ export const recordCaptureResult = createServerFn({ method: "POST" })
         ok: true as const,
         recordId: Number(result.recordset[0].id),
         locationId,
+        replaced: false,
       };
     } catch (error) {
       return {
@@ -1567,12 +1621,31 @@ export const deleteCaptureRecord = createServerFn({ method: "POST" })
       const existingFilePath =
         typeof existing.recordset[0]?.file_path === "string" ? existing.recordset[0].file_path : "";
 
+      // Berkasnya TIDAK dibuang kalau masih ada record lain yang menunjuk path
+      // yang sama.
+      //
+      // Keadaan itu nyata: sebelum recordCaptureResult jadi upsert, capture
+      // ulang dalam satu sesi menghasilkan beberapa record untuk satu berkas.
+      // Tanpa pemeriksaan ini, menghapus salah satu kartu duplikat akan
+      // membuang JPEG yang masih diklaim kartu lainnya -- dan kartu yang
+      // tersisa berubah jadi penunjuk berkas yang sudah tidak ada.
+      const others = await pool
+        .request()
+        .input("recordId", sql.BigInt, recordId)
+        .input("filePath", sql.NVarChar(500), existingFilePath).query(`
+          SELECT COUNT(*) AS jumlah FROM ${schema}.capture_records
+          WHERE file_path = @filePath AND id <> @recordId;
+        `);
+      const stillReferenced = Number(others.recordset[0]?.jumlah ?? 0) > 0;
+
       // Berkas lebih dulu, baris registry belakangan. Kalau share-nya sedang
       // tidak bisa ditulis, penghapusannya BATAL seluruhnya: record yang sudah
       // hilang duluan akan meninggalkan berkas yatim yang tidak bisa ditemukan
       // siapa pun lagi. Sebaliknya, gagal yang dilaporkan masih bisa diulang.
       const { deleteShareFile } = await import("./server/share-file");
-      const removed = await deleteShareFile(existingFilePath);
+      const removed = stillReferenced
+        ? ({ ok: true, changed: false } as const)
+        : await deleteShareFile(existingFilePath);
 
       // OUTSIDE_ROOT TIDAK boleh ikut menahan penghapusan record.
       //
@@ -1627,7 +1700,9 @@ export const deleteCaptureRecord = createServerFn({ method: "POST" })
         targetUsername: data.fileName,
         detail: fileLeftOnShare
           ? `Record dihapus. Berkas DIBIARKAN di ${fileLeftOnShare} (di luar folder yang dikelola app).`
-          : `Record dan berkasnya dihapus permanen dari folder jaringan: ${existingFilePath || "—"}`,
+          : stillReferenced
+            ? `Record dihapus. Berkasnya DIPERTAHANKAN karena masih dipakai record lain: ${existingFilePath}`
+            : `Record dan berkasnya dihapus permanen dari folder jaringan: ${existingFilePath || "—"}`,
       });
 
       return {
