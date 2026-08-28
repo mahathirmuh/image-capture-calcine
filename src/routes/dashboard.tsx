@@ -24,7 +24,7 @@ import {
   type CaptureDashboardSummary,
   type DeviceEventView,
 } from "@/lib/capture-records";
-import { PLANTS } from "@/lib/locations";
+import { PLANTS, toBinSlot } from "@/lib/locations";
 import { isAdminOnlyPath } from "@/lib/nav-items";
 import { useIsAdmin } from "@/lib/use-session-user";
 import { getStorageConfigSummary } from "@/lib/storage-diagnostics";
@@ -569,56 +569,84 @@ function DashboardPage() {
   }, []);
 
   const effectiveToday = today ?? SSR_SAFE_DAY;
-  const capturesToday = today
-    ? gallery.filter((item) => item.createdAt >= today.getTime()).length
-    : 0;
-  const totalBytes = gallery.reduce((sum, item) => sum + item.blob.size, 0);
+
+  // SEMUA hitungan capture kini berasal dari registry MSSQL, bukan dari
+  // IndexedDB browser ini.
+  //
+  // Sebelumnya angka-angka di halaman ini dihitung dari `gallery` -- isi
+  // penyimpanan browser yang sedang dipakai. Akibatnya dashboard yang sama
+  // menunjukkan angka berbeda di tiap PC, dan bahkan menampilkan "Capture Hari
+  // Ini" DUA KALI dengan nilai yang bisa berselisih: satu versi browser, satu
+  // versi registry. Angka yang berubah tergantung siapa yang membukanya tidak
+  // bisa dipakai mengambil keputusan.
+  //
+  // `gallery` masih dibaca, tapi kini hanya untuk apa adanya: berapa banyak
+  // salinan yang menumpuk di browser ini. Itu keterangan diagnostik, bukan
+  // ukuran produksi.
+  const capturesToday = captureDbSummary?.todayCount ?? 0;
+  const totalCaptures = captureDbSummary?.totalCount ?? 0;
+  const totalBytes = captureDbSummary?.totalBytes ?? 0;
+  const localCopyCount = gallery.length;
+  const localCopyBytes = gallery.reduce((sum, item) => sum + item.blob.size, 0);
   const cameraConnected = !!status?.camera?.connected;
   const cameraLabel = status?.camera
     ? [status.camera.manufacturer, status.camera.model].filter(Boolean).join(" ") ||
       "Model tidak diketahui"
     : "Belum terdeteksi";
 
-  // Location breakdown, in the app's fixed plant order (not sorted by count) so
-  // the two rows/colors stay stable regardless of which plant has more captures.
+  // Urutan plant tetap mengikuti daftar tetap aplikasi, bukan diurutkan menurut
+  // jumlah: baris dan warnanya harus stabil supaya perubahan angka terbaca
+  // sebagai perubahan angka, bukan sebagai baris yang berpindah tempat.
+  const plantTally = new Map(captureDbSummary?.byPlant.map((row) => [row.plant, row.count]) ?? []);
   const locationCounts = PLANTS.map((plant) => ({
     label: plant,
-    count: gallery.filter((item) => item.folder === plant).length,
+    count: plantTally.get(plant) ?? 0,
   }));
-  const otherLocationCount = gallery.filter(
-    (item) => !PLANTS.includes(item.folder as (typeof PLANTS)[number]),
-  ).length;
+  const otherLocationCount = [...plantTally.entries()]
+    .filter(([plant]) => !PLANTS.includes(plant as (typeof PLANTS)[number]))
+    .reduce((sum, [, count]) => sum + count, 0);
 
-  const bin1Count = gallery.filter((item) => item.bin === "BIN1").length;
-  const bin2Count = gallery.filter((item) => item.bin === "BIN2").length;
-  const unspecifiedBinCount = gallery.length - bin1Count - bin2Count;
+  // captureBin di registry tersimpan sebagai LABEL, bukan token: "BIN 1",
+  // "TRAIN 1", "TRAIN 2" -- dan record lama Acid Plant masih memakai kosakata
+  // BIN dari sebelum istilahnya dibetulkan. toBinSlot() mengerti keduanya, jadi
+  // penjumlahannya dilakukan atas SLOT, bukan atas teksnya.
+  let bin1Count = 0;
+  let bin2Count = 0;
+  for (const row of captureDbSummary?.byBin ?? []) {
+    const slot = toBinSlot(row.bin);
+    if (slot === 1) bin1Count += row.count;
+    else if (slot === 2) bin2Count += row.count;
+  }
+  const unspecifiedBinCount = Math.max(0, totalCaptures - bin1Count - bin2Count);
 
-  // Last 7 days, oldest to newest (today last), counted by local calendar day.
+  // Tujuh hari terakhir, terlama di kiri. Keranjangnya dihitung SQL relatif
+  // terhadap tengah malam LOKAL yang dikirim halaman ini, jadi batas harinya
+  // sama dengan yang dilihat operator -- bukan batas hari UTC, yang akan
+  // menggeser sesi 02.00 WITA ke hari sebelumnya.
+  const dailyTally = new Map(captureDbSummary?.daily.map((row) => [row.dayIndex, row.count]) ?? []);
   const days: DayBucket[] = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(effectiveToday);
     d.setDate(d.getDate() - (6 - i));
-    const next = new Date(d);
-    next.setDate(next.getDate() + 1);
-    const count = gallery.filter(
-      (item) => item.createdAt >= d.getTime() && item.createdAt < next.getTime(),
-    ).length;
-    return { date: d, label: DAY_LABELS[d.getDay()], count };
+    return { date: d, label: DAY_LABELS[d.getDay()], count: dailyTally.get(i) ?? 0 };
   });
-  const weekTotal = days.reduce((sum, d) => sum + d.count, 0);
+  const weekTotal = captureDbSummary?.weekCount ?? 0;
 
-  const recent = [...gallery].sort((a, b) => b.createdAt - a.createdAt).slice(0, 6);
+  const recent = captureDbSummary?.recentRecords ?? [];
   const latestCapture = recent[0] ?? null;
-  const latestCaptureDate = latestCapture ? new Date(latestCapture.createdAt) : null;
+  const latestCaptureDate = latestCapture ? new Date(latestCapture.capturedAt) : null;
   const latestDbCaptureDate = captureDbSummary?.lastCapturedAt
     ? new Date(captureDbSummary.lastCapturedAt)
     : null;
   const latestDeviceEvent = deviceEvents[0] ?? null;
   const latestDeviceEventDate = latestDeviceEvent ? new Date(latestDeviceEvent.createdAt) : null;
+  // Plant yang sudah punya capture hari ini -- dibaca dari record terbaru
+  // registry, bukan dari isi browser. Kalau dihitung dari browser, plant yang
+  // di-capture operator LAIN tidak akan pernah terhitung tercakup.
   const plantsCoveredToday = new Set(
     today
-      ? gallery
-          .filter((item) => item.createdAt >= today.getTime())
-          .map((item) => item.folder)
+      ? recent
+          .filter((record) => new Date(record.capturedAt).getTime() >= today.getTime())
+          .map((record) => record.plant)
           .filter(Boolean)
       : [],
   ).size;
@@ -642,9 +670,9 @@ function DashboardPage() {
     capturesToday === 0
       ? "Belum ada capture hari ini. Jika shift sudah berjalan, lakukan pengecekan alur capture."
       : null,
-    gallery.length > 0 && latestCapture
-      ? `Capture terakhir tersimpan pada ${formatDateTime(latestCapture.createdAt)}.`
-      : "Belum ada data capture lokal di browser ini.",
+    latestCaptureDate
+      ? `Capture terakhir tersimpan pada ${formatDateTime(latestCaptureDate.getTime())}.`
+      : "Belum ada capture yang tercatat di registry.",
     captureDbError
       ? `Registry DB belum bisa dimuat: ${captureDbError}`
       : captureDbSummary?.lastCapturedAt
@@ -658,14 +686,14 @@ function DashboardPage() {
   ].filter(Boolean) as string[];
   const freshnessCards = [
     {
-      title: "Local gallery",
-      status: latestCapture ? "Ada capture" : "Belum ada data lokal",
+      title: "Riwayat capture",
+      status: latestCapture ? "Ada capture" : "Belum ada capture",
       description: latestCapture
         ? `Capture terakhir ${formatRelativeTime(latestCaptureDate)}.`
-        : "Browser ini belum punya capture tersimpan.",
+        : "Registry belum memuat satu pun capture.",
       detail: latestCapture
-        ? `${recent.length} entri terbaru siap direview dari gallery lokal browser.`
-        : "Mulai dari halaman Capture atau cek apakah operator memakai browser/profile yang berbeda.",
+        ? `${recent.length} record terbaru siap direview.`
+        : "Mulai dari halaman Capture, atau periksa apakah penyimpanan ke folder jaringan gagal.",
       to: "/gallery",
       cta: "Buka Gallery",
       icon: Images,
@@ -813,9 +841,9 @@ function DashboardPage() {
               </p>
             </div>
             <div className="rounded-lg border bg-background px-3 py-2 text-right text-xs">
-              <div className="text-muted-foreground">Capture lokal terakhir</div>
+              <div className="text-muted-foreground">Capture terakhir</div>
               <div className="mt-1 font-medium text-foreground">
-                {latestCapture ? formatDateTime(latestCapture.createdAt) : "—"}
+                {latestCaptureDate ? formatDateTime(latestCaptureDate.getTime()) : "—"}
               </div>
             </div>
           </div>
@@ -830,9 +858,15 @@ function DashboardPage() {
               <div className="mt-1 text-lg font-semibold">{plantsCoveredToday}</div>
             </div>
             <div className="rounded-lg border bg-background p-3">
-              <div className="text-xs text-muted-foreground">Penyimpanan browser</div>
+              {/* Ini memang angka LOKAL, dan disebut begitu. Berguna karena
+                  IndexedDB punya kuota; menyamarkannya sebagai ukuran produksi
+                  justru yang keliru selama ini. */}
+              <div className="text-xs text-muted-foreground">Salinan di browser ini</div>
               <div className="mt-1 text-lg font-semibold">
-                {hydrated ? formatBytes(totalBytes) : "—"}
+                {hydrated ? `${localCopyCount} foto` : "—"}
+              </div>
+              <div className="text-[11px] text-muted-foreground">
+                {hydrated ? formatBytes(localCopyBytes) : "—"}
               </div>
             </div>
           </div>
@@ -936,8 +970,9 @@ function DashboardPage() {
             ))}
           </div>
           <div className="mt-4 rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
-            Dashboard ini membaca status edge device dan gallery lokal browser. Jika operator
-            berpindah browser/profile, angka gallery lokal bisa berbeda walau perangkat edge sama.
+            Angka capture di halaman ini dibaca dari registry MSSQL, jadi sama di setiap PC. Hanya
+            "Salinan di browser ini" yang bersifat lokal — itu memang menghitung isi penyimpanan
+            browser yang sedang dipakai.
           </div>
         </section>
       </section>
@@ -952,18 +987,28 @@ function DashboardPage() {
       </section>
 
       {/* KPI row */}
-      <section className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      {/* Empat kartu, bukan lima. Dua di antaranya dulu menghitung hal yang
+          sama dari dua sumber -- "Capture Hari Ini" versi browser berdampingan
+          dengan "Capture DB Hari Ini" versi registry, dua angka untuk satu
+          pertanyaan. Yang tersisa satu, dan sumbernya registry. */}
+      <section className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           icon={Images}
           label="Total Capture"
-          value={hydrated ? gallery.length : "—"}
-          sub="Semua waktu, browser ini"
-          tone="primary"
+          value={captureDbSummary ? totalCaptures : "—"}
+          sub={
+            captureDbError
+              ? "Registry belum bisa dibaca"
+              : captureDbSummary
+                ? "Semua waktu, seluruh plant"
+                : "Menunggu registry"
+          }
+          tone={captureDbError ? "amber" : "primary"}
         />
         <StatCard
           icon={Camera}
           label="Capture Hari Ini"
-          value={hydrated ? capturesToday : "—"}
+          value={captureDbSummary ? capturesToday : "—"}
           sub={
             hydrated && today
               ? today.toLocaleDateString("en-GB", {
@@ -984,23 +1029,10 @@ function DashboardPage() {
         />
         <StatCard
           icon={Database}
-          label="Capture DB Hari Ini"
-          value={captureDbSummary ? captureDbSummary.todayCount : "—"}
-          sub={
-            captureDbSummary
-              ? `Total ${captureDbSummary.totalCount} record di MSSQL`
-              : captureDbError
-                ? "Registry DB belum tersedia"
-                : "Menunggu refresh registry"
-          }
-          tone={captureDbSummary ? "emerald" : captureDbError ? "amber" : "muted"}
-        />
-        <StatCard
-          icon={Database}
-          label="Storage Terpakai"
-          value={hydrated ? formatBytes(totalBytes) : "—"}
-          sub="Gambar hasil capture tersimpan di browser ini"
-          tone="amber"
+          label="Ukuran Tercatat"
+          value={captureDbSummary ? formatBytes(totalBytes) : "—"}
+          sub="Total berkas menurut registry"
+          tone="emerald"
         />
       </section>
 
@@ -1010,7 +1042,7 @@ function DashboardPage() {
           <h2 className="mb-3 flex items-center gap-1.5 text-sm font-semibold">
             <MapPin className="h-4 w-4 text-muted-foreground" /> Capture per Lokasi
           </h2>
-          {gallery.length === 0 ? (
+          {totalCaptures === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">Belum ada capture.</p>
           ) : (
             <div className="space-y-3">
@@ -1019,7 +1051,7 @@ function DashboardPage() {
                   key={row.label}
                   label={row.label}
                   count={row.count}
-                  total={gallery.length}
+                  total={totalCaptures}
                   color={i === 0 ? COLOR_A : COLOR_B}
                 />
               ))}
@@ -1027,7 +1059,7 @@ function DashboardPage() {
                 <CompareRow
                   label="Lainnya / belum ditentukan"
                   count={otherLocationCount}
-                  total={gallery.length}
+                  total={totalCaptures}
                   color="var(--color-muted-foreground)"
                 />
               )}
@@ -1040,17 +1072,17 @@ function DashboardPage() {
           <h2 className="mb-3 flex items-center gap-1.5 text-sm font-semibold">
             <Package className="h-4 w-4 text-muted-foreground" /> Capture per Bin
           </h2>
-          {gallery.length === 0 ? (
+          {totalCaptures === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">Belum ada capture.</p>
           ) : (
             <div className="space-y-3">
-              <CompareRow label="BIN 1" count={bin1Count} total={gallery.length} color={COLOR_A} />
-              <CompareRow label="BIN 2" count={bin2Count} total={gallery.length} color={COLOR_B} />
+              <CompareRow label="BIN 1" count={bin1Count} total={totalCaptures} color={COLOR_A} />
+              <CompareRow label="BIN 2" count={bin2Count} total={totalCaptures} color={COLOR_B} />
               {unspecifiedBinCount > 0 && (
                 <CompareRow
                   label="Belum ditentukan"
                   count={unspecifiedBinCount}
-                  total={gallery.length}
+                  total={totalCaptures}
                   color="var(--color-muted-foreground)"
                 />
               )}
@@ -1065,59 +1097,23 @@ function DashboardPage() {
           <h2 className="text-sm font-semibold">Capture — 7 Hari Terakhir</h2>
           <span className="text-xs text-muted-foreground">{weekTotal} capture minggu ini</span>
         </div>
-        {gallery.length === 0 ? (
+        {totalCaptures === 0 ? (
           <p className="py-10 text-center text-sm text-muted-foreground">Belum ada capture.</p>
         ) : (
           <WeekTrendChart days={days} />
         )}
       </section>
 
-      <div className="grid gap-4 lg:grid-cols-4">
-        {/* Recent captures */}
+      {/* Dulu ada DUA daftar berdampingan di sini: "Capture Terbaru" dari
+          IndexedDB dan "Registry Capture Terbaru" dari MSSQL -- hal yang sama
+          dari dua sumber, dengan isi yang bisa berselisih. Yang tersisa satu,
+          dan sumbernya registry, karena itulah yang sama bagi semua orang. */}
+      <div className="grid gap-4 lg:grid-cols-3">
         <section className="rounded-xl border bg-card shadow-sm p-4">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-semibold">Capture Terbaru</h2>
             <Link to="/gallery" className="text-xs font-medium text-primary hover:underline">
               Lihat semua
-            </Link>
-          </div>
-          {recent.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">
-              Hasil capture tersimpan akan muncul di sini.
-            </p>
-          ) : (
-            <ul className="space-y-2">
-              {recent.map((item) => (
-                <li key={item.id} className="flex items-center gap-3">
-                  <img
-                    src={item.url}
-                    alt={item.name}
-                    className="h-10 w-10 shrink-0 rounded-md border object-cover"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-xs font-medium" title={item.name}>
-                      {item.name}
-                    </div>
-                    <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                      <span>{item.folder || "—"}</span>
-                      <span>·</span>
-                      <span>{item.bin ? item.bin.replace(/^BIN/, "BIN ") : "—"}</span>
-                    </div>
-                  </div>
-                  <span className="shrink-0 text-[11px] text-muted-foreground">
-                    {formatDateTime(item.createdAt)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <section className="rounded-xl border bg-card shadow-sm p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold">Registry Capture Terbaru</h2>
-            <Link to="/gallery" className="text-xs font-medium text-primary hover:underline">
-              Audit DB
             </Link>
           </div>
           {captureDbError ? (
@@ -1153,8 +1149,8 @@ function DashboardPage() {
           )}
           <div className="mt-4 rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
             {captureDbSummary
-              ? `${captureDbSummary.saveBreakdown.saved} tersimpan • ${captureDbSummary.saveBreakdown.downloaded} diunduh lokal.`
-              : "Ringkasan ini membaca capture_records dari MSSQL, bukan hanya gallery lokal browser."}
+              ? `${captureDbSummary.saveBreakdown.saved} tersimpan ke folder jaringan • ${captureDbSummary.saveBreakdown.downloaded} baru diunduh lokal.`
+              : "Belum ada ringkasan untuk ditampilkan."}
           </div>
         </section>
 

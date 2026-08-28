@@ -189,6 +189,18 @@ export type CaptureDashboardSummary = {
     downloaded: number;
     other: number;
   };
+  /**
+   * Sebaran yang dulu dihitung dashboard dari IndexedDB.
+   *
+   * Dipindahkan ke SQL karena hasil lamanya menggambarkan isi BROWSER, bukan
+   * isi plant: dashboard yang sama menunjukkan angka berbeda di tiap PC, dan
+   * angka yang berubah tergantung siapa yang membukanya bukan angka yang bisa
+   * dipakai mengambil keputusan.
+   */
+  byPlant: { plant: string; count: number }[];
+  byBin: { bin: string; count: number }[];
+  /** Tujuh keranjang harian, indeks 0 = hari terlama pada rentang minggu ini. */
+  daily: { dayIndex: number; count: number }[];
 };
 
 export type DeviceEventSeverity = "info" | "warning" | "error";
@@ -834,6 +846,55 @@ export const getCaptureDashboardSummary = createServerFn({ method: "GET" })
         `);
 
       const aggregate = (aggregateResult.recordset[0] ?? {}) as Record<string, unknown>;
+
+      // Sebaran plant, bin, dan harian -- semuanya dikerjakan SQL.
+      //
+      // Plant dan bin tersimpan di dalam metadata_json, jadi dibaca dengan
+      // JSON_VALUE. Plant di-COALESCE dengan kolom locations supaya record lama
+      // yang metadatanya belum memuat plant tetap ikut terhitung, sama seperti
+      // penyaringan di listCaptureRecords.
+      const breakdownResult = await pool
+        .request()
+        .input("weekStart", sql.DateTime2, new Date(data.weekStart))
+        .input("dayEnd", sql.DateTime2, new Date(data.dayEnd)).query(`
+          SELECT
+            COALESCE(JSON_VALUE(cr.metadata_json, '$.plant'), l.plant) AS plant,
+            COUNT(*) AS jumlah
+          FROM ${schema}.capture_records cr
+          LEFT JOIN ${schema}.locations l ON l.id = cr.location_id
+          GROUP BY COALESCE(JSON_VALUE(cr.metadata_json, '$.plant'), l.plant);
+
+          SELECT
+            JSON_VALUE(cr.metadata_json, '$.captureBin') AS bin,
+            COUNT(*) AS jumlah
+          FROM ${schema}.capture_records cr
+          GROUP BY JSON_VALUE(cr.metadata_json, '$.captureBin');
+
+          -- Keranjang harian: SELISIH DETIK dibagi sehari, bukan
+          -- DATEDIFF(day, ...).
+          --
+          -- DATEDIFF(day, ...) menghitung pergantian TANGGAL KALENDER, dan
+          -- kalendernya di sini bukan kalender yang sama: captured_at
+          -- tersimpan UTC, sedangkan @weekStart dikirim browser sebagai tengah
+          -- malam LOKAL. Selisih 8 jam WITA itu menggeser sebagian capture ke
+          -- keranjang berikutnya dan menghasilkan indeks 7 pada jendela yang
+          -- seharusnya 0-6 -- sudah terlihat saat diuji ke registry sungguhan.
+          --
+          -- Selisih detik memperlakukan keduanya sebagai TITIK WAKTU, jadi
+          -- batas harinya persis sama dengan batas yang dipakai todayCount dan
+          -- weekCount di atas.
+          SELECT
+            DATEDIFF(second, @weekStart, cr.captured_at) / 86400 AS day_index,
+            COUNT(*) AS jumlah
+          FROM ${schema}.capture_records cr
+          WHERE cr.captured_at >= @weekStart AND cr.captured_at < @dayEnd
+          GROUP BY DATEDIFF(second, @weekStart, cr.captured_at) / 86400;
+        `);
+
+      const [plantRows = [], binRows = [], dailyRows = []] = breakdownResult.recordsets as Array<
+        Record<string, unknown>[]
+      >;
+
       const recentResult = await pool.request().input("limit", sql.Int, data.recentLimit).query(`
           SELECT TOP (@limit)
             cr.id,
@@ -881,6 +942,26 @@ export const getCaptureDashboardSummary = createServerFn({ method: "GET" })
             downloaded: downloadedCount,
             other: Math.max(0, totalCount - savedCount - downloadedCount),
           },
+          // Baris tanpa plant/bin dikelompokkan ke "—", bukan dibuang: record
+          // yang tidak terklasifikasi tetap ada di share dan tetap memakan
+          // tempat, jadi menghilangkannya dari sebaran membuat jumlahnya tidak
+          // lagi berjumlah sama dengan totalCount.
+          byPlant: plantRows.map((row) => ({
+            plant: typeof row.plant === "string" && row.plant.trim() !== "" ? row.plant : "—",
+            count: Number(row.jumlah ?? 0),
+          })),
+          // captureBin tersimpan sebagai LABEL TAMPILAN ("BIN 1", "TRAIN 2"),
+          // bukan token slot -- dan kosakatanya berbeda per plant. Nilainya
+          // dikembalikan apa adanya; pemanggil yang memetakannya ke slot lewat
+          // toBinSlot(), yang memang mengerti kedua kosakata itu.
+          byBin: binRows.map((row) => ({
+            bin: typeof row.bin === "string" && row.bin.trim() !== "" ? row.bin : "—",
+            count: Number(row.jumlah ?? 0),
+          })),
+          daily: dailyRows.map((row) => ({
+            dayIndex: Number(row.day_index ?? 0),
+            count: Number(row.jumlah ?? 0),
+          })),
         } satisfies CaptureDashboardSummary,
       };
     } catch (error) {
