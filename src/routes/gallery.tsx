@@ -61,6 +61,7 @@ import {
   saveGalleryViewState,
 } from "@/lib/gallery-preferences";
 import { getImageDimensions, computeHistogram, type Histogram } from "@/lib/image-analysis";
+import { AppSelect } from "@/components/app-select";
 import { PageTitle } from "@/components/page-shell";
 import { useIsAdmin } from "@/lib/use-session-user";
 import {
@@ -1805,38 +1806,36 @@ ${storage.path ?? "—"}`}
         <section className="mb-4 grid gap-3 rounded-xl border bg-card shadow-sm p-4 sm:grid-cols-3 lg:grid-cols-6">
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">Lokasi</label>
-            <select
+            <AppSelect
               value={filterLocation}
-              onChange={(e) => {
-                setFilterLocation(e.target.value);
+              onValueChange={(value) => {
+                setFilterLocation(value);
                 setPage(1);
               }}
-              className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-xs"
-            >
-              <option value="">Semua lokasi</option>
-              {uniqueLocations.map((loc) => (
-                <option key={loc} value={loc}>
-                  {loc}
-                </option>
-              ))}
-            </select>
+              options={[
+                { value: "", label: "Semua lokasi" },
+                ...uniqueLocations.map((loc) => ({ value: loc, label: loc })),
+              ]}
+              ariaLabel="Filter lokasi"
+            />
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">
               Sumber (Bin)
             </label>
-            <select
+            <AppSelect
               value={filterBin}
-              onChange={(e) => {
-                setFilterBin(e.target.value);
+              onValueChange={(value) => {
+                setFilterBin(value);
                 setPage(1);
               }}
-              className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-xs"
-            >
-              <option value="">Semua Bin</option>
-              <option value="BIN1">{binLabel(1)}</option>
-              <option value="BIN2">{binLabel(2)}</option>
-            </select>
+              options={[
+                { value: "", label: `Semua ${binLabel(1).replace(/ ?1$/, "")}` },
+                { value: "BIN1", label: binLabel(1) },
+                { value: "BIN2", label: binLabel(2) },
+              ]}
+              ariaLabel="Filter slot"
+            />
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">Tanggal</label>
@@ -1852,23 +1851,25 @@ ${storage.path ?? "—"}`}
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">Shift</label>
-            <select
+            <AppSelect
+              value="all"
+              onValueChange={() => {}}
+              options={[{ value: "all", label: "Semua Shift" }]}
               disabled
-              className="w-full rounded-md border border-input bg-muted px-2 py-1.5 text-xs opacity-60"
-            >
-              <option>Semua Shift</option>
-            </select>
+              ariaLabel="Filter shift (belum aktif)"
+            />
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">
               QC Status
             </label>
-            <select
+            <AppSelect
+              value="all"
+              onValueChange={() => {}}
+              options={[{ value: "all", label: "Semua" }]}
               disabled
-              className="w-full rounded-md border border-input bg-muted px-2 py-1.5 text-xs opacity-60"
-            >
-              <option>Semua</option>
-            </select>
+              ariaLabel="Filter QC status (belum aktif)"
+            />
           </div>
           <div className="flex items-end">
             <button
@@ -1882,19 +1883,20 @@ ${storage.path ?? "—"}`}
             <label className="mb-1 block text-xs font-medium text-muted-foreground">
               Kualitas gambar
             </label>
-            <select
+            <AppSelect
               value={imageQuality}
-              onChange={(e) => {
-                const next = e.target.value as GalleryImageQuality;
+              onValueChange={(value) => {
+                const next = value as GalleryImageQuality;
                 setImageQuality(next);
                 saveGalleryImageQuality(next);
               }}
-              className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-xs"
+              options={[
+                { value: "hemat", label: "Hemat (cepat)" },
+                { value: "hd", label: "HD (berkas asli)" },
+              ]}
               title="Hemat memakai thumbnail (~50 KB). HD menarik berkas asli (~11 MB) dari folder jaringan."
-            >
-              <option value="hemat">Hemat (cepat)</option>
-              <option value="hd">HD (berkas asli)</option>
-            </select>
+              ariaLabel="Kualitas gambar"
+            />
           </div>
           <div className="sm:col-span-2 lg:col-span-5">
             <label className="mb-1 block text-xs font-medium text-muted-foreground">
@@ -1990,19 +1992,21 @@ ${storage.path ?? "—"}`}
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1.5 text-xs">
               <label className="text-muted-foreground">Urutkan</label>
-              <select
+              <AppSelect
                 value={sortOption}
-                onChange={(e) => {
-                  setSortOption(e.target.value as GallerySortOption);
+                onValueChange={(value) => {
+                  setSortOption(value as GallerySortOption);
                   setPage(1);
                 }}
-                className="rounded-md border border-input bg-background px-2 py-1.5 text-xs"
-              >
-                <option value="newest">Terbaru dulu</option>
-                <option value="oldest">Terlama dulu</option>
-                <option value="name-asc">Nama A → Z</option>
-                <option value="name-desc">Nama Z → A</option>
-              </select>
+                options={[
+                  { value: "newest", label: "Terbaru dulu" },
+                  { value: "oldest", label: "Terlama dulu" },
+                  { value: "name-asc", label: "Nama A → Z" },
+                  { value: "name-desc", label: "Nama Z → A" },
+                ]}
+                className="w-40"
+                ariaLabel="Urutkan"
+              />
             </div>
             <div className="flex overflow-hidden rounded-md border border-input">
               <button
@@ -2383,20 +2387,19 @@ ${storage.path ?? "—"}`}
                   <ChevronRight className="h-3.5 w-3.5" />
                 </button>
               </div>
-              <select
-                value={pageSize}
-                onChange={(e) => {
-                  setPageSize(Number(e.target.value) as (typeof GALLERY_PAGE_SIZE_OPTIONS)[number]);
+              <AppSelect
+                value={String(pageSize)}
+                onValueChange={(value) => {
+                  setPageSize(Number(value) as (typeof GALLERY_PAGE_SIZE_OPTIONS)[number]);
                   setPage(1);
                 }}
-                className="rounded-md border border-input bg-background px-2 py-1.5"
-              >
-                {GALLERY_PAGE_SIZE_OPTIONS.map((n) => (
-                  <option key={n} value={n}>
-                    {n} / halaman
-                  </option>
-                ))}
-              </select>
+                options={GALLERY_PAGE_SIZE_OPTIONS.map((n) => ({
+                  value: String(n),
+                  label: `${n} / halaman`,
+                }))}
+                className="w-32"
+                ariaLabel="Jumlah per halaman"
+              />
             </div>
           </div>
         )}
