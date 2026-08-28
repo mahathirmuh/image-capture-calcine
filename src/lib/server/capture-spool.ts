@@ -14,6 +14,7 @@
 // Modul ini server-only: ia menyentuh filesystem dan hanya dipanggil dari
 // dalam handler serverFn.
 import { getServerEnv } from "../env";
+import { isPlatformMismatchedRoot } from "../network-path";
 import { joinNetworkPath, normalizeRelativeSegments } from "../network-path";
 
 export type SpoolEntryMeta = {
@@ -231,6 +232,14 @@ export async function flushSpool(): Promise<SpoolFlushResult> {
     ids = await listEntryIds(dir);
   } catch {
     return { forwarded: 0, pending: 0, stoppedBecause: null };
+  }
+
+  // Bentuk root yang mustahil di platform ini diperiksa LEBIH DULU, sebelum
+  // stat. Tanpa ini jawabannya TARGET_ROOT_MISSING -- yang menyiratkan share
+  // belum ter-mount dan mengirim orang memeriksa mount yang sebenarnya sehat,
+  // sementara antrean menumpuk berjam-jam.
+  if (isPlatformMismatchedRoot(targetRoot, process.platform)) {
+    return { forwarded: 0, pending: ids.length, stoppedBecause: "TARGET_ROOT_PLATFORM_MISMATCH" };
   }
 
   // Root diperiksa sekali di awal, bukan per entri. Root yang hilang berarti

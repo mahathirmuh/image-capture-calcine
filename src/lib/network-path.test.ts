@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  isPlatformMismatchedRoot,
   isSafeFileName,
   isWindowsStyleRoot,
   joinNetworkPath,
@@ -22,6 +23,27 @@ describe("isWindowsStyleRoot", () => {
   it("memperlakukan sisanya sebagai POSIX", () => {
     expect(isWindowsStyleRoot(POSIX_ROOT)).toBe(false);
     expect(isWindowsStyleRoot("/srv/captures")).toBe(false);
+  });
+});
+
+// Kejadian produksi 28 Agustus 2026: .env container Linux terisi bentuk UNC,
+// dan antrean kirim berhenti dengan TARGET_ROOT_MISSING -- pesan yang menuduh
+// mount, padahal mountnya sehat. Capture 11.00 dan 14.00 menumpuk berjam-jam.
+describe("isPlatformMismatchedRoot", () => {
+  it("menangkap root UNC di Linux", () => {
+    expect(isPlatformMismatchedRoot(UNC_ROOT, "linux")).toBe(true);
+    expect(isPlatformMismatchedRoot("C:\\captures", "linux")).toBe(true);
+  });
+
+  it("membiarkan root UNC di Windows -- di sana justru itu yang benar", () => {
+    expect(isPlatformMismatchedRoot(UNC_ROOT, "win32")).toBe(false);
+    expect(isPlatformMismatchedRoot("C:\\captures", "win32")).toBe(false);
+  });
+
+  it("membiarkan path POSIX di mana pun", () => {
+    expect(isPlatformMismatchedRoot(POSIX_ROOT, "linux")).toBe(false);
+    expect(isPlatformMismatchedRoot(POSIX_ROOT, "win32")).toBe(false);
+    expect(isPlatformMismatchedRoot(POSIX_ROOT, "darwin")).toBe(false);
   });
 });
 

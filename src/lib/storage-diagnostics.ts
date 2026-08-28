@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getServerEnv } from "./env";
+import { isPlatformMismatchedRoot } from "./network-path";
 
 export type StorageProbeResult =
   | {
@@ -73,6 +74,24 @@ export const probeNetworkSaveRoot = createServerFn({ method: "POST" }).handler(
         code: "NOT_CONFIGURED",
         checkedAt,
         message: "NETWORK_SAVE_ROOT is not configured on this app server.",
+      };
+    }
+
+    // Diperiksa sebelum menyentuh disk: bentuk root yang mustahil di platform
+    // ini akan gagal stat dan terbaca sebagai "share belum ter-mount", padahal
+    // sebabnya nilai env yang salah bentuk. Pesan yang menuduh hal keliru lebih
+    // buruk daripada tidak ada pesan.
+    if (isPlatformMismatchedRoot(targetRoot, process.platform)) {
+      return {
+        ok: false,
+        targetRoot,
+        platform: process.platform,
+        code: "PLATFORM_MISMATCH",
+        checkedAt,
+        message:
+          `NETWORK_SAVE_ROOT berbentuk UNC/Windows (${targetRoot}) padahal app ini berjalan di ` +
+          `${process.platform}. Pakai path mount Linux, mis. /mnt/mti/ML/MTI/... -- bentuk UNC ` +
+          "tidak bisa dibuka di sini, jadi antrean kirim tidak akan pernah terkirim.",
       };
     }
 

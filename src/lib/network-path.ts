@@ -68,6 +68,25 @@ export function isSafeFileName(name: string): boolean {
   return segments !== null && segments.length === 1 && segments[0] === trimmed;
 }
 
+/**
+ * Root bergaya Windows di atas platform POSIX -- salah konfigurasi yang PASTI,
+ * bukan sekadar kemungkinan.
+ *
+ * Kasus nyatanya: `.env` produksi terisi bentuk UNC `\\10.1.1.44\...`
+ * padahal app berjalan di container Linux. Di sana UNC bukan path yang bisa
+ * di-stat, jadi antrean kirim berhenti dengan TARGET_ROOT_MISSING -- pesan yang
+ * menyiratkan share belum ter-mount, dan membuat orang memeriksa mount yang
+ * sebenarnya baik-baik saja. Capture menumpuk berjam-jam tanpa ada yang tahu
+ * sebabnya.
+ *
+ * Dibedakan supaya pesannya menyebut sebab yang sesungguhnya. Padanannya:
+ *
+ *   \\10.1.1.44\Data Analytics\ML\MTI   ==   /mnt/mti/ML/MTI
+ */
+export function isPlatformMismatchedRoot(targetRoot: string, platform: string): boolean {
+  return platform !== "win32" && isWindowsStyleRoot(targetRoot);
+}
+
 /** Sambung `targetRoot` dengan segmen memakai separator yang cocok dengan root. */
 export function joinNetworkPath(targetRoot: string, segments: string[]): string {
   const separator = isWindowsStyleRoot(targetRoot) ? "\\" : "/";
