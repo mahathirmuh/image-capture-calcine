@@ -75,6 +75,10 @@ tags:
     description: Kesehatan app server, folder jaringan, dan antrean kirim.
   - name: Captures
     description: Riwayat foto sampling dari registry MSSQL.
+  - name: Pelaporan
+    description: Angka agregat, dihitung SQL supaya dasbor tidak menarik ribuan record.
+  - name: Perangkat
+    description: Kamera terdaftar dan kapan masing-masing terakhir menghasilkan capture.
   - name: Reference
     description: Taksonomi plant, slot, dan jadwal sesi.
 
@@ -276,6 +280,49 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
         "503": { $ref: "#/components/responses/DatabaseUnavailable" }
 
+  /captures/{id}/image:
+    get:
+      tags: [Captures]
+      operationId: getCaptureImage
+      summary: Berkas foto asli sebuah capture
+      description: |
+        Mengembalikan **berkasnya sendiri**, bukan metadatanya -- dibaca dari
+        folder jaringan tempat capture itu tersimpan.
+
+        Ukurannya penuh, sekitar 11 MB per foto, dan ditarik lewat CIFS. Jangan
+        dipakai untuk menyusun galeri: ambil daftarnya dari `/captures` lalu
+        minta berkas ini hanya untuk foto yang memang perlu dilihat.
+
+        Path berkas diverifikasi berada di bawah folder jaringan yang dikelola
+        app sebelum apa pun dibaca dari disk, jadi `file_path` yang aneh di
+        registry tidak bisa dipakai membaca berkas lain di server.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+      responses:
+        "200":
+          description: Berkas foto.
+          content:
+            image/jpeg:
+              schema: { type: string, format: binary }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Path berkasnya di luar folder jaringan yang dikelola app.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: |
+            Record tidak ada, atau berkasnya belum mendarat di folder jaringan
+            (`FILE_NOT_READY` -- capture yang masih mengantre di app server).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503": { $ref: "#/components/responses/DatabaseUnavailable" }
+
   /sessions:
     get:
       tags: [Captures]
@@ -315,6 +362,52 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "503": { $ref: "#/components/responses/DatabaseUnavailable" }
 
+  /summary:
+    get:
+      tags: [Pelaporan]
+      operationId: getSummary
+      summary: Angka ringkas untuk dasbor
+      description: |
+        Hitungan agregat yang dikerjakan SQL, supaya dasbor tidak perlu menarik
+        ribuan record hanya untuk menghitung satu bilangan.
+
+        **Perhatikan `timezone` pada jawabannya.** Jendela `today`, `last7Days`,
+        dan `last30Days` dihitung memakai jam app server, dan zonanya disebut
+        di sana. Ini bukan detail sepele: sesi 02.00 WITA jatuh pada hari
+        sebelumnya kalau dihitung dengan UTC.
+      responses:
+        "200":
+          description: Ringkasan.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Summary" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/DatabaseUnavailable" }
+
+  /devices:
+    get:
+      tags: [Perangkat]
+      operationId: listDevices
+      summary: Kamera terdaftar dan kapan terakhir menghasilkan capture
+      description: |
+        Daftar kamera beserta penempatannya, ditambah `lastCapturedAt` dan
+        `captureCount` per kamera -- dua kolom yang membuat endpoint ini
+        berguna untuk monitoring: kamera yang terdaftar tapi diam berhari-hari
+        adalah persoalan, dan tanpa angka itu tidak ada yang bisa melihatnya
+        dari luar.
+
+        Alamat jaringan (`edge_api_url`, `ip_address`) dan catatan internal
+        **tidak** disertakan: itu peta jaringan pabrik, dan kunci API baca-saja
+        bukan tempatnya.
+      responses:
+        "200":
+          description: Daftar perangkat.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeviceList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/DatabaseUnavailable" }
+
 components:
   securitySchemes:
     ApiKeyAuth:
@@ -351,6 +444,80 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
 
   schemas:
+    Summary:
+      type: object
+      required: [generatedAt, timezone, totals, windows, byStatus, byPlant]
+      properties:
+        generatedAt: { type: string, format: date-time }
+        timezone:
+          type: string
+          description: Zona waktu app server, penentu batas hari pada `windows`.
+          example: Asia/Makassar
+        totals:
+          type: object
+          properties:
+            captures: { type: integer, example: 1284 }
+            bytes: { type: integer, format: int64, example: 14126391296 }
+            lastCapturedAt: { type: string, format: date-time, nullable: true }
+        windows:
+          type: object
+          properties:
+            today: { type: integer, example: 12 }
+            last7Days: { type: integer, example: 96 }
+            last30Days: { type: integer, example: 412 }
+        byStatus:
+          type: object
+          description: |
+            `other` dihitung sebagai sisa, bukan didaftar satu per satu, supaya
+            status baru yang muncul kemudian tetap masuk jumlah totalnya.
+          properties:
+            saved: { type: integer }
+            downloaded: { type: integer }
+            other: { type: integer }
+        byPlant:
+          type: array
+          items:
+            type: object
+            properties:
+              plant: { type: string, nullable: true }
+              captures: { type: integer }
+              bytes: { type: integer, format: int64 }
+              lastCapturedAt: { type: string, format: date-time, nullable: true }
+
+    DeviceList:
+      type: object
+      required: [total, devices]
+      properties:
+        total: { type: integer }
+        devices:
+          type: array
+          items: { $ref: "#/components/schemas/Device" }
+
+    Device:
+      type: object
+      required: [code, isActive, captureCount]
+      properties:
+        code: { type: string, example: CAM-AP-01 }
+        name: { type: string, nullable: true }
+        cameraModel: { type: string, nullable: true, example: Canon EOS R50 }
+        connectionType: { type: string, nullable: true }
+        isActive: { type: boolean }
+        plant: { type: string, nullable: true }
+        station: { type: string, nullable: true }
+        bin: { type: string, nullable: true }
+        captureCount:
+          type: integer
+          description: Jumlah capture yang pernah dihasilkan kamera ini.
+        lastCapturedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            Kosong berarti kamera terdaftar tapi belum pernah menghasilkan
+            capture sama sekali.
+        createdAt: { type: string, format: date-time, nullable: true }
+        updatedAt: { type: string, format: date-time, nullable: true }
+
     Error:
       type: object
       required: [error]

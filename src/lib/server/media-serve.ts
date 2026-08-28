@@ -22,7 +22,12 @@ export function isMediaPath(pathname: string): boolean {
   return pathname.startsWith(MEDIA_PREFIX);
 }
 
-function contentTypeFor(fileName: string): string {
+/**
+ * Diekspor supaya REST API memakai pemetaan yang sama persis. Daftar kedua
+ * yang berdiri sendiri pasti akan menyimpang, dan jawaban dengan content-type
+ * yang salah adalah jenis kesalahan yang baru ketahuan di sisi konsumen.
+ */
+export function contentTypeFor(fileName: string): string {
   const ext = fileName.includes(".") ? (fileName.split(".").pop() ?? "").toLowerCase() : "";
   return CONTENT_TYPES[ext] ?? "application/octet-stream";
 }

@@ -407,6 +407,224 @@ function toCoverageRecord(view: CaptureRecordView): CoverageRecord {
   };
 }
 
+/**
+ * Berkas foto aslinya, bukan metadatanya.
+ *
+ * Endpoint inilah yang membuat API ini berguna bagi LIMS dan dasbor: sebelum
+ * ini, sistem lain bisa tahu sebuah capture ADA tapi tidak punya jalan untuk
+ * melihatnya. Tetap baca-saja, dan tetap dijaga penjaga path yang sama dengan
+ * penyaji galeri -- `file_path` datang dari database, tapi database bukan
+ * alasan untuk melayani berkas apa pun di luar folder jaringan.
+ */
+async function handleCaptureImage(rawId: string): Promise<Response> {
+  const id = Number(rawId);
+  if (!Number.isInteger(id) || id < 1) {
+    return apiError(400, "INVALID_PARAM", `id capture tidak sah: ${rawId}`);
+  }
+
+  const root = getServerEnv().NETWORK_SAVE_ROOT;
+  if (!root) {
+    return apiError(
+      503,
+      "NETWORK_SAVE_ROOT_MISSING",
+      "NETWORK_SAVE_ROOT belum dikonfigurasi di app server ini.",
+    );
+  }
+
+  const { findCaptureRecordForMedia } = await import("./media-record");
+  const record = await findCaptureRecordForMedia(id);
+  if (!record || !record.servable) {
+    return apiError(404, "NOT_FOUND", `Capture ${id} tidak punya berkas yang bisa dilayani.`);
+  }
+
+  const { contentTypeFor, isInsideRoot } = await import("./media-serve");
+  if (!(await isInsideRoot(record.filePath, root))) {
+    return apiError(403, "OUTSIDE_ROOT", "Path berkas berada di luar folder jaringan.");
+  }
+
+  const { createReadStream } = await import("node:fs");
+  const { stat } = await import("node:fs/promises");
+  const { Readable } = await import("node:stream");
+
+  let size: number;
+  try {
+    const info = await stat(record.filePath);
+    if (!info.isFile()) return apiError(404, "NOT_FOUND", "Path capture bukan berkas.");
+    size = info.size;
+  } catch {
+    // Record `spooled`: berkasnya masih mengantre di app server dan belum
+    // mendarat di share. Keadaan sah, bukan kesalahan konsumen.
+    return apiError(404, "FILE_NOT_READY", "Berkasnya belum ada di folder jaringan.");
+  }
+
+  const stream = Readable.toWeb(createReadStream(record.filePath)) as ReadableStream;
+  return new Response(stream, {
+    headers: {
+      "content-type": contentTypeFor(record.fileName),
+      "content-length": String(size),
+      "cache-control": "no-store",
+      "content-disposition": `inline; filename="${encodeURIComponent(record.fileName)}"`,
+    },
+  });
+}
+
+/**
+ * Angka ringkas untuk dasbor pelaporan.
+ *
+ * Ada supaya dasbor tidak perlu menarik ribuan record hanya untuk menghitung
+ * satu bilangan -- itu membebani registry dan jaringan untuk pekerjaan yang
+ * jauh lebih murah dilakukan SQL.
+ *
+ * "Hari ini" dan "7/30 hari" dihitung memakai JAM APP SERVER, dan zonanya ikut
+ * disebut di jawaban. Tanpa itu konsumen tidak punya cara tahu batas harinya
+ * di mana -- dan di sini bedanya nyata: sesi 02.00 WITA jatuh di hari
+ * sebelumnya kalau dihitung UTC.
+ */
+async function handleSummary(): Promise<Response> {
+  const schema = `[${getCardDbSchema()}]`;
+  const pool = await getCardDbPool();
+
+  const now = new Date();
+  const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOf = (daysAgo: number) =>
+    new Date(dayStart.getTime() - daysAgo * 24 * 60 * 60 * 1000).toISOString();
+
+  const aggregate = await pool
+    .request()
+    .input("dayStart", sql.NVarChar(40), dayStart.toISOString())
+    .input("weekStart", sql.NVarChar(40), startOf(6))
+    .input("monthStart", sql.NVarChar(40), startOf(29)).query(`
+      SELECT
+        COUNT(*) AS total_count,
+        SUM(COALESCE(file_size_bytes, 0)) AS total_bytes,
+        MAX(captured_at) AS last_captured_at,
+        SUM(CASE WHEN captured_at >= @dayStart THEN 1 ELSE 0 END) AS today_count,
+        SUM(CASE WHEN captured_at >= @weekStart THEN 1 ELSE 0 END) AS week_count,
+        SUM(CASE WHEN captured_at >= @monthStart THEN 1 ELSE 0 END) AS month_count,
+        SUM(CASE WHEN status = N'saved' THEN 1 ELSE 0 END) AS saved_count,
+        SUM(CASE WHEN status = N'downloaded' THEN 1 ELSE 0 END) AS downloaded_count
+      FROM ${schema}.capture_records;
+    `);
+
+  const byPlant = await pool.request().query(`
+    SELECT
+      COALESCE(JSON_VALUE(cr.metadata_json, '$.plant'), l.plant) AS plant,
+      COUNT(*) AS captures,
+      SUM(COALESCE(cr.file_size_bytes, 0)) AS bytes,
+      MAX(cr.captured_at) AS last_captured_at
+    FROM ${schema}.capture_records cr
+    LEFT JOIN ${schema}.locations l ON l.id = cr.location_id
+    GROUP BY COALESCE(JSON_VALUE(cr.metadata_json, '$.plant'), l.plant)
+    ORDER BY COUNT(*) DESC;
+  `);
+
+  const row = (aggregate.recordset[0] ?? {}) as Record<string, unknown>;
+  const count = (value: unknown) => Number(value ?? 0);
+  const total = count(row.total_count);
+  const saved = count(row.saved_count);
+  const downloaded = count(row.downloaded_count);
+
+  return json({
+    generatedAt: now.toISOString(),
+    // Zona waktu app server, disebut apa adanya supaya "today" tidak ambigu.
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    totals: {
+      captures: total,
+      bytes: count(row.total_bytes),
+      lastCapturedAt: row.last_captured_at
+        ? new Date(String(row.last_captured_at)).toISOString()
+        : null,
+    },
+    windows: {
+      today: count(row.today_count),
+      last7Days: count(row.week_count),
+      last30Days: count(row.month_count),
+    },
+    byStatus: {
+      saved,
+      downloaded,
+      // Sisanya dihitung, bukan ditebak: status baru yang muncul nanti tetap
+      // masuk hitungan alih-alih menghilang diam-diam dari jumlah totalnya.
+      other: Math.max(0, total - saved - downloaded),
+    },
+    byPlant: byPlant.recordset.map((record: Record<string, unknown>) => {
+      return {
+        plant: typeof record.plant === "string" ? record.plant : null,
+        captures: count(record.captures),
+        bytes: count(record.bytes),
+        lastCapturedAt: record.last_captured_at
+          ? new Date(String(record.last_captured_at)).toISOString()
+          : null,
+      };
+    }),
+  });
+}
+
+/**
+ * Kamera yang terdaftar, beserta kapan masing-masing terakhir menghasilkan
+ * capture. Kolom terakhir itu yang membuatnya berguna untuk monitoring:
+ * kamera yang terdaftar tapi diam berhari-hari adalah persoalan, dan tanpa
+ * angka itu tidak ada yang bisa melihatnya dari luar.
+ *
+ * Tidak memuat `edge_api_url`, `ip_address`, maupun catatan internal: itu
+ * peta jaringan pabrik, dan kunci API baca-saja bukan tempatnya.
+ */
+async function handleDevices(): Promise<Response> {
+  const schema = `[${getCardDbSchema()}]`;
+  const pool = await getCardDbPool();
+
+  const result = await pool.request().query(`
+    SELECT
+      d.code,
+      d.name,
+      d.camera_model,
+      d.connection_type,
+      d.is_active,
+      d.created_at,
+      d.updated_at,
+      l.plant,
+      l.station,
+      l.bin,
+      lc.last_captured_at,
+      lc.capture_count
+    FROM ${schema}.devices d
+    LEFT JOIN ${schema}.device_assignments da
+      ON da.device_id = d.id AND da.is_current = 1
+    LEFT JOIN ${schema}.locations l ON l.id = da.location_id
+    OUTER APPLY (
+      SELECT
+        MAX(cr.captured_at) AS last_captured_at,
+        COUNT(*) AS capture_count
+      FROM ${schema}.capture_records cr
+      WHERE JSON_VALUE(cr.metadata_json, '$.deviceCode') = d.code
+    ) lc
+    WHERE d.is_deleted = 0
+    ORDER BY d.is_active DESC, d.name ASC;
+  `);
+
+  const text = (value: unknown) => (typeof value === "string" ? value : null);
+  const devices = result.recordset.map((row: Record<string, unknown>) => {
+    return {
+      code: String(row.code ?? ""),
+      name: text(row.name),
+      cameraModel: text(row.camera_model),
+      connectionType: text(row.connection_type),
+      isActive: Boolean(row.is_active),
+      plant: text(row.plant),
+      station: text(row.station),
+      bin: text(row.bin),
+      captureCount: Number(row.capture_count ?? 0),
+      lastCapturedAt: row.last_captured_at
+        ? new Date(String(row.last_captured_at)).toISOString()
+        : null,
+      createdAt: row.created_at ? new Date(String(row.created_at)).toISOString() : null,
+      updatedAt: row.updated_at ? new Date(String(row.updated_at)).toISOString() : null,
+    };
+  });
+
+  return json({ total: devices.length, devices });
+}
+
 async function handleSessions(url: URL): Promise<Response> {
   const rawDate = url.searchParams.get("date");
   if (rawDate !== null && !BARE_DATE.test(rawDate.trim())) {
@@ -463,12 +681,19 @@ const ROUTES: Route[] = [
   { method: "GET", pattern: /^\/plants$/, handle: () => handlePlants() },
   { method: "GET", pattern: /^\/captures$/, handle: (url) => handleCapturesList(url) },
   { method: "GET", pattern: /^\/captures\/([^/]+)$/, handle: (_url, p) => handleCaptureById(p[0]) },
+  {
+    method: "GET",
+    pattern: /^\/captures\/([^/]+)\/image$/,
+    handle: (_url, p) => handleCaptureImage(p[0]),
+  },
   { method: "GET", pattern: /^\/sessions$/, handle: (url) => handleSessions(url) },
+  { method: "GET", pattern: /^\/summary$/, handle: () => handleSummary() },
+  { method: "GET", pattern: /^\/devices$/, handle: () => handleDevices() },
 ];
 
 /** Endpoint yang membaca registry; dipakai untuk menjawab 503 yang jelas
  * ketika CARDDB belum dikonfigurasi, alih-alih 500 dari koneksi yang gagal. */
-const NEEDS_DATABASE = /^\/(captures|sessions)/;
+const NEEDS_DATABASE = /^\/(captures|sessions|summary|devices)/;
 
 /**
  * Dua endpoint yang dibuka tanpa kunci: halaman Swagger UI dan spesifikasinya.
