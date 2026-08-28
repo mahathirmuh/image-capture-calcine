@@ -202,6 +202,14 @@ type GalleryCard = {
   persistedPath: string | null;
   saveMethod: CaptureRecordView["saveMethod"];
   capturedBy: string | null;
+  /**
+   * Ukuran berkas menurut REGISTRY, bukan menurut isi browser.
+   *
+   * Tanpa ini "Storage Terlihat" hanya bisa menjumlahkan salinan lokal, dan di
+   * browser yang belum pernah capture -- incognito, PC lain, operator shift
+   * berikutnya -- jawabannya selalu 0 B untuk galeri yang jelas-jelas berisi.
+   */
+  fileSizeBytes: number | null;
   local: GalleryItem | null;
 };
 
@@ -1016,6 +1024,7 @@ function GalleryPage() {
           persistedPath: record.filePath,
           saveMethod: record.saveMethod,
           capturedBy: record.capturedBy,
+          fileSizeBytes: record.fileSizeBytes,
           local,
         };
       });
@@ -1036,6 +1045,9 @@ function GalleryPage() {
           persistedPath: item.persistedPath ?? null,
           saveMethod: item.saveMethod ?? null,
           capturedBy: item.capturedBy ?? null,
+          // Yatim: tidak ada record, jadi satu-satunya ukuran yang diketahui
+          // memang blob di browser ini.
+          fileSizeBytes: item.blob.size,
           local: item,
         }),
       );
@@ -1377,14 +1389,15 @@ function GalleryPage() {
     return () => window.removeEventListener("keydown", onKey);
   }, [detailIndex, showDetailAt]);
   const selectedItems = gallery.filter((item) => selectedIds.has(item.id));
-  const totalBytes = gallery.reduce((sum, item) => sum + item.blob.size, 0);
   // Hanya menjumlahkan kartu yang blob-nya ada di browser ini. Ukuran foto
   // yang tersimpan di share tidak diketahui tanpa menariknya, dan menariknya
   // hanya demi angka ini jelas tidak sepadan.
-  const filteredBytes = filteredGallery.reduce(
-    (sum, card) => sum + (card.local?.blob.size ?? 0),
-    0,
-  );
+  // Ukuran registry lebih dulu, blob lokal hanya sebagai cadangan: registry
+  // tahu ukuran SEMUA capture, sedangkan blob hanya yang kebetulan pernah
+  // lewat browser ini.
+  const cardBytes = (card: GalleryCard) => card.fileSizeBytes ?? card.local?.blob.size ?? 0;
+  const filteredBytes = filteredGallery.reduce((sum, card) => sum + cardBytes(card), 0);
+  const allCardBytes = galleryCards.reduce((sum, card) => sum + cardBytes(card), 0);
   const selectedBytes = selectedItems.reduce((sum, item) => sum + item.blob.size, 0);
   const cameraStateLabel = deviceStatus?.online
     ? deviceStatus.camera?.connected
@@ -1519,28 +1532,35 @@ function GalleryPage() {
           </div>
         </header>
 
-        <section className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <section
+          className={`mb-6 grid gap-4 sm:grid-cols-2 ${isAdmin ? "xl:grid-cols-5" : "xl:grid-cols-4"}`}
+        >
           <OverviewCard
             icon={Search}
             label="Hasil Tersaring"
             value={filteredGallery.length}
             hint={`${galleryCards.length} image di folder jaringan`}
           />
-          <OverviewCard
-            icon={CheckSquare}
-            label="Item Terpilih"
-            value={selectedIds.size}
-            hint={
-              selectedIds.size > 0
-                ? `${formatBytes(selectedBytes)} siap compare/download`
-                : "Belum ada item dipilih"
-            }
-          />
+          {/* Memilih hanya berguna untuk Bandingkan dan Ekspor CSV, dan
+              keduanya wewenang admin. Bagi operator kartu ini selalu menunjuk
+              nol dan tidak menuntun ke tindakan apa pun. */}
+          {isAdmin && (
+            <OverviewCard
+              icon={CheckSquare}
+              label="Item Terpilih"
+              value={selectedIds.size}
+              hint={
+                selectedIds.size > 0
+                  ? `${formatBytes(selectedBytes)} siap compare/download`
+                  : "Belum ada item dipilih"
+              }
+            />
+          )}
           <OverviewCard
             icon={HardDrive}
             label="Storage Terlihat"
             value={formatBytes(filteredBytes)}
-            hint={`${formatBytes(totalBytes)} total browser storage`}
+            hint={`${formatBytes(allCardBytes)} total di folder jaringan`}
           />
           <OverviewCard
             icon={Wifi}
