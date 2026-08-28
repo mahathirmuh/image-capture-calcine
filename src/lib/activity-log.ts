@@ -10,6 +10,13 @@ export const ACTIVITY_ACTIONS = [
   "user.updated",
   "user.deleted",
   "user.password_reset",
+  // Tiga aksi yang MENGUBAH BERKAS atau tujuan penyimpanan, bukan sekadar
+  // akun. Sampai sebelum ini jejaknya hanya mencatat urusan login dan user --
+  // artinya seseorang bisa menghapus foto sampling secara permanen dari
+  // \\10.1.1.44 tanpa meninggalkan catatan apa pun tentang siapa dan kapan.
+  "capture.deleted",
+  "capture.renamed",
+  "storage.target_changed",
 ] as const;
 
 export type ActivityAction = (typeof ACTIVITY_ACTIONS)[number];
@@ -24,6 +31,9 @@ export const ACTION_LABELS: Record<ActivityAction, string> = {
   "user.updated": "Akun diubah",
   "user.deleted": "Akun dihapus",
   "user.password_reset": "Password direset",
+  "capture.deleted": "Capture dihapus",
+  "capture.renamed": "Capture diubah nama",
+  "storage.target_changed": "Alamat edge diubah",
 };
 
 export type ActivityEntry = {

@@ -815,6 +815,25 @@ export const listCaptureRecords = createServerFn({ method: "GET" })
     }
   });
 
+/**
+ * Identitas pemanggil dari sesi, untuk jejak aktivitas.
+ *
+ * Sama sumbernya dengan `capturedBy` pada capture: sesi di sisi server, tidak
+ * pernah dari payload klien. Gagal membacanya tidak membatalkan aksi yang
+ * sedang berjalan -- jejak yang kehilangan nama pelaku masih jauh lebih
+ * berguna daripada penghapusan yang gagal karena tabel lognya bermasalah.
+ */
+async function currentActor(): Promise<{ id: number; username: string } | null> {
+  try {
+    const { getAppSession } = await import("./server/session");
+    const session = await getAppSession();
+    const user = session.data.user;
+    return user ? { id: user.id, username: user.username } : null;
+  } catch {
+    return null;
+  }
+}
+
 export const getCaptureDashboardSummary = createServerFn({ method: "GET" })
   .validator(captureDashboardSummarySchema)
   .handler(async ({ data }) => {
@@ -1483,6 +1502,17 @@ export const renameCaptureRecord = createServerFn({ method: "POST" })
           WHERE id = @recordId;
         `);
 
+      const actor = await currentActor();
+      const { recordActivity } = await import("./server/activity");
+      await recordActivity({
+        action: "capture.renamed",
+        actorId: actor?.id ?? null,
+        actorUsername: actor?.username ?? null,
+        targetId: recordId,
+        targetUsername: data.nextFileName,
+        detail: `"${data.currentFileName}" -> "${data.nextFileName}" di ${nextFilePath}`,
+      });
+
       return {
         ok: true as const,
         recordId,
@@ -1582,6 +1612,23 @@ export const deleteCaptureRecord = createServerFn({ method: "POST" })
       // penghapusan yang dilaporkan gagal padahal sudah terjadi.
       const { deleteThumbnail } = await import("./server/thumb-store");
       await deleteThumbnail(recordId).catch(() => {});
+
+      // Dicatat SETELAH penghapusan benar-benar terjadi, bukan sebelum: jejak
+      // yang mencatat niat, bukan hasil, akan berbohong setiap kali aksinya
+      // gagal di tengah jalan.
+      const actor = await currentActor();
+      const { recordActivity } = await import("./server/activity");
+      await recordActivity({
+        action: "capture.deleted",
+        severity: "warning",
+        actorId: actor?.id ?? null,
+        actorUsername: actor?.username ?? null,
+        targetId: recordId,
+        targetUsername: data.fileName,
+        detail: fileLeftOnShare
+          ? `Record dihapus. Berkas DIBIARKAN di ${fileLeftOnShare} (di luar folder yang dikelola app).`
+          : `Record dan berkasnya dihapus permanen dari folder jaringan: ${existingFilePath || "—"}`,
+      });
 
       return {
         ok: true as const,

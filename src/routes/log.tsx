@@ -8,7 +8,10 @@ import {
   LogOut,
   RefreshCw,
   Search,
+  HardDrive,
+  PenLine,
   ShieldAlert,
+  Trash2,
   TriangleAlert,
   UserMinus,
   UserPen,
@@ -80,6 +83,9 @@ const ACTION_ICONS: Record<ActivityAction, LucideIcon> = {
   "user.updated": UserPen,
   "user.deleted": UserMinus,
   "user.password_reset": ShieldAlert,
+  "capture.deleted": Trash2,
+  "capture.renamed": PenLine,
+  "storage.target_changed": HardDrive,
 };
 
 const SEMUA = "__semua__";

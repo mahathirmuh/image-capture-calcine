@@ -86,7 +86,10 @@ async function requireAdmin() {
       message: "Hanya Super Admin yang boleh mengatur alamat Edge API.",
     };
   }
-  return { ok: true as const, userId };
+  // Nama ikut dikembalikan, bukan hanya id: user-nya sudah dimuat di sini, dan
+  // jejak aktivitas yang cuma menyimpan angka menuntut pembacanya membuka tabel
+  // lain hanya untuk tahu siapa yang mengubah apa.
+  return { ok: true as const, userId, username: current.username };
 }
 
 export const listEdgeTargets = createServerFn({ method: "GET" }).handler(
@@ -138,6 +141,21 @@ export const saveEdgeApiUrl = createServerFn({ method: "POST" })
       // disimpan NULL supaya bedanya jelas di database.
       const changed = await updateDeviceEdgeUrl(data.deviceId, data.url === "" ? null : data.url);
       if (!changed) return { ok: false, message: "Device tidak ditemukan di registry." };
+
+      // Dicatat karena akibatnya besar dan tidak terlihat: alamat ini menentukan
+      // KAMERA MANA yang dipotret. Salah isi, dan capture sebuah plant diam-diam
+      // datang dari area yang lain -- tanpa satu pun pesan galat.
+      const { recordActivity } = await import("./server/activity");
+      await recordActivity({
+        action: "storage.target_changed",
+        severity: "warning",
+        actorId: gate.userId,
+        actorUsername: gate.username,
+        targetId: data.deviceId,
+        detail:
+          data.url === "" ? "Dikembalikan ke alamat cadangan .env" : `Alamat edge: ${data.url}`,
+      });
+
       return { ok: true };
     } catch (error) {
       return {
