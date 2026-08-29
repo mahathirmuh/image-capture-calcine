@@ -58,7 +58,25 @@ export const getSpoolSummary = createServerFn({ method: "GET" }).handler(
 /** Kirim ulang antrean sekarang juga, tanpa menunggu timer lima menitan. */
 export const flushSpoolNow = createServerFn({ method: "POST" }).handler(async () => {
   const { flushSpool } = await import("./server/capture-spool");
-  return flushSpool();
+  const result = await flushSpool();
+
+  // Dicatat karena ini tindakan orang, bukan timer. Kalau antrean tiba-tiba
+  // terkirim di tengah gangguan, jejak ini yang menjelaskan siapa yang
+  // menekannya -- dan hasilnya, supaya penekanan yang tidak menghasilkan apa
+  // pun tetap terlihat.
+  const { currentActor, recordActivity } = await import("./server/activity");
+  const actor = await currentActor();
+  await recordActivity({
+    action: "storage.flush_manual",
+    severity: result.stoppedBecause && result.pending > 0 ? "warning" : "info",
+    actorId: actor?.id ?? null,
+    actorUsername: actor?.username ?? null,
+    detail:
+      `${result.forwarded} terkirim, ${result.pending} tersisa` +
+      `${result.stoppedBecause ? `; berhenti: ${result.stoppedBecause}` : ""}`,
+  });
+
+  return result;
 });
 
 export const probeNetworkSaveRoot = createServerFn({ method: "POST" }).handler(

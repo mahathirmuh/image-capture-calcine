@@ -8,6 +8,7 @@ import {
   LogOut,
   RefreshCw,
   Search,
+  Camera,
   CloudOff,
   Cpu,
   CloudUpload,
@@ -94,6 +95,8 @@ const ACTION_ICONS: Record<ActivityAction, LucideIcon> = {
   "storage.forward_recovered": CloudUpload,
   "device.updated": Cpu,
   "camera.settings_applied": SlidersHorizontal,
+  "capture.created": Camera,
+  "storage.flush_manual": CloudUpload,
 };
 
 const SEMUA = "__semua__";

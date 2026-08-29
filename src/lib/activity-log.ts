@@ -29,6 +29,13 @@ export const ACTIVITY_ACTIONS = [
   // dengan JSON.
   "device.updated",
   "camera.settings_applied",
+  // Capture itu sendiri. Volumenya paling besar di antara semua aksi (~64 per
+  // hari), jadi ia memang akan mendominasi daftar -- itulah gunanya penyaring
+  // aksi di halaman /log. Severity-nya yang membedakan: capture yang mendarat
+  // di folder jaringan berstatus info, yang jatuh ke unduhan browser berstatus
+  // warning, karena yang kedua menyisakan pekerjaan manual.
+  "capture.created",
+  "storage.flush_manual",
 ] as const;
 
 export type ActivityAction = (typeof ACTIVITY_ACTIONS)[number];
@@ -50,6 +57,8 @@ export const ACTION_LABELS: Record<ActivityAction, string> = {
   "storage.forward_recovered": "Antrean pulih",
   "device.updated": "Device diperbarui",
   "camera.settings_applied": "Setelan kamera diterapkan",
+  "capture.created": "Capture dibuat",
+  "storage.flush_manual": "Antrean dikirim manual",
 };
 
 export type ActivityEntry = {

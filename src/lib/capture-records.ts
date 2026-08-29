@@ -772,6 +772,7 @@ export const recordCaptureResult = createServerFn({ method: "POST" })
           WHERE id = @recordId;
         `);
 
+        await logCaptureCreated(data, operator, recordId, true);
         return { ok: true as const, recordId, locationId, replaced: true };
       }
 
@@ -801,9 +802,11 @@ export const recordCaptureResult = createServerFn({ method: "POST" })
           );
         `);
 
+      const insertedId = Number(result.recordset[0].id);
+      await logCaptureCreated(data, operator, insertedId, false);
       return {
         ok: true as const,
-        recordId: Number(result.recordset[0].id),
+        recordId: insertedId,
         locationId,
         replaced: false,
       };
@@ -868,6 +871,44 @@ export const listCaptureRecords = createServerFn({ method: "GET" })
       };
     }
   });
+
+/**
+ * Catat satu capture ke jejak aktivitas.
+ *
+ * Severity membedakan dua keadaan yang tidak boleh terlihat sama: capture yang
+ * mendarat di folder jaringan itu urusan selesai, sedangkan yang jatuh ke
+ * unduhan browser menyisakan berkas di PC operator dan pekerjaan manual bagi
+ * seseorang. Menyebut keduanya "info" membuat yang kedua tenggelam.
+ *
+ * Pelakunya diambil dari `operator`, yang sudah dibaca dari sesi di sisi server
+ * untuk mengisi capturedBy -- jadi jejak dan metadata capture selalu menyebut
+ * orang yang sama.
+ */
+async function logCaptureCreated(
+  data: RecordCaptureInput,
+  operator: CaptureOperator,
+  recordId: number,
+  replaced: boolean,
+): Promise<void> {
+  const { recordActivity } = await import("./server/activity");
+  const keNetwork = data.saveMethod === "app-network";
+  const bagian = [
+    `${data.plant} / ${data.captureBin}`,
+    data.captureSession ? `sesi ${data.captureSession}` : null,
+    `metode ${data.saveMethod}`,
+    replaced ? "menimpa capture sebelumnya di sesi yang sama" : null,
+  ].filter(Boolean);
+
+  await recordActivity({
+    action: "capture.created",
+    severity: keNetwork || data.saveMethod === "spooled" ? "info" : "warning",
+    actorId: operator?.id ?? null,
+    actorUsername: operator?.name ?? null,
+    targetId: recordId,
+    targetUsername: data.fileName,
+    detail: bagian.join(" - "),
+  });
+}
 
 export const getCaptureDashboardSummary = createServerFn({ method: "GET" })
   .validator(captureDashboardSummarySchema)
