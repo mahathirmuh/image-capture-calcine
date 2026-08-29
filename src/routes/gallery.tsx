@@ -1534,7 +1534,7 @@ function GalleryPage() {
         </header>
 
         <section
-          className={`mb-6 grid gap-4 sm:grid-cols-2 ${isAdmin ? "xl:grid-cols-5" : "xl:grid-cols-4"}`}
+          className={`mb-6 grid gap-4 sm:grid-cols-2 ${isAdmin ? "xl:grid-cols-5" : "xl:grid-cols-3"}`}
         >
           <OverviewCard
             icon={Search}
@@ -1569,12 +1569,20 @@ function GalleryPage() {
             value={cameraStateLabel}
             hint={cameraStateHint}
           />
-          <OverviewCard
-            icon={Package}
-            label="Log Registry"
-            value={filteredCaptureRecords.length}
-            hint={`${captureRecords.length} record capture di MSSQL`}
-          />
+          {/* Hitungan baris registry MSSQL adalah ukuran kesehatan sistem,
+              bukan alat kerja operator. Ia menghitung SEMUA record termasuk
+              yang tidak pernah sampai ke folder jaringan, jadi angkanya
+              sengaja berbeda dari "Hasil Tersaring" di sebelah kiri -- selisih
+              yang berguna bagi yang mengurus sistemnya, dan cuma
+              membingungkan bagi yang tidak. */}
+          {isAdmin && (
+            <OverviewCard
+              icon={Package}
+              label="Log Registry"
+              value={filteredCaptureRecords.length}
+              hint={`${captureRecords.length} record capture di MSSQL`}
+            />
+          )}
         </section>
 
         {/* Status edge device itu urusan yang mengelola perangkat, bukan yang
