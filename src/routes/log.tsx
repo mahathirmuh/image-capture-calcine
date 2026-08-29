@@ -9,10 +9,12 @@ import {
   RefreshCw,
   Search,
   CloudOff,
+  Cpu,
   CloudUpload,
   HardDrive,
   PenLine,
   ShieldAlert,
+  SlidersHorizontal,
   Trash2,
   TriangleAlert,
   UserMinus,
@@ -90,6 +92,8 @@ const ACTION_ICONS: Record<ActivityAction, LucideIcon> = {
   "storage.target_changed": HardDrive,
   "storage.forward_failed": CloudOff,
   "storage.forward_recovered": CloudUpload,
+  "device.updated": Cpu,
+  "camera.settings_applied": SlidersHorizontal,
 };
 
 const SEMUA = "__semua__";
@@ -243,7 +247,7 @@ function LogPage() {
       <header className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <PageTitle
           title="Log"
-          description="Jejak siapa masuk, siapa gagal masuk, dan siapa mengubah akun. Baris tidak bisa disunting atau dihapus dari halaman ini."
+          description="Jejak siapa masuk, siapa mengubah akun, dan siapa menyentuh capture, perangkat, atau folder jaringan — beserta kejadian sistem seperti antrean kirim yang tertahan. Baris tidak bisa disunting atau dihapus dari halaman ini."
         />
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="sm" onClick={refresh} disabled={loading}>

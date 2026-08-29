@@ -846,6 +846,24 @@ export const upsertAndApplyEdgePreset = createServerFn({ method: "POST" })
         }
 
         const appliedProfile = job.result?.profile ?? edgeProfile;
+        const applied = job.result?.appliedKeys ?? Object.keys(filteredSettings);
+
+        // Setelan kamera menentukan seperti apa foto sampling berikutnya jadi.
+        // Preset yang keliru merusak hasil satu shift penuh tanpa satu pun
+        // pesan galat, jadi perubahannya layak punya jejak bernama pelaku.
+        const { currentActor, recordActivity } = await import("./server/activity");
+        const actor = await currentActor();
+        await recordActivity({
+          action: "camera.settings_applied",
+          actorId: actor?.id ?? null,
+          actorUsername: actor?.username ?? null,
+          targetUsername: target.deviceCode,
+          detail:
+            `${applied.length} setelan diterapkan (${applied.slice(0, 6).join(", ")}` +
+            `${applied.length > 6 ? ", ..." : ""})` +
+            `${uniqueSkippedKeys.length > 0 ? `; ${uniqueSkippedKeys.length} dilewati` : ""}`,
+        });
+
         return {
           ok: true,
           edgeProfileId: edgeProfile.profileId,

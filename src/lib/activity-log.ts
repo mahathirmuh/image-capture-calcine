@@ -23,6 +23,12 @@ export const ACTIVITY_ACTIONS = [
   // capture yang menumpuk berjam-jam tanpa penjelasan.
   "storage.forward_failed",
   "storage.forward_recovered",
+  // Perubahan konfigurasi perangkat. Detail lengkapnya (before/after) tetap di
+  // device_config_history; yang dicatat di sini hanya SIAPA mengubah APA, supaya
+  // /log tetap bisa dibaca sebagai satu garis waktu tanpa menenggelamkannya
+  // dengan JSON.
+  "device.updated",
+  "camera.settings_applied",
 ] as const;
 
 export type ActivityAction = (typeof ACTIVITY_ACTIONS)[number];
@@ -42,6 +48,8 @@ export const ACTION_LABELS: Record<ActivityAction, string> = {
   "storage.target_changed": "Alamat edge diubah",
   "storage.forward_failed": "Antrean gagal terkirim",
   "storage.forward_recovered": "Antrean pulih",
+  "device.updated": "Device diperbarui",
+  "camera.settings_applied": "Setelan kamera diterapkan",
 };
 
 export type ActivityEntry = {

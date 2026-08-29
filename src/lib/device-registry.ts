@@ -506,6 +506,19 @@ export const upsertRegisteredDeviceProfile = createServerFn({ method: "POST" })
       };
     }
 
+    // Satu baris ringkas di jejak aktivitas. Detail before/after tetap di
+    // device_config_history -- menyalinnya ke sini hanya akan menenggelamkan
+    // garis waktu yang justru harus mudah dibaca.
+    const { currentActor, recordActivity } = await import("./server/activity");
+    const actor = await currentActor();
+    await recordActivity({
+      action: "device.updated",
+      actorId: actor?.id ?? null,
+      actorUsername: actor?.username ?? null,
+      targetUsername: device.deviceCode,
+      detail: `${device.deviceName ?? device.deviceCode} - plant: ${device.plant ?? "—"}; bin: ${device.bin ?? "—"}; ${device.isActive ? "aktif" : "nonaktif"}`,
+    });
+
     return {
       ok: true as const,
       device,

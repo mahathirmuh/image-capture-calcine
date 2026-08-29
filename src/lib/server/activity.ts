@@ -12,6 +12,27 @@ export type RecordActivityInput = {
   detail?: string | null;
 };
 
+/**
+ * Identitas pemanggil dari sesi, untuk mengisi kolom pelaku.
+ *
+ * Tinggal di sini, bersama recordActivity, karena setiap pemanggil butuh
+ * keduanya sekaligus -- dan salinan yang tersebar di tiap modul pasti akan
+ * berbeda cara menangani sesi yang gagal dibaca.
+ *
+ * Sumbernya sesi di sisi server, TIDAK pernah payload klien: jejak yang
+ * pelakunya bisa disebutkan sendiri oleh pemanggil bukan jejak.
+ */
+export async function currentActor(): Promise<{ id: number; username: string } | null> {
+  try {
+    const { getAppSession } = await import("./session");
+    const session = await getAppSession();
+    const user = session.data.user;
+    return user ? { id: user.id, username: user.username } : null;
+  } catch {
+    return null;
+  }
+}
+
 async function db() {
   const { getCardDbPool, getCardDbSchema } = await import("../carddb");
   return { pool: await getCardDbPool(), schema: `[${getCardDbSchema()}]` };
