@@ -35,7 +35,18 @@ export type GallerySortOption = (typeof GALLERY_SORT_OPTIONS)[number];
 export const GALLERY_VIEW_MODES = ["grid", "list"] as const;
 export type GalleryViewMode = (typeof GALLERY_VIEW_MODES)[number];
 
-export const GALLERY_PAGE_SIZE_OPTIONS = [12, 24, 48, 96] as const;
+// 10 menggantikan 12 sebagai pilihan terkecil sekaligus bawaan.
+//
+// Satu foto sampling berukuran ~9,5 MB. Pada mode Hemat halaman berisi
+// thumbnail sehingga bedanya tipis, tapi begitu operator memilih HD, satu
+// halaman 24 kartu menarik ~228 MB lewat jaringan pabrik sementara 10 kartu
+// menarik ~95 MB. Halaman yang lebih pendek juga lebih cepat digulir di PC
+// area plant.
+//
+// Nilai 12 yang hilang tidak perlu dimigrasikan: preferensi lama yang masih
+// menyimpannya gagal divalidasi zod, dan loadGalleryViewState() menangkapnya
+// lalu jatuh ke bawaan. Yang terjadi hanyalah kembali ke 10.
+export const GALLERY_PAGE_SIZE_OPTIONS = [10, 24, 48, 96] as const;
 export type GalleryPageSize = (typeof GALLERY_PAGE_SIZE_OPTIONS)[number];
 
 export type GalleryViewState = {
@@ -56,7 +67,7 @@ export type GalleryViewState = {
 export const DEFAULT_GALLERY_VIEW_STATE: GalleryViewState = {
   sortOption: "newest",
   viewMode: "grid",
-  pageSize: 24,
+  pageSize: 10,
   searchQuery: "",
   filterDate: "",
   filterLocation: "",
@@ -130,7 +141,7 @@ const galleryViewStateSchema = z.object({
   viewMode: z.enum(GALLERY_VIEW_MODES),
   pageSize: z.union(
     GALLERY_PAGE_SIZE_OPTIONS.map((size) => z.literal(size)) as [
-      z.ZodLiteral<12>,
+      z.ZodLiteral<10>,
       z.ZodLiteral<24>,
       z.ZodLiteral<48>,
       z.ZodLiteral<96>,

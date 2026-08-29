@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   DEFAULT_GALLERY_IMAGE_QUALITY,
+  GALLERY_PAGE_SIZE_OPTIONS,
   DEFAULT_GALLERY_VIEW_STATE,
   galleryViewStateMatchesSavedView,
   loadGalleryImageQuality,
@@ -124,6 +125,26 @@ describe("gallery-preferences", () => {
         "compact-audit",
       ),
     ).toBe(false);
+  });
+});
+
+describe("ukuran halaman", () => {
+  it("bawaannya 10", () => {
+    expect(DEFAULT_GALLERY_VIEW_STATE.pageSize).toBe(10);
+  });
+
+  it("10 memang salah satu pilihan yang sah", () => {
+    // Bawaan yang tidak ada di daftar pilihan akan lolos TypeScript tapi
+    // membuat dropdown-nya tampil kosong.
+    expect(GALLERY_PAGE_SIZE_OPTIONS).toContain(10);
+  });
+
+  it("preferensi lama bernilai 12 jatuh ke bawaan, bukan meledak", () => {
+    window.localStorage.setItem(
+      "capture-system:gallery-view-state:v1",
+      JSON.stringify({ ...DEFAULT_GALLERY_VIEW_STATE, pageSize: 12 }),
+    );
+    expect(loadGalleryViewState().pageSize).toBe(10);
   });
 });
 
