@@ -61,6 +61,7 @@ import {
   saveGalleryViewState,
 } from "@/lib/gallery-preferences";
 import { getImageDimensions, computeHistogram, type Histogram } from "@/lib/image-analysis";
+import { AppDatePicker } from "@/components/app-date-picker";
 import { AppSelect } from "@/components/app-select";
 import { PageTitle } from "@/components/page-shell";
 import { useIsAdmin } from "@/lib/use-session-user";
@@ -1859,14 +1860,13 @@ ${storage.path ?? "—"}`}
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">Tanggal</label>
-            <input
-              type="date"
+            <AppDatePicker
               value={filterDate}
-              onChange={(e) => {
-                setFilterDate(e.target.value);
+              onValueChange={(value) => {
+                setFilterDate(value);
                 setPage(1);
               }}
-              className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-xs"
+              ariaLabel="Filter tanggal"
             />
           </div>
           <div>
