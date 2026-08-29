@@ -72,7 +72,11 @@ export type ActivityEntry = {
   ipAddress: string | null;
 };
 
-export const ACTIVITY_PAGE_SIZES = [50, 100, 250, 500] as const;
+// 10 sebagai bawaan. Jejak ini dibaca untuk menjawab pertanyaan tertentu
+// ("siapa menghapus foto itu?"), bukan digulir dari atas ke bawah -- dan sejak
+// capture ikut tercatat, seratus baris pertama bisa habis oleh satu shift saja.
+export const ACTIVITY_PAGE_SIZES = [10, 25, 50, 100] as const;
+export type ActivityPageSize = (typeof ACTIVITY_PAGE_SIZES)[number];
 
 // Ekspor mengambil seluruh baris yang cocok dengan penyaring, bukan hanya yang
 // sedang tampil -- "500 dari 12.000" di dalam berkas audit menyesatkan. Tetap
@@ -83,7 +87,8 @@ export const ACTIVITY_EXPORT_LIMIT = 10_000;
 const listInputSchema = z.object({
   action: z.enum(ACTIVITY_ACTIONS).nullable().default(null),
   search: z.string().trim().max(200).nullable().default(null),
-  limit: z.number().int().min(1).max(ACTIVITY_EXPORT_LIMIT).default(100),
+  limit: z.number().int().min(1).max(ACTIVITY_EXPORT_LIMIT).default(ACTIVITY_PAGE_SIZES[0]),
+  offset: z.number().int().min(0).default(0),
 });
 
 export type ListActivityInput = z.input<typeof listInputSchema>;

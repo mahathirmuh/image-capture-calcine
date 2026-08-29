@@ -108,6 +108,7 @@ export async function listActivity(input: {
   action: string | null;
   search: string | null;
   limit: number;
+  offset: number;
 }): Promise<{ entries: ActivityEntry[]; total: number }> {
   const { pool, schema } = await db();
 
@@ -128,16 +129,26 @@ export async function listActivity(input: {
     .request()
     .input("action", sql.NVarChar(50), input.action)
     .input("search", sql.NVarChar(200), input.search ? `%${input.search}%` : null)
-    .input("limit", sql.Int, input.limit);
+    .input("limit", sql.Int, input.limit)
+    .input("offset", sql.Int, input.offset);
 
   const [rows, count] = await Promise.all([
+    // OFFSET/FETCH, bukan TOP: halaman kedua dan seterusnya harus melewati
+    // baris sebelumnya di SQL. Menarik semuanya lalu memotong di browser akan
+    // memburuk terus -- sejak capture ikut tercatat, tabel ini bertambah ~64
+    // baris per hari.
+    //
+    // Urutannya menyertakan id sebagai pemutus seri: dua kejadian pada detik
+    // yang sama tanpa itu bisa berpindah urutan antar halaman, sehingga satu
+    // baris muncul dua kali sementara yang lain hilang sama sekali.
     request.query(`
-      SELECT TOP (@limit)
+      SELECT
         a.id, a.occurred_at, a.action, a.severity,
         a.actor_username, a.target_username, a.detail, a.ip_address
       FROM ${schema}.activity_log a
       ${where}
-      ORDER BY a.occurred_at DESC, a.id DESC;
+      ORDER BY a.occurred_at DESC, a.id DESC
+      OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY;
     `),
     pool
       .request()

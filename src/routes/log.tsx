@@ -9,6 +9,8 @@ import {
   RefreshCw,
   Search,
   Camera,
+  ChevronLeft,
+  ChevronRight,
   CloudOff,
   Cpu,
   CloudUpload,
@@ -126,7 +128,8 @@ function LogPage() {
 
   const [action, setAction] = useState<string>(SEMUA);
   const [search, setSearch] = useState("");
-  const [limit, setLimit] = useState<number>(100);
+  const [limit, setLimit] = useState<number>(ACTIVITY_PAGE_SIZES[0]);
+  const [page, setPage] = useState(1);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -136,6 +139,7 @@ function LogPage() {
           action: action === SEMUA ? null : (action as ActivityAction),
           search: search.trim() || null,
           limit,
+          offset: (page - 1) * limit,
         },
       });
       if (!result.ok) {
@@ -156,7 +160,13 @@ function LogPage() {
     } finally {
       setLoading(false);
     }
-  }, [action, search, limit]);
+  }, [action, search, limit, page]);
+
+  // Dihitung dari total di server, bukan dari jumlah baris yang tampil --
+  // halaman terakhir hampir selalu lebih pendek dari ukuran halamannya.
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+  const pageStart = total === 0 ? 0 : (page - 1) * limit + 1;
+  const pageEnd = Math.min(page * limit, total);
 
   const [exporting, setExporting] = useState(false);
 
@@ -300,14 +310,25 @@ function LogPage() {
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              // Menyaring saat berada di halaman 5 akan mendarat di tabel
+              // kosong kalau hasilnya menyusut jadi tiga baris.
+              setPage(1);
+            }}
             placeholder="Cari username, detail, atau IP"
             className="pl-9"
             aria-label="Cari jejak aktivitas"
           />
         </div>
 
-        <Select value={action} onValueChange={setAction}>
+        <Select
+          value={action}
+          onValueChange={(value) => {
+            setAction(value);
+            setPage(1);
+          }}
+        >
           <SelectTrigger className="w-52" aria-label="Saring per jenis aksi">
             <SelectValue />
           </SelectTrigger>
@@ -321,24 +342,55 @@ function LogPage() {
           </SelectContent>
         </Select>
 
-        <Select value={String(limit)} onValueChange={(value) => setLimit(Number(value))}>
-          <SelectTrigger className="w-36" aria-label="Jumlah baris">
+        <Select
+          value={String(limit)}
+          onValueChange={(value) => {
+            setLimit(Number(value));
+            // Kembali ke halaman satu: halaman 9 pada 10 baris tidak ada
+            // padanannya pada 100 baris, dan mendarat di halaman kosong setelah
+            // mengubah ukuran terasa seperti kerusakan.
+            setPage(1);
+          }}
+        >
+          <SelectTrigger className="w-36" aria-label="Jumlah baris per halaman">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             {ACTIVITY_PAGE_SIZES.map((size) => (
               <SelectItem key={size} value={String(size)}>
-                {size} baris
+                {size} / halaman
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
 
-        {entries && (
-          <p className="text-xs text-muted-foreground">
-            Menampilkan {entries.length} dari {total} kejadian
-            {total > entries.length && " — persempit penyaringnya untuk melihat sisanya"}
-          </p>
+        {entries && total > 0 && (
+          <div className="flex items-center gap-2">
+            <p className="text-xs tabular-nums text-muted-foreground">
+              {pageStart}–{pageEnd} dari {total.toLocaleString("id-ID")} kejadian
+            </p>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1 || loading}
+                aria-label="Halaman sebelumnya"
+                className="rounded-md border border-input p-1.5 hover:bg-accent disabled:pointer-events-none disabled:opacity-40"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </button>
+              <span className="min-w-16 text-center text-xs tabular-nums text-muted-foreground">
+                {page} / {totalPages}
+              </span>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages || loading}
+                aria-label="Halaman berikutnya"
+                className="rounded-md border border-input p-1.5 hover:bg-accent disabled:pointer-events-none disabled:opacity-40"
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
         )}
       </div>
 
