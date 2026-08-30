@@ -158,6 +158,61 @@ async function requestJson<T>(path: string, init: RequestInit): Promise<T> {
   return payload as T;
 }
 
+export async function requestResponseWithSession(
+  session: AuthSession,
+  path: string,
+  init: RequestInit = {},
+): Promise<{ session: AuthSession; response: Response }> {
+  const freshSession = await ensureFreshSession(session);
+  const response = await fetch(`${configuredApiBaseUrl()}${path}`, {
+    ...init,
+    headers: {
+      ...(init.headers ?? {}),
+      Authorization: `Bearer ${freshSession.accessToken}`,
+    },
+  });
+
+  if (!response.ok) {
+    const contentType = response.headers.get("content-type") ?? "";
+    const payload = contentType.includes("application/json")
+      ? ((await response.json()) as ApiErrorPayload)
+      : null;
+    const message =
+      payload &&
+      typeof payload === "object" &&
+      "error" in payload &&
+      payload.error?.message
+        ? payload.error.message
+        : `Request failed with status ${response.status}.`;
+    const code =
+      payload &&
+      typeof payload === "object" &&
+      "error" in payload &&
+      payload.error?.code
+        ? payload.error.code
+        : null;
+    throw new MobileAuthError(message, response.status, code);
+  }
+
+  return { session: freshSession, response };
+}
+
+export async function requestWithSession<T>(
+  session: AuthSession,
+  path: string,
+  init: RequestInit = {},
+): Promise<{ session: AuthSession; data: T }> {
+  const freshSession = await ensureFreshSession(session);
+  const data = await requestJson<T>(path, {
+    ...init,
+    headers: {
+      ...(init.headers ?? {}),
+      Authorization: `Bearer ${freshSession.accessToken}`,
+    },
+  });
+  return { session: freshSession, data };
+}
+
 async function fetchMe(accessToken: string): Promise<MeResponse> {
   return requestJson<MeResponse>("/auth/me", {
     method: "GET",

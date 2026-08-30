@@ -43,7 +43,6 @@ import {
 } from "@/lib/camera-runtime";
 import {
   BIN_SLOTS,
-  PLANTS,
   toBinLabel,
   toBinTitle,
   toBinToken,
@@ -58,6 +57,15 @@ import {
 import { getOperatorPlant, type OperatorPlant } from "@/lib/operator-plant";
 import { useIsAdmin, useSessionUser } from "@/lib/use-session-user";
 import { PageTitle } from "@/components/page-shell";
+
+const CAPTURE_PAGE_PLANTS = ["Acid Plant", "Chloride Plant"] as const;
+
+function resolveCapturePagePlant(value: string | null | undefined) {
+  if (value && CAPTURE_PAGE_PLANTS.includes(value as (typeof CAPTURE_PAGE_PLANTS)[number])) {
+    return value;
+  }
+  return CAPTURE_PAGE_PLANTS[0];
+}
 
 export const Route = createFileRoute("/capture")({
   component: CapturePage,
@@ -276,7 +284,10 @@ function CapturePage() {
   // Diturunkan, bukan disimpan ke state `location`, supaya tidak ada balapan
   // dengan pemuatan prefs -- prefs boleh menang atau kalah, hasilnya tetap
   // sama, dan nilai pilihan operator tidak ikut tertimpa di localStorage.
-  const activePlant = operatorPlant?.locked && operatorPlant.plant ? operatorPlant.plant : location;
+  const activePlant =
+    operatorPlant?.locked && operatorPlant.plant
+      ? operatorPlant.plant
+      : resolveCapturePagePlant(location);
   const plantLocked = !!operatorPlant?.locked;
 
   // Satu sumber untuk label slot: apa yang dibaca operator, yang masuk ke nama
@@ -309,6 +320,7 @@ function CapturePage() {
   const [supportsFS, setSupportsFS] = useState(false);
   const [prefsLoaded, setPrefsLoaded] = useState(false);
   const [pendingReconnect, setPendingReconnect] = useState(false);
+  const previousSessionIdRef = useRef<string | null>(null);
 
   const {
     cameraAsleep,
@@ -380,7 +392,7 @@ function CapturePage() {
       .catch(() => setOperatorPlant(null));
 
     const prefs = loadPrefs();
-    setLocation(prefs.location);
+    setLocation(resolveCapturePagePlant(prefs.location));
     setPattern(prefs.pattern);
     setExt(prefs.ext);
     setCounter(prefs.counter);
@@ -428,6 +440,16 @@ function CapturePage() {
     if (!prefsLoaded) return;
     savePrefs({ location, pattern, ext, counter, livePreview });
   }, [prefsLoaded, location, pattern, ext, counter, livePreview]);
+
+  useEffect(() => {
+    const previousSessionId = previousSessionIdRef.current;
+    if (!previousSessionId && sessionId && !livePreview) {
+      // Saat session baru benar-benar aktif, preview langsung dinyalakan agar
+      // operator tidak perlu klik kedua untuk mulai framing kamera.
+      setLivePreview(true);
+    }
+    previousSessionIdRef.current = sessionId;
+  }, [livePreview, sessionId]);
 
   async function captureToBin(bin: Bin) {
     if (!sessionId || !leaseToken) return;
@@ -1074,7 +1096,7 @@ function CapturePage() {
                 onChange={(e) => setLocation(e.target.value)}
                 className="cursor-pointer bg-transparent text-sm font-semibold outline-none"
               >
-                {PLANTS.map((plant) => (
+                {CAPTURE_PAGE_PLANTS.map((plant) => (
                   <option key={plant} value={plant}>
                     {plant}
                   </option>
@@ -1507,7 +1529,7 @@ function CapturePage() {
                 disabled={plantLocked}
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {(plantLocked ? [activePlant] : PLANTS).map((plant) => (
+                {(plantLocked ? [activePlant] : CAPTURE_PAGE_PLANTS).map((plant) => (
                   <option key={plant} value={plant}>
                     {plant}
                   </option>

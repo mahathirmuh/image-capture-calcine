@@ -669,7 +669,8 @@ function UserFormDialog({
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              Penempatan operator. Belum membatasi akses ke halaman mana pun untuk saat ini.
+              Mengunci akses capture, preview, dan device ke plant ini. Akun dengan pilihan
+              Semua Plant tetap bisa lintas-plant, termasuk Super Admin.
             </p>
           </div>
 

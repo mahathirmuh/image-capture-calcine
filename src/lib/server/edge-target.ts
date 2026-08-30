@@ -1,7 +1,6 @@
 import sql from "mssql";
 
 import { getServerEnv } from "../env";
-import { USER_PLANT_ALL } from "../user-admin";
 
 export type EdgeDevice = {
   id: number;
@@ -146,7 +145,9 @@ export async function resolveEdgeTarget(
     return { ok: false, code: "UNAUTHENTICATED", message: "Akun Anda sudah tidak aktif." };
   }
 
-  const bebas = user.role === "admin" || user.plant === USER_PLANT_ALL;
+  const { resolveUserPlantScope } = await import("../operator-plant");
+  const plantScope = resolveUserPlantScope(user);
+  const bebas = !plantScope.locked;
   const devices = await listEdgeDevices();
 
   let device: EdgeDevice | null = null;
@@ -161,7 +162,7 @@ export async function resolveEdgeTarget(
     // tidak ambigu. Menebak saat ada dua kandidat berarti operator bisa
     // memotret lewat kamera di area yang salah tanpa pernah tahu.
     const kandidat = devices.filter(
-      (item) => item.isActive && (bebas || item.plant === user.plant),
+      (item) => item.isActive && (bebas || item.plant === plantScope.plant),
     );
     if (kandidat.length === 1) {
       device = kandidat[0];
@@ -171,7 +172,7 @@ export async function resolveEdgeTarget(
         code: "NO_DEVICE",
         message: bebas
           ? "Belum ada device aktif di registry. Daftarkan dulu di halaman Devices."
-          : `Belum ada device aktif untuk ${user.plant}. Hubungi Super Admin.`,
+          : `Belum ada device aktif untuk ${plantScope.plant}. Hubungi Super Admin.`,
       };
     } else {
       return {
@@ -182,11 +183,11 @@ export async function resolveEdgeTarget(
     }
   }
 
-  if (!bebas && device.plant !== user.plant) {
+  if (!bebas && device.plant !== plantScope.plant) {
     return {
       ok: false,
       code: "DEVICE_FORBIDDEN",
-      message: `Akun Anda terpasang di ${user.plant}, sedangkan "${device.name}" ada di ${device.plant ?? "plant yang belum ditentukan"}.`,
+      message: `Akun Anda terpasang di ${plantScope.plant}, sedangkan "${device.name}" ada di ${device.plant ?? "plant yang belum ditentukan"}.`,
     };
   }
 

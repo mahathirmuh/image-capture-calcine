@@ -226,8 +226,8 @@ export function EdgeApiSettings() {
       )}
 
       <p className="mt-4 border-t pt-3 text-xs leading-relaxed text-muted-foreground">
-        Operator hanya bisa memakai device yang plant-nya cocok dengan plant akunnya; yang ber-plant
-        Semua Plant dan Super Admin bebas memakai device mana pun. Aturan itu ditegakkan di server
+        Akun yang dipasang ke plant tertentu hanya bisa memakai device dari plant itu. Hanya akun
+        ber-plant Semua Plant yang bebas memakai device mana pun. Aturan itu ditegakkan di server
         pada tiap panggilan kamera, bukan dengan menyembunyikan pilihan di layar.
       </p>
     </section>

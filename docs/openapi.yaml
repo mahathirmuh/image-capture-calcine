@@ -29,9 +29,11 @@ info:
 
     Endpoint tulis menuntut token pengguna karena setiap capture menyimpan
     `capturedBy`, dan pertanyaan "siapa yang mengambil foto ini" harus tetap
-    terjawab. Token itu juga membawa plant milik akunnya, sehingga operator
-    Acid Plant tidak bisa memerintah kamera Chloride Plant lewat API -- aturan
-    yang sama persis dengan yang berlaku di halaman aplikasi.
+    terjawab. Token itu juga membawa plant milik akunnya, sehingga akun yang
+    dipasang ke Acid Plant tidak bisa memerintah kamera Chloride Plant lewat
+    API -- termasuk Super Admin yang sengaja dipasang ke satu plant. Hanya
+    akun ber-plant `Semua Plant` yang tetap lintas-plant, persis seperti yang
+    berlaku di halaman aplikasi.
 
     ## Halaman dokumentasi
 
@@ -363,6 +365,42 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
         "503": { $ref: "#/components/responses/DatabaseUnavailable" }
 
+  /captures/{id}/thumb:
+    get:
+      tags: [Captures]
+      operationId: getCaptureThumb
+      summary: Thumbnail ringan sebuah capture
+      description: |
+        Mengembalikan thumbnail JPEG ringan untuk daftar/history mobile.
+
+        Endpoint ini sengaja terpisah dari `/captures/{id}/image`: tujuannya
+        memang untuk preview kecil, bukan inspeksi detail. Kalau thumbnail
+        belum pernah dibuat untuk record itu, endpoint menjawab `404
+        THUMB_NOT_FOUND` dan klien harus jatuh ke placeholder.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+      responses:
+        "200":
+          description: Thumbnail JPEG.
+          content:
+            image/jpeg:
+              schema: { type: string, format: binary }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: Record tidak ada thumbnail, atau thumbnail belum dibuat.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503":
+          description: Penyimpanan thumbnail belum dikonfigurasi di app server.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /sessions:
     get:
       tags: [Captures]
@@ -664,6 +702,10 @@ paths:
         `ownerId` diambil dari token, **bukan** dari badan permintaan -- kalau
         klien boleh menyebutkannya sendiri, sesi kamera bisa diklaim atas nama
         orang lain.
+
+        Pemilihan device juga tetap tunduk pada plant akun. Super Admin yang
+        ditempatkan ke satu plant diperlakukan sama seperti operator di plant
+        itu; hanya akun ber-plant `Semua Plant` yang boleh lintas-plant.
       security:
         - BearerAuth: []
       requestBody:
@@ -680,8 +722,9 @@ paths:
                   type: integer
                   description: |
                     Wajib hanya kalau ada lebih dari satu kamera aktif yang
-                    boleh diakses akun ini. Dengan satu kandidat, resolver
-                    memilihkannya; dengan dua, ia menolak menebak.
+                    boleh diakses akun ini di scope plant-nya. Dengan satu
+                    kandidat, resolver memilihkannya; dengan dua, ia menolak
+                    menebak.
       responses:
         "200":
           description: Sewa diberikan.
@@ -709,6 +752,10 @@ paths:
         Menjawab `202` dengan sebuah job; tunggui lewat `GET /jobs/{jobId}`.
         Berkasnya diturunkan ke edge, lalu ditarik dan disimpan aplikasi ke
         folder jaringan dengan penamaan sesi yang berlaku.
+
+        Device yang dipakai harus tetap berada dalam scope plant akun. Peran
+        `admin` sendiri tidak membuka akses lintas-plant; yang menentukan
+        adalah penempatan plant pada akunnya.
       security:
         - BearerAuth: []
       requestBody:
@@ -743,6 +790,10 @@ paths:
         Bentuk jawabannya sama dengan capture -- sebuah job yang ditunggui
         lewat `GET /jobs/{jobId}` -- tetapi hasilnya tidak menghasilkan berkas
         apa pun.
+
+        Scope device mengikuti aturan yang sama dengan capture session dan
+        capture: akun yang dipasang ke satu plant hanya boleh menyentuh
+        device kamera milik plant itu.
       security:
         - BearerAuth: []
       requestBody:
@@ -793,8 +844,10 @@ components:
         mengambil foto ini" harus tetap terjawab. Kunci API tidak punya orang
         di belakangnya; token ini punya.
 
-        Ia juga membawa plant milik akunnya, sehingga operator Acid Plant tidak
-        bisa memerintah kamera Chloride Plant lewat API -- aturan yang sama
+        Ia juga membawa plant milik akunnya, sehingga akun yang dipasang ke
+        Acid Plant tidak bisa memerintah kamera Chloride Plant lewat API --
+        termasuk Super Admin yang sengaja dipasang ke satu plant. Hanya akun
+        ber-plant `Semua Plant` yang tetap lintas-plant, dan aturannya sama
         persis dengan yang berlaku di halaman aplikasi.
 
         Untuk sesi mobile jangka panjang, access token ini dipasangkan dengan

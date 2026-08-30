@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { BottomNav, type MobileTab } from "./components/BottomNav";
 import {
@@ -9,7 +9,8 @@ import {
   restoreSession,
   type AuthSession,
 } from "./lib/auth";
-import { MOCK_CAPTURES, type CaptureRecord } from "./mockData";
+import { prefetchCaptureThumbs, type CaptureHistoryItem } from "./lib/captures";
+import type { TodaySessionItem } from "./lib/sessionCoverage";
 import { CaptureScreen } from "./screens/CaptureScreen";
 import { CaptureDetailScreen } from "./screens/CaptureDetailScreen";
 import { LoginScreen } from "./screens/LoginScreen";
@@ -36,7 +37,7 @@ function messageOf(error: unknown): string {
   if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
     return error.message;
   }
-  return "Request gagal diproses.";
+  return "Unable to complete the request.";
 }
 
 export default function App() {
@@ -45,13 +46,16 @@ export default function App() {
   const [loginPending, setLoginPending] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<MobileTab>("sessions");
-  const [selectedCapture, setSelectedCapture] = useState<CaptureRecord | null>(null);
+  const [selectedCapture, setSelectedCapture] = useState<CaptureHistoryItem | null>(null);
+  const [selectedSession, setSelectedSession] = useState<TodaySessionItem | null>(null);
+  const warmedThumbScopesRef = useRef<Set<string>>(new Set());
 
   const handleLogout = useCallback(async () => {
     if (session) {
       await logoutSession(session);
     }
     setSession(null);
+    setSelectedSession(null);
     setSelectedCapture(null);
     setActiveTab("sessions");
     setLoginError(null);
@@ -113,6 +117,42 @@ export default function App() {
     };
   }, [refreshIfNeeded, session]);
 
+  useEffect(() => {
+    if (!session) return;
+
+    const plant = session.user.plant && session.user.plant !== "ALL" ? session.user.plant : "ALL";
+    const warmupKey = `${session.user.id}:${plant}`;
+    if (warmedThumbScopesRef.current.has(warmupKey)) {
+      return;
+    }
+
+    warmedThumbScopesRef.current.add(warmupKey);
+    let cancelled = false;
+    const timeout = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const warmedSession = await prefetchCaptureThumbs(session, {
+            plant: plant === "ALL" ? null : plant,
+            pageSize: 50,
+            maxRecords: 200,
+            concurrency: 4,
+          });
+          if (!cancelled && warmedSession !== session) {
+            setSession(warmedSession);
+          }
+        } catch {
+          // Warm-up thumbnail sengaja diam; kalau gagal, kartu history tetap
+          // akan memuat thumbnail saat dibuka.
+        }
+      })();
+    }, 900);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [session]);
+
   async function handleLogin(credentials: { identifier: string; password: string }) {
     setLoginPending(true);
     setLoginError(null);
@@ -120,6 +160,7 @@ export default function App() {
       const nextSession = await loginWithApi(credentials.identifier, credentials.password);
       setSession(nextSession);
       setActiveTab("sessions");
+      setSelectedSession(null);
       setSelectedCapture(null);
     } catch (error) {
       setLoginError(messageOf(error));
@@ -144,22 +185,53 @@ export default function App() {
 
   return (
     <div className="mobile-app-shell">
-      {selectedCapture ? <CaptureDetailScreen capture={selectedCapture} onBack={() => setSelectedCapture(null)} /> : null}
-      {activeTab === "sessions" && !selectedCapture ? <TodaySessionsScreen /> : null}
-      {activeTab === "capture" && !selectedCapture ? (
-        <CaptureScreen
-          latestCapture={MOCK_CAPTURES[0]}
-          onOpenLatest={(capture) => {
-            setActiveTab("history");
-            setSelectedCapture(capture);
+      {selectedCapture ? (
+        <CaptureDetailScreen
+          session={session}
+          captureId={selectedCapture.id}
+          onSessionUpdate={setSession}
+          onBack={() => setSelectedCapture(null)}
+          onOpenCapture={() => {
+            setSelectedCapture(null);
+            setActiveTab("capture");
           }}
         />
       ) : null}
+      {activeTab === "sessions" && !selectedCapture ? (
+        <TodaySessionsScreen
+          session={session}
+          onSessionUpdate={setSession}
+          onSelectSession={(item) => {
+            setSelectedSession(item);
+            setSelectedCapture(null);
+            setActiveTab("capture");
+          }}
+        />
+      ) : null}
+      {activeTab === "capture" && !selectedCapture ? (
+        <CaptureScreen
+          session={session}
+          operatorName={session.user.fullName}
+          selectedSession={selectedSession}
+          onSessionUpdate={setSession}
+          onOpenSessions={() => setActiveTab("sessions")}
+          onOpenLatestCapture={setSelectedCapture}
+        />
+      ) : null}
       {activeTab === "history" && !selectedCapture ? (
-        <RecentCapturesScreen captures={MOCK_CAPTURES} onOpenDetail={setSelectedCapture} />
+        <RecentCapturesScreen
+          session={session}
+          onSessionUpdate={setSession}
+          onOpenDetail={setSelectedCapture}
+        />
       ) : null}
       {activeTab === "device" && !selectedCapture ? (
-        <MyDeviceScreen user={session.user} onSignOut={handleLogout} />
+        <MyDeviceScreen
+          session={session}
+          user={session.user}
+          onSessionUpdate={setSession}
+          onSignOut={handleLogout}
+        />
       ) : null}
       {activeTab === "settings" && !selectedCapture ? (
         <SettingsScreen user={session.user} onSignOut={handleLogout} />

@@ -893,6 +893,23 @@ input {
   cursor: default;
 }
 
+.result-preview-card__content {
+  display: grid;
+  gap: 4px;
+}
+
+.result-preview-card__content strong {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.result-preview-card__content span {
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .result-preview-card__label {
   color: var(--text-soft);
   font-size: 11px;
@@ -1075,6 +1092,7 @@ input {
   width: 60px;
   height: 60px;
   border-radius: 14px;
+  overflow: hidden;
   display: grid;
   place-items: center;
   background:
@@ -1083,6 +1101,13 @@ input {
     linear-gradient(180deg, rgba(61, 82, 84, 0.9), rgba(13, 22, 23, 1));
   background-size: 16px 16px, 16px 16px, auto;
   border: 1px solid rgba(124, 233, 244, 0.16);
+}
+
+.history-card__thumb-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .history-card__thumb .material-symbols-outlined {
@@ -1233,6 +1258,14 @@ input {
     linear-gradient(90deg, rgba(124, 233, 244, 0.04) 1px, transparent 1px),
     linear-gradient(180deg, rgba(61, 82, 84, 0.9), rgba(13, 22, 23, 1));
   background-size: auto, 20px 20px, 20px 20px, auto;
+}
+
+.capture-detail-image__img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .capture-detail-image::after {

@@ -1,0 +1,333 @@
+# Mobile Implementation Roadmap
+
+## Active Phase
+
+- Current execution targets: `M3 - Capture Workflow Integration`, `M4 - My Device Live Status`
+- Last completed phase: `M2 - Recent Captures And Capture Detail Live Data`
+- Rule: do not advance phase status without recorded verification evidence
+
+## Phase M0 - Documentation Foundation
+
+### Status
+
+- `Completed`
+
+### Objective
+
+Establish mobile-specific source-of-truth documents and working contract before wiring additional operator menus.
+
+### Source Documents
+
+- `mobile/AGENTS.md`
+- `docs/openapi.yaml`
+- `mobile/src/App.tsx`
+- `mobile/src/lib/auth.ts`
+
+### Checklist
+
+- [x] Create mobile-specific project plan
+- [x] Create mobile-specific product principles
+- [x] Create mobile-specific functional specification
+- [x] Create mobile-specific technical implementation plan
+- [x] Create mobile-specific database schema specification
+- [x] Create mobile open questions document
+- [x] Record verification evidence for the documentation baseline
+
+### Output
+
+- `mobile/docs/project-plan.md`
+- `mobile/docs/product-principles.md`
+- `mobile/docs/functional-specification.md`
+- `mobile/docs/technical-implementation-plan.md`
+- `mobile/docs/database-schema-specification.md`
+- `mobile/docs/open-questions-and-challenges.md`
+
+### Challenge / Verification
+
+- Verified the current mobile app structure from `mobile/src/App.tsx`
+- Verified the current auth/session implementation from `mobile/src/lib/auth.ts`
+- Verified backend contract entry points in `docs/openapi.yaml`
+
+## Phase M1 - Today Sessions Live Data
+
+### Status
+
+- `Completed`
+
+### Objective
+
+Replace mock/static `Today Sessions` behavior with backend-driven operator session data and connect session selection into the capture flow.
+
+### Source Documents
+
+- `mobile/docs/functional-specification.md`
+- `mobile/docs/technical-implementation-plan.md`
+- `mobile/docs/open-questions-and-challenges.md`
+- `docs/openapi.yaml`
+
+### Execution Breakdown
+
+1. Contract alignment
+   - confirm `GET /sessions` request scope and date/plant filtering
+   - confirm `SessionCoverage` fields that can drive operator UI without assumption
+   - record contract gaps before UI logic depends on them
+2. Data shaping
+   - map plant/session/slot payload into a flat checklist model
+   - derive operator-facing status from `captured`, `record`, `date`, and `hour`
+   - derive compact summary counts used by the header chips
+3. Screen integration
+   - replace static data on `Today Sessions`
+   - implement loading, empty, error, and success states
+   - keep tap target behavior simple for gloved/operator usage
+4. App-shell handoff
+   - store selected session in `App.tsx`
+   - switch to `Capture` tab after selection
+   - expose selected session context on the `Capture` screen even before live camera wiring exists
+5. Verification and sync
+   - run mobile build
+   - capture evidence in this roadmap
+   - synchronize related mobile docs if implementation reality changed
+
+### Checklist
+
+- [x] Review `GET /sessions` contract and `SessionCoverage` schema
+- [x] Use `GET /sessions` as the source for coverage items and summary
+- [x] Scope the request to the operator plant when `session.user.plant` is available and not `ALL`
+- [x] Flatten nested plant/session/slot coverage into operator-friendly checklist items
+- [x] Map uncaptured future sessions to `upcoming`
+- [x] Map uncaptured past/current sessions to `missing`
+- [x] Map captured sessions to `completed`
+- [x] Surface captured time as trailing metadata when a record exists
+- [x] Record the current contract gap: `/sessions` does not expose a dedicated `retake` state
+- [x] Implement loading state for initial fetch
+- [x] Implement error state for request failure
+- [x] Implement empty state when no items are returned
+- [x] Implement refresh action for the live screen
+- [x] Preserve operator-focused tap interaction to enter capture flow
+- [x] Store selected session state centrally in `App.tsx`
+- [x] Pass selected session context into the `Capture` screen
+- [x] Verify the handoff flow with a production mobile build
+- [x] Record verification evidence in roadmap and technical docs
+
+### Output
+
+- Live `Today Sessions` screen wired to backend data
+- Session selection handed off to `Capture`
+
+### Challenge / Verification
+
+- Reviewed `SessionCoverage` schema in `docs/openapi.yaml`
+- Verified `TodaySessionsScreen` uses live `GET /sessions` data with operator plant scoping
+- Verified `App.tsx` stores selected session state and routes selection into the `Capture` tab
+- Verified `CaptureScreen` renders selected session context from shared app state
+- Ran `npm run build` in `mobile/` successfully on 2026-08-30 after the latest M1 wiring changes
+
+## Phase M2 - Recent Captures And Capture Detail Live Data
+
+### Status
+
+- `Completed`
+
+### Objective
+
+Replace mock capture history/detail data with backend-backed operator results.
+
+### Source Documents
+
+- `mobile/docs/functional-specification.md`
+- `mobile/docs/technical-implementation-plan.md`
+- `mobile/docs/open-questions-and-challenges.md`
+- `docs/openapi.yaml`
+
+### Execution Breakdown
+
+1. Contract review for `GET /captures`, `GET /captures/{id}`, and `GET /captures/{id}/image`
+2. Decide operator-oriented default filters and sort order
+3. Replace mock list data with live history data
+4. Replace detail metadata with live payload
+5. Define image loading and fallback behavior
+6. Verify list-to-detail navigation and document evidence
+
+### Checklist
+
+- [x] Review capture list/detail contracts in `docs/openapi.yaml`
+- [x] Decide default date range, plant scope, and result ordering for operators
+- [x] Create mobile mapping from `CaptureRecord` payloads to history cards
+- [x] Replace mock history list data with live API data
+- [x] Implement loading, empty, and error states for history
+- [x] Create detail loader for `GET /captures/{id}`
+- [x] Define image loading behavior for preview and failure fallback
+- [x] Replace mock detail metadata with live API data
+- [x] Verify history-to-detail navigation
+- [x] Record partial verification evidence
+
+### Output
+
+- Live `Recent Captures` screen
+- Live `Capture Detail` screen
+
+### Challenge / Verification
+
+- Reviewed `GET /captures`, `GET /captures/{id}`, and `GET /captures/{id}/image` contracts in `docs/openapi.yaml`
+- Implemented plant-scoped history loading with default `limit=20` and descending backend order
+- Implemented detail fetch plus binary image preview loading with graceful fallback when image retrieval fails
+- Added mobile-side in-memory image cache for repeated detail opens so the same preview is reused without refetching during the same app session
+- Added persistent IndexedDB-backed cache for full-size detail images so previously opened captures stay warm after app restart
+- Added lightweight history thumbnail loading through `GET /captures/{id}/thumb`, with placeholder fallback when the server thumb is not available
+- Added local thumb derivation from downloaded detail images so history cards can still reuse preview images across sessions even if the backend thumb store is incomplete
+- Added background thumbnail warm-up after login/session restore for the operator scope, using paged fetches and bounded concurrency so startup stays responsive while the cache fills progressively
+- Ran `npm run build` in `mobile/` successfully on 2026-08-30 after M2 history/detail wiring changes
+- Verified runtime browser flow on 2026-08-30: login -> History -> open first record -> Capture Detail metadata rendered successfully
+- Verified first history item opened as `14.00 • TRAIN 2`
+- Verified detail metadata rendered for captured time, session, plant, station/bin, status, file name, device, and captured-by
+- Verified `npm run dev:capacitor` succeeds on 2026-08-30 after overriding Android compile compatibility to Java 17 in `mobile/android/build.gradle` for the current local JDK
+- Evidence screenshots captured during browser verification:
+  - `/var/folders/s4/_h6390qs7rscy8lyhg58xd300000gn/T/trae/screenshots/capture-detail-screen.png`
+  - `/var/folders/s4/_h6390qs7rscy8lyhg58xd300000gn/T/trae/screenshots/capture-detail-metadata.png`
+
+## Phase M3 - Capture Workflow Integration
+
+### Status
+
+- `In Progress`
+
+### Objective
+
+Connect the operator capture screen to live camera session, autofocus, capture, and job polling APIs.
+
+### Source Documents
+
+- `mobile/docs/functional-specification.md`
+- `mobile/docs/technical-implementation-plan.md`
+- `mobile/docs/open-questions-and-challenges.md`
+- `docs/openapi.yaml`
+
+### Execution Breakdown
+
+1. Clarify selected-session to device/camera ownership rules
+2. Establish camera session lifecycle
+3. Wire autofocus and capture actions
+4. Poll async job status until terminal state
+5. Show latest result preview and failure states
+6. Verify primary and failure workflow paths
+
+### Checklist
+
+- [x] Define device/session ownership rules for operator-triggered capture
+- [x] Define when the mobile client opens, reuses, or closes a camera session
+- [x] Implement camera session acquisition via `POST /camera/session`
+- [x] Implement autofocus action via `POST /camera/autofocus`
+- [x] Implement capture action via `POST /camera/capture`
+- [x] Implement job polling via `GET /jobs/{jobId}`
+- [x] Show live status transitions for queued, running, succeeded, and failed
+- [x] Connect latest result preview to live capture results
+- [x] Implement user-visible failure handling for timeout or device/API unavailability
+- [x] Record partial verification evidence
+
+### Output
+
+- Live capture workflow
+
+### Challenge / Verification
+
+- Reviewed `POST /camera/session`, `POST /camera/autofocus`, `POST /camera/capture`, and `GET /jobs/{jobId}` contracts in `docs/openapi.yaml`
+- Implemented camera-session creation and reuse logic with lease-expiry checks in `mobile/src/lib/camera.ts`
+- Implemented live autofocus/capture job triggering and polling in `mobile/src/screens/CaptureScreen.tsx`
+- Implemented latest-result preview lookup tied to the selected plant/session/slot so the capture preview does not open the wrong record
+- Implemented operator-visible failure states for session conflict, edge unavailability, and polling timeout through shared API error handling
+- Ran `npm run build` in `mobile/` successfully on 2026-08-30 after M3 capture workflow wiring changes
+- Verified in browser runtime that selected-session handoff works, camera session start succeeds, autofocus job reaches `Succeeded`, and capture job reaches `Succeeded`
+- Verified preview-to-detail navigation once during browser runtime, then found a slot-mismatch issue in preview lookup and fixed it by matching `captureBin`
+- Verified browser failure path after the fix: session conflict surfaced as `Kamera sedang dipakai client lain.`
+- Final browser re-check for latest-result preview after the slot-matching fix is still pending because the camera session became contested during retest
+
+## Phase M4 - My Device Live Status
+
+### Status
+
+- `In Progress`
+
+### Objective
+
+Connect the operator device screen to real device and device-status data.
+
+### Source Documents
+
+- `mobile/docs/functional-specification.md`
+- `mobile/docs/technical-implementation-plan.md`
+- `mobile/docs/open-questions-and-challenges.md`
+- `docs/openapi.yaml`
+
+### Execution Breakdown
+
+1. Define which device the operator should see by default
+2. Load device catalog from backend
+3. Load health/status for the chosen device
+4. Render success, degraded, offline, and loading states
+5. Decide diagnostics CTA behavior for this phase
+6. Verify device status rendering and fallback handling
+
+### Checklist
+
+- [x] Define assigned-device selection rule for operator context
+- [x] Review `GET /devices` and `GET /devices/{code}/status` contracts
+- [x] Load device overview data from `GET /devices`
+- [x] Select the primary device for the signed-in operator
+- [x] Load live device health data from `GET /devices/{code}/status`
+- [x] Implement success, offline/degraded, loading, and error states
+- [ ] Decide whether diagnostics CTA is informational or functional in this phase
+- [x] Record partial verification evidence
+
+### Output
+
+- Live `My Device` screen
+
+### Challenge / Verification
+
+- Reviewed `GET /devices` and `GET /devices/{code}/status` contracts in `docs/openapi.yaml`
+- Implemented device list/status client helpers and primary-device selection in `mobile/src/lib/devices.ts`
+- Implemented live My Device loading, degraded/offline messaging, and operator-context rendering in `mobile/src/screens/MyDeviceScreen.tsx`
+- Ran `npm run build` in `mobile/` successfully on 2026-08-30 after M4 device-status wiring changes
+- Runtime browser verification for the live device screen is still pending
+
+## Phase M5 - Settings And Runtime Config Cleanup
+
+### Status
+
+- `Planned`
+
+### Objective
+
+Finish the operator settings surface and align runtime configuration behavior with mobile deployment needs.
+
+### Source Documents
+
+- `mobile/docs/functional-specification.md`
+- `mobile/docs/technical-implementation-plan.md`
+- `mobile/docs/open-questions-and-challenges.md`
+- `docs/openapi.yaml`
+
+### Execution Breakdown
+
+1. Separate real operator preferences from display-only account information
+2. Finalize sign-out and local session cleanup behavior
+3. Recheck runtime environment resolution for web preview and Capacitor builds
+4. Remove leftover placeholder content
+5. Verify settings and auth cleanup behavior
+
+### Checklist
+
+- [ ] Decide which settings are real preferences versus display-only status
+- [ ] Wire sign-out and session-clearing behavior end-to-end
+- [ ] Review runtime backend configuration strategy for mobile builds
+- [ ] Remove leftover mock/placeholder settings behavior
+- [ ] Verify logout, restore, and environment-driven startup behavior
+- [ ] Record verification evidence
+
+### Output
+
+- Clean operator settings experience
+
+### Challenge / Verification
+
+- Pending

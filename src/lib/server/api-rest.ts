@@ -570,6 +570,36 @@ async function handleCaptureImage(rawId: string, headOnly = false): Promise<Resp
   return new Response(stream, { headers });
 }
 
+async function handleCaptureThumb(rawId: string): Promise<Response> {
+  const id = Number(rawId);
+  if (!Number.isInteger(id) || id < 1) {
+    return apiError(400, "INVALID_PARAM", `id capture tidak sah: ${rawId}`);
+  }
+
+  const { readThumbnail, isThumbStoreConfigured } = await import("./thumb-store");
+  if (!isThumbStoreConfigured()) {
+    return apiError(
+      503,
+      "THUMBS_NOT_CONFIGURED",
+      "CAPTURE_THUMBS_DIR belum dikonfigurasi di app server ini.",
+    );
+  }
+
+  const thumb = await readThumbnail(id);
+  if (!thumb) {
+    return apiError(404, "THUMB_NOT_FOUND", "Thumbnail belum tersedia untuk capture ini.");
+  }
+
+  return new Response(new Uint8Array(thumb.bytes), {
+    headers: {
+      "content-type": "image/jpeg",
+      "content-length": String(thumb.size),
+      "cache-control": "private, max-age=600",
+      "content-disposition": `inline; filename="${encodeURIComponent(`${id}.thumb.jpg`)}"`,
+    },
+  });
+}
+
 /**
  * Angka ringkas untuk dasbor pelaporan.
  *
@@ -1312,6 +1342,11 @@ const ROUTES: Route[] = [
     method: "GET",
     pattern: /^\/captures\/([^/]+)\/image$/,
     handle: (c) => handleCaptureImage(c.params[0], c.request.method === "HEAD"),
+  },
+  {
+    method: "GET",
+    pattern: /^\/captures\/([^/]+)\/thumb$/,
+    handle: (c) => handleCaptureThumb(c.params[0]),
   },
   { method: "GET", pattern: /^\/sessions$/, handle: (c) => handleSessions(c.url) },
   { method: "GET", pattern: /^\/summary$/, handle: () => handleSummary() },

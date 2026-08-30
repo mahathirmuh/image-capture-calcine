@@ -25,6 +25,11 @@ export type OperatorPlant = {
 
 const UNRESTRICTED: OperatorPlant = { plant: null, locked: false };
 
+export function resolveUserPlantScope(user: { plant: string | null | undefined }): OperatorPlant {
+  if (!user.plant || user.plant === USER_PLANT_ALL) return UNRESTRICTED;
+  return { plant: user.plant, locked: true };
+}
+
 export const getOperatorPlant = createServerFn({ method: "GET" }).handler(
   async (): Promise<OperatorPlant> => {
     const [{ isCardDbConfigured }, { getAppSession, isSessionConfigured }] = await Promise.all([
@@ -50,10 +55,9 @@ export const getOperatorPlant = createServerFn({ method: "GET" }).handler(
     const user = await findUserById(sessionUserId);
     if (!user || !user.isActive) return UNRESTRICTED;
 
-    // Super Admin dan akun "Semua Plant" memang bertugas lintas plant, jadi
-    // dropdown-nya tetap bebas dan istilah slot mengikuti apa yang ia pilih.
-    if (user.role === "admin" || user.plant === USER_PLANT_ALL) return UNRESTRICTED;
-
-    return { plant: user.plant, locked: true };
+    // Penguncian mengikuti penempatan plant akun, bukan label perannya. Jadi
+    // admin yang dipasang spesifik ke Acid tetap melihat dan memakai Acid saja;
+    // yang lintas-plant harus diberi plant "Semua Plant".
+    return resolveUserPlantScope(user);
   },
 );
