@@ -1,10 +1,17 @@
+import type { AuthUser } from "../lib/auth";
+
 const PREFERENCES = [
   { id: "haptic", icon: "vibration", label: "Haptic Feedback", enabled: true },
   { id: "contrast", icon: "contrast", label: "High-Contrast Mode", enabled: false },
   { id: "autosave", icon: "save", label: "Auto-Save Captures", enabled: true },
 ] as const;
 
-export function SettingsScreen() {
+type SettingsScreenProps = {
+  user: AuthUser;
+  onSignOut: () => void | Promise<void>;
+};
+
+export function SettingsScreen({ user, onSignOut }: SettingsScreenProps) {
   return (
     <main className="app-page-shell app-page-shell--with-nav settings-screen">
       <header className="top-app-bar top-app-bar--detail">
@@ -19,7 +26,12 @@ export function SettingsScreen() {
 
         <div className="top-app-bar__title">Zone 04 | Calcine-Alpha</div>
 
-        <button className="icon-button" type="button" aria-label="Logout">
+        <button
+          className="icon-button"
+          type="button"
+          aria-label="Logout"
+          onClick={() => void onSignOut()}
+        >
           <span className="material-symbols-outlined" aria-hidden="true">
             logout
           </span>
@@ -40,13 +52,15 @@ export function SettingsScreen() {
             </div>
             <div>
               <p className="settings-info-card__kicker">Operator</p>
-              <h1 className="settings-info-card__title">Alex Chen</h1>
+              <h1 className="settings-info-card__title">{user.fullName}</h1>
             </div>
           </div>
 
           <div className="settings-info-card__foot">
             <span>Auth Level</span>
-            <strong>ID: OP-4402</strong>
+            <strong>
+              {user.role.toUpperCase()} • {user.username}
+            </strong>
           </div>
         </article>
 
@@ -63,13 +77,13 @@ export function SettingsScreen() {
             </div>
             <div>
               <p className="settings-info-card__kicker">Assignment</p>
-              <h2 className="settings-info-card__title">Calcine-Alpha</h2>
+              <h2 className="settings-info-card__title">{user.plant ?? "ALL"}</h2>
             </div>
           </div>
 
           <div className="settings-info-card__foot">
             <span>Zone</span>
-            <strong>Sector: 7G</strong>
+            <strong>{user.email ?? "No email registered"}</strong>
           </div>
         </article>
       </section>
@@ -114,7 +128,7 @@ export function SettingsScreen() {
         </div>
       </section>
 
-      <button className="settings-logout-button" type="button">
+      <button className="settings-logout-button" type="button" onClick={() => void onSignOut()}>
         <span className="material-symbols-outlined" aria-hidden="true">
           logout
         </span>

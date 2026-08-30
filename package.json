@@ -7,6 +7,7 @@
     "dev": "vite dev",
     "dev:mobile": "npm --prefix ./mobile run dev -- --host",
     "dev:capacitor": "npm --prefix ./mobile run dev:capacitor",
+    "db:migrate": "node --env-file=.env ./scripts/run-db-migrations.mjs",
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",

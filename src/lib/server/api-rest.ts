@@ -803,11 +803,17 @@ async function handleLogin(request: Request): Promise<Response> {
     return apiError(403, "ACCOUNT_DISABLED", "Akun ini dinonaktifkan.");
   }
 
-  const { createApiToken } = await import("./api-token");
+  const [{ createApiToken }, { createRefreshSession }, { findUserById }] = await Promise.all([
+    import("./api-token"),
+    import("./api-refresh"),
+    import("./users"),
+  ]);
   const issued = await createApiToken(record.user);
   if (!issued) {
     return apiError(503, "SESSION_SECRET_MISSING", "Token tidak bisa ditandatangani.");
   }
+  const refresh = await createRefreshSession(record.user.id);
+  const freshUser = await findUserById(record.user.id);
 
   await markUserLogin(record.user.id).catch(() => undefined);
   await recordActivity({
@@ -821,7 +827,18 @@ async function handleLogin(request: Request): Promise<Response> {
     token: issued.token,
     tokenType: "Bearer",
     expiresAt: new Date(issued.claims.expiresAt).toISOString(),
-    user: record.user,
+    refreshToken: refresh.token,
+    refreshExpiresAt: refresh.expiresAt,
+    user: freshUser
+      ? {
+          id: freshUser.id,
+          username: freshUser.username,
+          fullName: freshUser.fullName,
+          email: freshUser.email,
+          role: freshUser.role,
+          plant: freshUser.plant,
+        }
+      : record.user,
   });
 }
 
@@ -864,12 +881,81 @@ async function handleMe(principal: ApiPrincipal): Promise<Response> {
   });
 }
 
-async function handleLogout(principal: ApiPrincipal): Promise<Response> {
+async function handleRefresh(request: Request): Promise<Response> {
+  if (!isApiTokenConfigured()) {
+    return apiError(
+      503,
+      "SESSION_SECRET_MISSING",
+      "SESSION_SECRET belum diisi di app server ini, jadi token tidak bisa diterbitkan.",
+    );
+  }
+
+  const body = await readJsonBody(request);
+  const refreshToken = text(body.refreshToken);
+  if (!refreshToken) {
+    return apiError(400, "INVALID_BODY", "Field `refreshToken` wajib diisi.");
+  }
+
+  const [{ rotateRefreshSession }, { findUserById }, { createApiToken }] = await Promise.all([
+    import("./api-refresh"),
+    import("./users"),
+    import("./api-token"),
+  ]);
+  const rotated = await rotateRefreshSession(refreshToken);
+  if (!rotated.ok) {
+    const code =
+      rotated.code === "EXPIRED"
+        ? "REFRESH_EXPIRED"
+        : rotated.code === "REVOKED"
+          ? "REFRESH_REVOKED"
+          : "REFRESH_INVALID";
+    return apiError(401, code, "Refresh token tidak sah. Login lagi.");
+  }
+
+  const user = await findUserById(rotated.session.userId);
+  if (!user || !user.isActive) {
+    return apiError(401, "ACCOUNT_DISABLED", "Akun ini sudah tidak aktif.");
+  }
+
+  const issued = await createApiToken({
+    id: user.id,
+    username: user.username,
+    role: user.role,
+  });
+  if (!issued) {
+    return apiError(503, "SESSION_SECRET_MISSING", "Token tidak bisa ditandatangani.");
+  }
+
+  return json({
+    token: issued.token,
+    tokenType: "Bearer",
+    expiresAt: new Date(issued.claims.expiresAt).toISOString(),
+    refreshToken: rotated.token,
+    refreshExpiresAt: rotated.expiresAt,
+    user: {
+      id: user.id,
+      username: user.username,
+      fullName: user.fullName,
+      email: user.email,
+      role: user.role,
+      plant: user.plant,
+    },
+  });
+}
+
+async function handleLogout(principal: ApiPrincipal, request: Request): Promise<Response> {
   if (principal.kind !== "user") {
     return apiError(403, "USER_TOKEN_REQUIRED", "Tidak ada token pengguna untuk dicabut.");
   }
   const { revokeApiToken } = await import("./api-token");
   revokeApiToken(principal.claims);
+
+  const body = await readJsonBody(request);
+  const refreshToken = text(body.refreshToken);
+  if (refreshToken) {
+    const { revokeRefreshSession } = await import("./api-refresh");
+    await revokeRefreshSession(refreshToken).catch(() => undefined);
+  }
 
   const { recordActivity } = await import("./activity");
   await recordActivity({
@@ -1120,6 +1206,7 @@ const ROUTES: Route[] = [
 
   // --- Otentikasi ---
   { method: "POST", pattern: /^\/auth\/login$/, handle: (c) => handleLogin(c.request) },
+  { method: "POST", pattern: /^\/auth\/refresh$/, handle: (c) => handleRefresh(c.request) },
   {
     method: "GET",
     pattern: /^\/auth\/me$/,
@@ -1130,7 +1217,7 @@ const ROUTES: Route[] = [
     method: "POST",
     pattern: /^\/auth\/logout$/,
     requiresUser: true,
-    handle: (c) => handleLogout(c.principal!),
+    handle: (c) => handleLogout(c.principal!, c.request),
   },
 
   // --- Baca ---
@@ -1193,6 +1280,7 @@ const NEEDS_DATABASE = /^\/(captures|sessions|summary|devices|auth|jobs|camera)/
  * dokumentasi untuk API yang sedang tidak melayani siapa pun.
  */
 const PUBLIC_PATHS = new Set(["/docs", "/openapi.yaml"]);
+const UNAUTHENTICATED_PATHS = new Set(["/auth/refresh"]);
 
 export async function handleApiRequest(request: Request): Promise<Response> {
   const url = new URL(request.url);
@@ -1203,7 +1291,15 @@ export async function handleApiRequest(request: Request): Promise<Response> {
   const lookupMethod = request.method === "HEAD" ? "GET" : request.method;
 
   let principal: ApiPrincipal | null = null;
-  if (!(PUBLIC_PATHS.has(path) && isApiEnabled())) {
+  if (UNAUTHENTICATED_PATHS.has(path)) {
+    if (!isApiEnabled()) {
+      return apiError(
+        503,
+        "API_DISABLED",
+        "REST API belum diaktifkan di app server ini. Isi API_KEYS di environment untuk menyalakannya.",
+      );
+    }
+  } else if (!(PUBLIC_PATHS.has(path) && isApiEnabled())) {
     const auth = await authenticateApiRequest(request);
     if (!auth.ok) {
       return json(

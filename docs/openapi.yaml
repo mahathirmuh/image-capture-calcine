@@ -436,7 +436,7 @@ paths:
     post:
       tags: [Otentikasi]
       operationId: login
-      summary: Tukar username/password dengan token 12 jam
+      summary: Tukar username/password dengan access token + refresh token
       security:
         - ApiKeyAuth: []
       requestBody:
@@ -454,7 +454,7 @@ paths:
                 password: { type: string, format: password }
       responses:
         "200":
-          description: Token diterbitkan.
+          description: Access token 12 jam dan refresh token 30 hari diterbitkan.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/LoginResponse" }
@@ -469,6 +469,41 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
         "403":
           description: Akun dinonaktifkan.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503": { $ref: "#/components/responses/DatabaseUnavailable" }
+
+  /auth/refresh:
+    post:
+      tags: [Otentikasi]
+      operationId: refresh
+      summary: Tukar refresh token dengan pasangan token baru
+      description: |
+        Dipakai klien mobile untuk mempertahankan sesi jangka panjang tanpa
+        meminta operator login ulang setiap access token 12 jam habis.
+
+        Refresh token dirotasi setiap kali dipakai: token lama mati, token
+        baru terbit bersama access token baru.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken: { type: string }
+      responses:
+        "200":
+          description: Pasangan token baru diterbitkan.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoginResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401":
+          description: Refresh token tidak sah, kedaluwarsa, dicabut, atau akun sudah nonaktif.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -514,6 +549,19 @@ paths:
         restart dilakukan dengan menonaktifkan akunnya.
       security:
         - BearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken:
+                  type: string
+                  description: |
+                    Opsional. Jika dikirim, refresh token milik sesi mobile ini
+                    ikut dicabut sehingga app tidak bisa memperbarui access
+                    token lagi.
       responses:
         "200":
           description: Token dicabut.
@@ -733,6 +781,9 @@ components:
         bisa memerintah kamera Chloride Plant lewat API -- aturan yang sama
         persis dengan yang berlaku di halaman aplikasi.
 
+        Untuk sesi mobile jangka panjang, access token ini dipasangkan dengan
+        refresh token dari `POST /auth/login` dan `POST /auth/refresh`.
+
         Dicabut lewat `POST /auth/logout`, atau seketika dan permanen dengan
         menonaktifkan akunnya (diperiksa ulang dari database di `/auth/me`).
 
@@ -775,12 +826,21 @@ components:
   schemas:
     LoginResponse:
       type: object
-      required: [token, tokenType, expiresAt, user]
+      required: [token, tokenType, expiresAt, refreshToken, refreshExpiresAt, user]
       properties:
         token: { type: string }
         tokenType: { type: string, example: Bearer }
         expiresAt: { type: string, format: date-time }
-        user: { $ref: "#/components/schemas/SessionUser" }
+        refreshToken: { type: string }
+        refreshExpiresAt: { type: string, format: date-time }
+        user:
+          allOf:
+            - $ref: "#/components/schemas/SessionUser"
+            - type: object
+              properties:
+                plant:
+                  type: string
+                  nullable: true
 
     SessionUser:
       type: object

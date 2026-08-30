@@ -6,32 +6,37 @@ type FormState = {
 };
 
 type LoginScreenProps = {
-  onSignIn?: () => void;
+  onSignIn?: (credentials: FormState) => Promise<void> | void;
+  submitting?: boolean;
+  errorMessage?: string | null;
 };
 
-export function LoginScreen({ onSignIn }: LoginScreenProps) {
+export function LoginScreen({ onSignIn, submitting = false, errorMessage }: LoginScreenProps) {
   const [form, setForm] = useState<FormState>({ identifier: "", password: "" });
   const [showPassword, setShowPassword] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
-  const errorMessage = useMemo(() => {
+  const validationMessage = useMemo(() => {
     if (!submitted) return null;
     if (!form.identifier.trim() || !form.password.trim()) {
       return "Username or password is required.";
     }
-    return "Invalid credentials. Please try again.";
+    return null;
   }, [form.identifier, form.password, submitted]);
 
   function updateField<K extends keyof FormState>(field: K, value: FormState[K]) {
     setForm((current) => ({ ...current, [field]: value }));
   }
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitted(true);
 
     if (form.identifier.trim() && form.password.trim()) {
-      onSignIn?.();
+      await onSignIn?.({
+        identifier: form.identifier.trim(),
+        password: form.password,
+      });
     }
   }
 
@@ -112,12 +117,12 @@ export function LoginScreen({ onSignIn }: LoginScreenProps) {
                   </span>
                 </button>
               </div>
-              {errorMessage ? (
+              {validationMessage ?? errorMessage ? (
                 <div className="helper-row error" role="status" aria-live="polite">
                   <span className="material-symbols-outlined" aria-hidden="true">
                     error
                   </span>
-                  <span>{errorMessage}</span>
+                  <span>{validationMessage ?? errorMessage}</span>
                 </div>
               ) : (
                 <div className="helper-row" aria-live="polite">
@@ -130,14 +135,14 @@ export function LoginScreen({ onSignIn }: LoginScreenProps) {
             </div>
 
             <div className="actions">
-              <button className="btn btn-primary" type="submit">
-                <span>Sign In</span>
+              <button className="btn btn-primary" type="submit" disabled={submitting}>
+                <span>{submitting ? "Signing In..." : "Sign In"}</span>
                 <span className="material-symbols-outlined" aria-hidden="true">
                   login
                 </span>
               </button>
 
-              <button className="btn btn-secondary" type="button">
+              <button className="btn btn-secondary" type="button" disabled={submitting}>
                 <span className="material-symbols-outlined" aria-hidden="true">
                   help
                 </span>

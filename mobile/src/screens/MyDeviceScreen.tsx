@@ -1,3 +1,5 @@
+import type { AuthUser } from "../lib/auth";
+
 const DEVICE_ALERT = {
   title: "System Alert",
   message: "Device UNREACHABLE: Check uplink connection.",
@@ -15,7 +17,12 @@ const DEVICE_STATUS = {
   authLevel: "Yellow",
 };
 
-export function MyDeviceScreen() {
+type MyDeviceScreenProps = {
+  user: AuthUser;
+  onSignOut: () => void | Promise<void>;
+};
+
+export function MyDeviceScreen({ user, onSignOut }: MyDeviceScreenProps) {
   return (
     <main className="app-page-shell app-page-shell--with-nav my-device-screen">
       <header className="top-app-bar">
@@ -101,12 +108,18 @@ export function MyDeviceScreen() {
           </div>
 
           <div>
-            <strong>{DEVICE_STATUS.operatorId}</strong>
-            <p>Auth Level: {DEVICE_STATUS.authLevel}</p>
+            <strong>{user.username}</strong>
+            <p>
+              Auth Level: {user.role} {user.plant ? `• ${user.plant}` : ""}
+            </p>
           </div>
         </div>
 
-        <button className="btn btn-secondary device-operator-card__signout" type="button">
+        <button
+          className="btn btn-secondary device-operator-card__signout"
+          type="button"
+          onClick={() => void onSignOut()}
+        >
           Sign Out
         </button>
       </section>
