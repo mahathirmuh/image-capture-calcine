@@ -70,6 +70,10 @@ function configuredApiBaseUrl(): string {
   return normalized.endsWith("/api/v1") ? normalized : `${normalized}/api/v1`;
 }
 
+export function getConfiguredApiBaseUrl(): string {
+  return configuredApiBaseUrl();
+}
+
 function loginApiKey(): string {
   const key = import.meta.env.VITE_API_KEY?.trim() || __MOBILE_DEFAULT_API_KEY__?.trim();
   if (!key) {

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { AppLogo } from "../components/AppLogo";
 import type { AuthSession } from "../lib/auth";
 import { MobileAuthError } from "../lib/auth";
 import {
@@ -9,7 +10,6 @@ import {
   getJob,
   releaseCameraSession,
   renewCameraSession,
-  triggerAutofocus,
   triggerCapture,
   type CameraJob,
   type CameraLease,
@@ -29,6 +29,8 @@ type CaptureScreenProps = {
   onOpenSessions?: () => void;
   onOpenLatestCapture?: (capture: CaptureHistoryItem) => void;
 };
+
+type BusyAction = "session" | "capture" | null;
 
 function sessionStatusCopy(status: TodaySessionItem["status"] | null) {
   switch (status) {
@@ -70,6 +72,23 @@ function jobProgress(status: CameraJob["status"] | null) {
       return 100;
     default:
       return 0;
+  }
+}
+
+function captureProcessLabel(status: CameraJob["status"] | null, busyAction: BusyAction) {
+  if (busyAction !== "capture") return null;
+
+  switch (status) {
+    case "queued":
+      return "Capture request sent to the camera.";
+    case "running":
+      return "Camera is capturing and saving the image.";
+    case "succeeded":
+      return "Finalizing captured image...";
+    case "failed":
+      return "Capture failed.";
+    default:
+      return "Keep this screen open while capture is in progress.";
   }
 }
 
@@ -135,8 +154,13 @@ export function CaptureScreen({
   const [lease, setLease] = useState<CameraLease | null>(null);
   const [job, setJob] = useState<CameraJob | null>(null);
   const [latestCapture, setLatestCapture] = useState<CaptureHistoryItem | null>(null);
-  const [busyAction, setBusyAction] = useState<"session" | "autofocus" | "capture" | null>(null);
+  const [busyAction, setBusyAction] = useState<BusyAction>(null);
   const [error, setError] = useState<string | null>(null);
+  const [captureNotice, setCaptureNotice] = useState<{
+    tone: "info" | "success";
+    title: string;
+    body: string;
+  } | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewBusy, setPreviewBusy] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -160,6 +184,8 @@ export function CaptureScreen({
   const jobLabel = useMemo(() => jobStatusLabel(job?.status ?? null), [job]);
   const progress = useMemo(() => jobProgress(job?.status ?? null), [job]);
   const sessionReady = !!lease;
+  const captureBusy = busyAction === "capture";
+  const captureProcess = captureProcessLabel(job?.status ?? null, busyAction);
 
   useEffect(() => {
     sessionRef.current = session;
@@ -373,6 +399,7 @@ export function CaptureScreen({
     if (!selectedSession) return;
     setBusyAction("session");
     setError(null);
+    setCaptureNotice(null);
 
     try {
       const response = await ensureCameraSession(session, lease);
@@ -391,6 +418,7 @@ export function CaptureScreen({
     if (!lease) return;
     setBusyAction("session");
     setError(null);
+    setCaptureNotice(null);
 
     try {
       const response = await releaseCameraSession(session, lease);
@@ -405,20 +433,25 @@ export function CaptureScreen({
     }
   }
 
-  async function runJob(kind: "autofocus" | "capture") {
+  async function runJob(kind: "capture") {
     if (!selectedSession) return;
     setBusyAction(kind);
     setError(null);
+    setCaptureNotice({
+      tone: "info",
+      title: "Process capturing",
+      body: "Please wait. The camera is taking the image and saving the result.",
+    });
 
     try {
       const leaseResponse = await ensureCameraSession(session, lease);
       onSessionUpdate(leaseResponse.session);
       setLease(leaseResponse.data);
 
-      const actionResponse =
-        kind === "autofocus"
-          ? await triggerAutofocus(leaseResponse.session, leaseResponse.data.session.leaseToken)
-          : await triggerCapture(leaseResponse.session, leaseResponse.data.session.leaseToken);
+      const actionResponse = await triggerCapture(
+        leaseResponse.session,
+        leaseResponse.data.session.leaseToken,
+      );
 
       onSessionUpdate(actionResponse.session);
       setJob(actionResponse.data.job);
@@ -432,7 +465,7 @@ export function CaptureScreen({
       const latestSession = result.session;
       onSessionUpdate(latestSession);
 
-      if (kind === "capture" && result.job.status === "succeeded") {
+      if (result.job.status === "succeeded") {
         const assetId = extractAssetId(result.job);
         if (!assetId) {
           throw new Error("Capture succeeded but the edge did not return an asset id for saving.");
@@ -450,13 +483,26 @@ export function CaptureScreen({
 
         if (finalized.data.forwarded) {
           setPreviewError(null);
+          setCaptureNotice({
+            tone: "success",
+            title: "Capture complete",
+            body: "Image saved successfully and ready in history.",
+          });
         } else {
           setPreviewError(`Saved on app server queue (${finalized.data.pending} pending).`);
+          setCaptureNotice({
+            tone: "success",
+            title: "Capture queued",
+            body: `Image reached the app server queue (${finalized.data.pending} pending).`,
+          });
         }
 
         await refreshLatestCapture(finalized.session, activeSlot);
+      } else {
+        setCaptureNotice(null);
       }
     } catch (actionError) {
+      setCaptureNotice(null);
       setError(errorMessageOf(actionError));
     } finally {
       setBusyAction(null);
@@ -467,13 +513,7 @@ export function CaptureScreen({
     <main className="app-page-shell app-page-shell--with-nav capture-screen">
       <header className="top-app-bar">
         <div className="top-app-bar__side">
-          <span
-            className="material-symbols-outlined top-app-bar__avatar"
-            aria-hidden="true"
-            style={{ fontVariationSettings: '"FILL" 1' }}
-          >
-            account_circle
-          </span>
+          <AppLogo className="app-logo--topbar" alt="" />
           <span className="top-app-bar__label">{operatorName}</span>
         </div>
 
@@ -525,45 +565,98 @@ export function CaptureScreen({
           <span>{sessionReady ? "Camera session active" : sessionStatusCopy(selectedSession?.status ?? null)}</span>
         </div>
 
-        <button
-          className="capture-session-bar__button"
-          type="button"
-          onClick={sessionReady ? () => void handleStopSession() : () => void handleStartSession()}
-          disabled={busyAction === "session" || !selectedSession}
-        >
-          {busyAction === "session"
-            ? sessionReady
-              ? "Stopping..."
-              : "Starting..."
-            : sessionReady
-              ? "Stop Session"
-              : "Start Session"}
-        </button>
+        <div className="capture-session-bar__actions">
+          <button
+            className="capture-session-bar__button capture-session-bar__button--primary capture-session-bar__button--icon"
+            type="button"
+            onClick={() => void runJob("capture")}
+            disabled={!selectedSession || busyAction !== null || !sessionReady}
+            aria-label={captureBusy ? "Capturing image" : "Capture image"}
+            title={captureBusy ? "Capturing image" : "Capture image"}
+          >
+            <span
+              className={`material-symbols-outlined ${
+                captureBusy ? "capture-session-bar__button-icon-spin" : ""
+              }`}
+              aria-hidden="true"
+            >
+              {captureBusy ? "progress_activity" : "photo_camera"}
+            </span>
+          </button>
+
+          <button
+            className="capture-session-bar__button"
+            type="button"
+            onClick={sessionReady ? () => void handleStopSession() : () => void handleStartSession()}
+            disabled={busyAction === "session" || captureBusy || !selectedSession}
+          >
+            {busyAction === "session"
+              ? sessionReady
+                ? "Stopping..."
+                : "Starting..."
+              : sessionReady
+                ? "Stop Session"
+                : "Start Session"}
+          </button>
+        </div>
       </section>
 
-      <section className="capture-preview-grid">
-        <div className="camera-feed-card" aria-label="Camera feed preview">
-          <div className="camera-feed-card__image">
-            {previewUrl ? (
-              <img className="camera-feed-card__frame" src={previewUrl} alt="Live camera preview" />
-            ) : null}
-            <div className="camera-feed-card__crosshair">
-              <span className="camera-feed-card__crosshair-dot"></span>
-            </div>
+      <section className="camera-feed-card" aria-label="Camera feed preview">
+        <div className="camera-feed-card__header">
+          <div>
+            <p className="camera-feed-card__eyebrow">Live View</p>
+            <h2 className="camera-feed-card__title">{currentSlotLabel ?? "Camera preview"}</h2>
           </div>
-          <div className="camera-feed-card__status">
-            {previewBusy
-              ? "Loading live preview..."
-              : previewError
-                ? previewError
-                : previewUrl
-                  ? "Live preview active"
-                  : sessionReady
-                    ? "Waiting for first frame..."
-                    : "Start session to load live preview."}
+          <div className="camera-feed-card__header-badge">
+            {sessionReady ? (previewBusy ? "Refreshing" : "Live") : "Standby"}
           </div>
         </div>
 
+        <div className="camera-feed-card__image">
+          {previewUrl ? (
+            <img className="camera-feed-card__frame" src={previewUrl} alt="Live camera preview" />
+          ) : null}
+          <div className="camera-feed-card__crosshair">
+            <span className="camera-feed-card__crosshair-dot"></span>
+          </div>
+          {captureBusy ? (
+            <div className="camera-feed-card__overlay" role="status" aria-live="polite">
+              <span
+                className="material-symbols-outlined camera-feed-card__overlay-icon"
+                aria-hidden="true"
+              >
+                progress_activity
+              </span>
+              <strong>Process capturing</strong>
+              <span>{captureProcess ?? "Please wait while the capture is being processed."}</span>
+            </div>
+          ) : null}
+        </div>
+        <div className="camera-feed-card__status">
+          {previewBusy
+            ? "Loading live preview..."
+            : previewError
+              ? previewError
+              : previewUrl
+                ? "Live preview active"
+                : sessionReady
+                  ? "Waiting for first frame..."
+                  : "Start session to load live preview."}
+        </div>
+      </section>
+
+      {captureNotice ? (
+        <section
+          className={`capture-notice capture-notice--${captureNotice.tone}`}
+          role="status"
+          aria-live="polite"
+        >
+          <strong>{captureNotice.title}</strong>
+          <span>{captureNotice.body}</span>
+        </section>
+      ) : null}
+
+      <section className="result-preview-card-stack">
         <button
           type="button"
           className="result-preview-card result-preview-card--button"
@@ -576,7 +669,7 @@ export function CaptureScreen({
           disabled={!latestCapture || !onOpenLatestCapture}
         >
           <span className="result-preview-card__label">
-            {latestCapture ? "Latest Result" : "Camera"}
+            {latestCapture ? "Latest Saved Result" : "Latest Result"}
           </span>
           <div className="result-preview-card__thumb">
             <div className="result-preview-card__badge">
@@ -588,7 +681,7 @@ export function CaptureScreen({
             <span>
               {latestCapture
                 ? `${latestCapture.plant} • ${latestCapture.capturedTime}`
-                : "Run capture to save and fetch the newest record for this slot."}
+                : "After capture completes, the newest saved image will appear here."}
             </span>
           </div>
         </button>
@@ -635,37 +728,11 @@ export function CaptureScreen({
               style={{ width: `${progress}%` }}
             ></span>
           </div>
+          <p className="job-progress-card__helper">
+            {captureProcess ??
+              "Start a session, then use Capture to save the image for the selected slot."}
+          </p>
         </article>
-
-        <div className="capture-action-grid">
-          <button
-            className="capture-action capture-action--secondary"
-            type="button"
-            onClick={() => void runJob("autofocus")}
-            disabled={!selectedSession || busyAction !== null}
-          >
-            <span className="material-symbols-outlined" aria-hidden="true">
-              center_focus_strong
-            </span>
-            <span>{busyAction === "autofocus" ? "Focusing..." : "Auto-Focus"}</span>
-          </button>
-
-          <button
-            className="capture-action capture-action--primary"
-            type="button"
-            onClick={() => void runJob("capture")}
-            disabled={!selectedSession || busyAction !== null}
-          >
-            <span
-              className="material-symbols-outlined"
-              aria-hidden="true"
-              style={{ fontVariationSettings: '"FILL" 1' }}
-            >
-              photo_camera
-            </span>
-            <span>{busyAction === "capture" ? "Capturing..." : "Capture"}</span>
-          </button>
-        </div>
       </section>
     </main>
   );

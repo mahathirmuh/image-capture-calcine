@@ -2,6 +2,7 @@
 
 declare const __MOBILE_DEFAULT_API_BASE_URL__: string;
 declare const __MOBILE_DEFAULT_API_KEY__: string;
+declare const __MOBILE_APP_VERSION__: string;
 
 interface ImportMetaEnv {
   readonly VITE_API_BASE_URL?: string;

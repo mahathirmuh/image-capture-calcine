@@ -2,8 +2,8 @@
 
 ## Active Phase
 
-- Current execution targets: `M3 - Capture Workflow Integration`, `M4 - My Device Live Status`
-- Last completed phase: `M2 - Recent Captures And Capture Detail Live Data`
+- Current execution targets: `Completed through M5 - Settings And Runtime Config Cleanup`
+- Last completed phase: `M5 - Settings And Runtime Config Cleanup`
 - Rule: do not advance phase status without recorded verification evidence
 
 ## Phase M0 - Documentation Foundation
@@ -189,7 +189,7 @@ Replace mock capture history/detail data with backend-backed operator results.
 
 ### Status
 
-- `In Progress`
+- `Completed`
 
 ### Objective
 
@@ -221,14 +221,15 @@ Connect the operator capture screen to live camera session, autofocus, capture, 
 - [x] Implement camera session release via `DELETE /camera/session/{sessionId}`
 - [x] Replace `Change Session` with explicit `Stop Session`
 - [x] Add in-screen slot selector for `Train 1/Train 2` or `Bin 1/Bin 2`
-- [x] Implement autofocus action via `POST /camera/autofocus`
 - [x] Implement capture action via `POST /camera/capture`
 - [x] Implement capture auto-save/finalize via `POST /captures/finalize`
 - [x] Implement job polling via `GET /jobs/{jobId}`
 - [x] Show live status transitions for queued, running, succeeded, and failed
 - [x] Connect latest result preview to live capture results
+- [x] Simplify capture UX to one live-preview surface plus explicit capture progress/success feedback
+- [x] Replace the text capture CTA with a camera-icon primary action
 - [x] Implement user-visible failure handling for timeout or device/API unavailability
-- [x] Record partial verification evidence
+- [x] Record verification evidence
 
 ### Output
 
@@ -236,14 +237,18 @@ Connect the operator capture screen to live camera session, autofocus, capture, 
 
 ### Challenge / Verification
 
-- Reviewed `POST /camera/session`, `POST /camera/autofocus`, `POST /camera/capture`, `POST /captures/finalize`, and `GET /jobs/{jobId}` contracts in `docs/openapi.yaml`
+- Reviewed `POST /camera/session`, `POST /camera/capture`, `POST /captures/finalize`, and `GET /jobs/{jobId}` contracts in `docs/openapi.yaml`
 - Implemented camera-session creation and reuse logic with lease-expiry checks in `mobile/src/lib/camera.ts`
 - Implemented mobile live preview frame polling via `GET /camera/preview`, plus lease renewal/release via `POST /camera/session/renew` and `DELETE /camera/session/{sessionId}`
 - Implemented explicit `Stop Session` action and in-screen slot switching on the mobile capture screen
-- Implemented live autofocus/capture job triggering, job polling, and automatic finalize/save in `mobile/src/screens/CaptureScreen.tsx`
+- Implemented live capture job triggering, job polling, and automatic finalize/save in `mobile/src/screens/CaptureScreen.tsx`
 - Implemented latest-result preview lookup tied to the selected plant/session/slot so the capture preview does not open the wrong record
+- Simplified the capture screen UX so operators see one live preview, a top-level capture action beside session control, and explicit progress/success messaging during slow capture processing
+- Replaced the text-only capture CTA with a camera-icon primary button while preserving loading lock states and accessibility labels
 - Implemented operator-visible failure states for session conflict, edge unavailability, and polling timeout through shared API error handling
 - Ran `npm run build` in `mobile/` successfully on 2026-08-30 after M3 capture workflow wiring changes
+- Verified in browser on 2026-08-30 that the refreshed mobile capture UX at `http://127.0.0.1:5173` shows `Capture` beside `Start/Stop Session`, removes autofocus, locks actions during `Capturing...`, shows process messaging, and surfaces `Capture complete` after the job finishes
+- Verified in browser on 2026-08-30 that the capture action is now rendered as a camera-icon button beside `Start Session`, while slot selection still shows `Train 1` and `Train 2`
 - Ran `npm run build` in root app successfully on 2026-08-30 after exposing mobile preview/session lifecycle endpoints in the REST API
 - Verified statically on 2026-08-30 that successful mobile capture jobs now continue into backend finalize/save instead of stopping at the camera job response
 - Verified in browser runtime that selected-session handoff works, camera session start succeeds, autofocus job reaches `Succeeded`, and capture job reaches `Succeeded`
@@ -252,12 +257,13 @@ Connect the operator capture screen to live camera session, autofocus, capture, 
 - Verified on 2026-08-30 that the local mobile app at `http://127.0.0.1:5174` logs in, opens a missing session, starts the camera session, and reaches `Live preview active` with repeated `GET /camera/preview` requests against the local app server at `http://127.0.0.1:3000`
 - Evidence screenshot captured during mobile live-preview verification:
   - `/var/folders/s4/_h6390qs7rscy8lyhg58xd300000gn/T/trae/screenshots/page-2026-08-30T10-01-39-190Z.png`
+  - `/var/folders/s4/_h6390qs7rscy8lyhg58xd300000gn/T/trae/screenshots/mobile-capture-camera-icon-2026-08-30.png`
 
 ## Phase M4 - My Device Live Status
 
 ### Status
 
-- `In Progress`
+- `Completed`
 
 ### Objective
 
@@ -287,8 +293,8 @@ Connect the operator device screen to real device and device-status data.
 - [x] Select the primary device for the signed-in operator
 - [x] Load live device health data from `GET /devices/{code}/status`
 - [x] Implement success, offline/degraded, loading, and error states
-- [ ] Decide whether diagnostics CTA is informational or functional in this phase
-- [x] Record partial verification evidence
+- [x] Decide whether diagnostics CTA is informational or functional in this phase
+- [x] Record verification evidence
 
 ### Output
 
@@ -300,13 +306,17 @@ Connect the operator device screen to real device and device-status data.
 - Implemented device list/status client helpers and primary-device selection in `mobile/src/lib/devices.ts`
 - Implemented live My Device loading, degraded/offline messaging, and operator-context rendering in `mobile/src/screens/MyDeviceScreen.tsx`
 - Ran `npm run build` in `mobile/` successfully on 2026-08-30 after M4 device-status wiring changes
-- Runtime browser verification for the live device screen is still pending
+- Finalized diagnostics behavior for this phase as read-only guidance plus a manual `Refresh Status` CTA for operators
+- Added visible last-refresh badge so operators can judge the freshness of the live telemetry snapshot
+- Verified in browser on 2026-08-30 that `My Device` renders live telemetry, shows the read-only diagnostics message, and changes the refresh CTA into `Refreshing...` while the device status reload is running
+- Evidence screenshot captured during device verification:
+  - `/var/folders/s4/_h6390qs7rscy8lyhg58xd300000gn/T/trae/screenshots/mobile-device-readonly-2026-08-30.png`
 
 ## Phase M5 - Settings And Runtime Config Cleanup
 
 ### Status
 
-- `Planned`
+- `Completed`
 
 ### Objective
 
@@ -329,12 +339,12 @@ Finish the operator settings surface and align runtime configuration behavior wi
 
 ### Checklist
 
-- [ ] Decide which settings are real preferences versus display-only status
-- [ ] Wire sign-out and session-clearing behavior end-to-end
-- [ ] Review runtime backend configuration strategy for mobile builds
-- [ ] Remove leftover mock/placeholder settings behavior
-- [ ] Verify logout, restore, and environment-driven startup behavior
-- [ ] Record verification evidence
+- [x] Decide which settings are real preferences versus display-only status
+- [x] Wire sign-out and session-clearing behavior end-to-end
+- [x] Review runtime backend configuration strategy for mobile builds
+- [x] Remove leftover mock/placeholder settings behavior
+- [x] Verify logout, restore, and environment-driven startup behavior
+- [x] Record verification evidence
 
 ### Output
 
@@ -342,4 +352,17 @@ Finish the operator settings surface and align runtime configuration behavior wi
 
 ### Challenge / Verification
 
-- Pending
+- Reviewed current mobile runtime base-URL/API-key resolution in `mobile/src/lib/auth.ts` and Vite compile-time defines in `mobile/vite.config.ts`
+- Added persisted mobile preferences for `High-Contrast Mode` and `History Warm-Up` through Capacitor Preferences
+- Wired app bootstrap to hydrate preferences before render, apply high-contrast mode, and conditionally run thumbnail warm-up after login/session restore
+- Replaced settings placeholders with real operator preferences and live runtime snapshot values (app version, API path, access expiry, refresh expiry), while intentionally hiding the API host from operator-facing settings
+- Switched mobile branding to the shared app logo asset so the login hero, top app bar, and favicon match the main frontend resources
+- Replaced the default Capacitor Android launcher icons and splash assets with resized variants of the shared app logo so native Android branding matches the mobile UI
+- Confirmed existing sign-out flow still clears mobile session state through the shared auth/logout path
+- Ran `npm run build` in `mobile/` successfully on 2026-08-30 after M5 settings/runtime cleanup changes
+- Verified in browser on 2026-08-30 that the settings screen renders the two persisted preferences, hides the API host, and exposes runtime snapshot values from the active build/session without reverting to mock data
+- Verified in browser on 2026-08-30 that the shared app logo is rendered in the mobile top app bar after the branding update
+- Verified on 2026-08-30 that Android launcher and splash resources under `mobile/android/app/src/main/res` no longer use the default Capacitor art and now resolve to generated logo variants across all densities
+- Evidence screenshot captured during settings verification:
+  - `/var/folders/s4/_h6390qs7rscy8lyhg58xd300000gn/T/trae/screenshots/mobile-settings-runtime-2026-08-30.png`
+  - `/var/folders/s4/_h6390qs7rscy8lyhg58xd300000gn/T/trae/screenshots/mobile-settings-logo-privacy-2026-08-30.png`

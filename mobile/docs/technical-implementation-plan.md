@@ -32,11 +32,11 @@
 
 - `Login`: wired to live auth API
 - `Today Sessions`: wired to live `GET /sessions`, including operator-plant scoping, summary chips, loading/error/empty states, and tap-to-capture handoff
-- `Capture`: uses live camera session, live preview polling, autofocus, capture, job polling, automatic save/finalize APIs, and latest-result preview lookup for the selected slot
+- `Capture`: uses live camera session, live preview polling, capture, job polling, automatic save/finalize APIs, latest-result preview lookup for the selected slot, and explicit in-screen progress/success feedback for operators
 - `Recent Captures`: wired to live `GET /captures` with plant scoping, latest-20 loading, and loading/error/empty states
 - `Capture Detail`: wired to live `GET /captures/{id}` and attempts preview loading from `GET /captures/{id}/image`
 - `My Device`: wired to live `GET /devices` and `GET /devices/{code}/status` with primary-device resolution and degraded/offline handling
-- `Settings`: UI only
+- `Settings`: wired to persisted mobile preferences, runtime snapshot diagnostics, and sign-out
 
 ## M1 Implementation Notes
 
@@ -60,19 +60,29 @@
 
 ## M3 Implementation Notes
 
-- `mobile/src/lib/camera.ts` wraps camera session, session renew/release, live preview frame loading, autofocus, capture, job polling, and capture-finalize contracts
+- `mobile/src/lib/camera.ts` wraps camera session, session renew/release, live preview frame loading, capture, job polling, and capture-finalize contracts
 - the mobile client currently asks backend to resolve the operator device implicitly unless backend requires explicit device selection
 - while the capture screen is open, the mobile client now polls `GET /camera/preview` for JPEG frames and refreshes the lease with `POST /camera/session/renew`
 - the capture screen releases the lease through `DELETE /camera/session/{sessionId}` when the operator leaves the screen so the camera becomes available faster for the next client
 - the capture screen now exposes a slot selector (`Train 1/Train 2` on Acid, `Bin 1/Bin 2` on Chloride) and auto-finalizes every successful camera job through `POST /captures/finalize`
 - latest-result preview now queries recent captures for the selected plant/session and matches by `captureBin` to avoid opening the wrong slot
+- the capture screen now uses a single primary live-preview surface, moves `Capture` beside the session control, removes operator-facing autofocus, and shows capture-in-progress plus capture-complete feedback so the workflow feels deterministic on slower cameras
 - browser verification on 2026-08-30 confirmed `Start Session` on mobile now switches the screen into `Live preview active` and renders real camera frames
 
 ## M4 Implementation Notes
 
 - `mobile/src/lib/devices.ts` selects a primary device by preferring active devices that match the operator plant, then falling back to the most recently active device
 - `mobile/src/screens/MyDeviceScreen.tsx` renders loading, error, degraded, offline, and success-friendly states from live backend data
-- diagnostics CTA remains informational only in this phase
+- diagnostics stay read-only on mobile in this phase, while a manual `Refresh Status` action lets operators re-check live telemetry without leaving the screen
+- the device screen also records a visible last-refresh badge so operators can judge how fresh the snapshot is
+
+## M5 Implementation Notes
+
+- `mobile/src/lib/preferences.ts` persists lightweight mobile operator preferences through Capacitor Preferences
+- `mobile/src/App.tsx` now hydrates preferences during boot, applies high-contrast mode to the app shell, and gates thumbnail warm-up based on the saved setting
+- `mobile/src/screens/SettingsScreen.tsx` exposes only real preferences (`High-Contrast Mode`, `History Warm-Up`), shows active runtime snapshot values, and reuses the existing sign-out/session cleanup flow
+- runtime snapshot values come from the active build and session (`__MOBILE_APP_VERSION__`, configured API path, access expiry, refresh expiry) instead of placeholders, while the API host is intentionally hidden from operator-facing settings
+- mobile branding now reuses the shared app logo asset from the main frontend/public resources for the login hero, top app bar, favicon, Android launcher icons, and Android splash screens
 
 ## Backend Contract Surface Relevant To Mobile
 

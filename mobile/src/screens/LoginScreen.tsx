@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react";
 
+import { AppLogo } from "../components/AppLogo";
+
 type FormState = {
   identifier: string;
   password: string;
@@ -47,7 +49,7 @@ export function LoginScreen({ onSignIn, submitting = false, errorMessage }: Logi
           <header className="login-hero">
             <div className="login-hero__top">
               <div className="brand-mark" aria-hidden="true">
-                <span className="material-symbols-outlined">precision_manufacturing</span>
+                <AppLogo className="app-logo--brand" alt="" />
               </div>
               <div>
                 <p className="brand-kicker">Calcine Sampling Operator Tool</p>

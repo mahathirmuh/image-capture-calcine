@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
+import { AppLogo } from "../components/AppLogo";
 import type { AuthSession } from "../lib/auth";
 import { MobileAuthError } from "../lib/auth";
 import { getSessionCoverage, mapSessionCoverageToView, type TodaySessionItem } from "../lib/sessionCoverage";
@@ -90,13 +91,7 @@ export function TodaySessionsScreen({
     <main className="app-page-shell app-page-shell--with-nav">
       <header className="top-app-bar">
         <div className="top-app-bar__side">
-          <span
-            className="material-symbols-outlined top-app-bar__avatar"
-            aria-hidden="true"
-            style={{ fontVariationSettings: '"FILL" 1' }}
-          >
-            account_circle
-          </span>
+          <AppLogo className="app-logo--topbar" alt="" />
           <span className="top-app-bar__label">{session.user.fullName}</span>
         </div>
 

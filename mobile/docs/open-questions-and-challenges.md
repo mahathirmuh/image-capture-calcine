@@ -19,6 +19,8 @@
 2. `Today Sessions` is implemented as a flat operator checklist instead of grouped time buckets.
 3. `Recent Captures` defaults to operator-plant scoping and loads the latest 20 records first.
 4. `My Device` currently resolves the primary device by preferring active devices that match the operator plant, then falling back to the most recently active device.
+5. `My Device` keeps diagnostics read-only on mobile for now; operators can manually refresh status, while remote diagnostics remain in the admin workflow.
+6. `Settings` uses persisted mobile preferences for `High-Contrast Mode` and `History Warm-Up`, and shows runtime snapshot data from the active build/session.
 
 ## Recording Rule
 

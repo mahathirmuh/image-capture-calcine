@@ -37,8 +37,8 @@ Capture Calcine Mobile is an operator-only mobile application for daily sampling
 
 - Show current session context
 - Show device/session readiness
-- Support autofocus and capture actions
-- Show async job progress and latest result preview
+- Support slot-aware capture and automatic save/finalize
+- Show live preview, async job progress, and latest result preview
 
 ### Recent Captures
 
@@ -53,12 +53,12 @@ Capture Calcine Mobile is an operator-only mobile application for daily sampling
 ### My Device
 
 - Show assigned device status, reachability, and recent capture context
-- Show diagnostics entry points when supported
+- Show read-only diagnostics guidance plus manual status refresh
 
 ### Settings
 
 - Show operator identity and assignment context
-- Support lightweight preferences and sign out
+- Support lightweight persisted preferences, runtime snapshot, and sign out
 
 ## Non-Functional Requirements
 

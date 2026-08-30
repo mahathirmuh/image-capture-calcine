@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { AppLogo } from "../components/AppLogo";
 import type { AuthSession, AuthUser } from "../lib/auth";
 import { MobileAuthError } from "../lib/auth";
 import {
@@ -59,20 +60,31 @@ function inferHealthState(device: DeviceListItem | null, status: DeviceStatusRes
 
 export function MyDeviceScreen({ session, user, onSessionUpdate, onSignOut }: MyDeviceScreenProps) {
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [device, setDevice] = useState<DeviceListItem | null>(null);
   const [status, setStatus] = useState<DeviceStatusResponse | null>(null);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
+  const mountedRef = useRef(true);
 
   useEffect(() => {
-    let cancelled = false;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
-    void (async () => {
-      setLoading(true);
+  const loadDeviceState = useCallback(
+    async (mode: "initial" | "refresh" = "initial") => {
+      if (mode === "initial") {
+        setLoading(true);
+      } else {
+        setRefreshing(true);
+      }
       setError(null);
 
       try {
         const devicesResponse = await listDevices(session);
-        if (cancelled) return;
+        if (!mountedRef.current) return;
         onSessionUpdate(devicesResponse.session);
 
         const primary = pickPrimaryDevice(devicesResponse.data.devices, user.plant ?? null);
@@ -80,27 +92,35 @@ export function MyDeviceScreen({ session, user, onSessionUpdate, onSignOut }: My
 
         if (!primary) {
           setStatus(null);
+          setLastUpdatedAt(new Date().toISOString());
           return;
         }
 
         const statusResponse = await getDeviceStatus(devicesResponse.session, primary.code);
-        if (cancelled) return;
+        if (!mountedRef.current) return;
         onSessionUpdate(statusResponse.session);
         setStatus(statusResponse.data);
+        setLastUpdatedAt(new Date().toISOString());
       } catch (loadError) {
-        if (cancelled) return;
-        setError(errorMessageOf(loadError));
+        if (mountedRef.current) {
+          setError(errorMessageOf(loadError));
+        }
       } finally {
-        if (!cancelled) {
-          setLoading(false);
+        if (mountedRef.current) {
+          if (mode === "initial") {
+            setLoading(false);
+          } else {
+            setRefreshing(false);
+          }
         }
       }
-    })();
+    },
+    [onSessionUpdate, session, user.plant],
+  );
 
-    return () => {
-      cancelled = true;
-    };
-  }, [onSessionUpdate, session, user.plant]);
+  useEffect(() => {
+    void loadDeviceState("initial");
+  }, [loadDeviceState]);
 
   const health = useMemo(() => inferHealthState(device, status), [device, status]);
   const edge = status?.edge ?? {};
@@ -115,13 +135,7 @@ export function MyDeviceScreen({ session, user, onSessionUpdate, onSignOut }: My
     <main className="app-page-shell app-page-shell--with-nav my-device-screen">
       <header className="top-app-bar">
         <div className="top-app-bar__side">
-          <span
-            className="material-symbols-outlined top-app-bar__avatar"
-            aria-hidden="true"
-            style={{ fontVariationSettings: '"FILL" 1' }}
-          >
-            account_circle
-          </span>
+          <AppLogo className="app-logo--topbar" alt="" />
           <span className="top-app-bar__label">{user.plant ?? "Operator Device"}</span>
         </div>
 
@@ -129,9 +143,15 @@ export function MyDeviceScreen({ session, user, onSessionUpdate, onSignOut }: My
           {device?.name ?? "Assigned Device"} | {device?.code ?? "Unavailable"}
         </div>
 
-        <button className="icon-button" type="button" aria-label="Open settings">
+        <button
+          className="icon-button"
+          type="button"
+          aria-label="Refresh device status"
+          onClick={() => void loadDeviceState("refresh")}
+          disabled={loading || refreshing}
+        >
           <span className="material-symbols-outlined" aria-hidden="true">
-            settings
+            refresh
           </span>
         </button>
       </header>
@@ -175,7 +195,7 @@ export function MyDeviceScreen({ session, user, onSessionUpdate, onSignOut }: My
       <section className="device-card">
         <div className="device-card__header">
           <h1>Core Telemetry</h1>
-          <span>ID: {device?.code ?? "Unavailable"}</span>
+          <span>{refreshing ? "Refreshing..." : `ID: ${device?.code ?? "Unavailable"}`}</span>
         </div>
 
         <div className="device-card__body">
@@ -208,12 +228,34 @@ export function MyDeviceScreen({ session, user, onSessionUpdate, onSignOut }: My
         </div>
       </section>
 
-      <button className="btn btn-primary device-diagnostics-button" type="button" disabled>
-        <span className="material-symbols-outlined" aria-hidden="true">
-          build
-        </span>
-        Diagnostics Pending
-      </button>
+      <section className="device-diagnostics-card">
+        <div className="device-diagnostics-card__header">
+          <div>
+            <p className="device-diagnostics-card__kicker">Diagnostics</p>
+            <h2 className="device-diagnostics-card__title">Read-only operator view</h2>
+          </div>
+          <span className="device-diagnostics-card__badge">
+            {lastUpdatedAt ? formatDateTime(lastUpdatedAt) : "Waiting"}
+          </span>
+        </div>
+
+        <p className="device-diagnostics-card__body">
+          Mobile operators can review health state, uplink, and last capture from this screen.
+          Remote diagnostics and repair actions stay on the admin workflow in this phase.
+        </p>
+
+        <button
+          className="btn btn-primary device-diagnostics-button"
+          type="button"
+          onClick={() => void loadDeviceState("refresh")}
+          disabled={loading || refreshing}
+        >
+          <span className="material-symbols-outlined" aria-hidden="true">
+            refresh
+          </span>
+          {refreshing ? "Refreshing..." : "Refresh Status"}
+        </button>
+      </section>
 
       <section className="device-operator-card">
         <div className="device-operator-card__identity">

@@ -10,6 +10,12 @@ import {
   type AuthSession,
 } from "./lib/auth";
 import { prefetchCaptureThumbs, type CaptureHistoryItem } from "./lib/captures";
+import {
+  DEFAULT_MOBILE_PREFERENCES,
+  readMobilePreferences,
+  updateMobilePreferences,
+  type MobilePreferences,
+} from "./lib/preferences";
 import type { TodaySessionItem } from "./lib/sessionCoverage";
 import { CaptureScreen } from "./screens/CaptureScreen";
 import { CaptureDetailScreen } from "./screens/CaptureDetailScreen";
@@ -45,6 +51,7 @@ export default function App() {
   const [booting, setBooting] = useState(true);
   const [loginPending, setLoginPending] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [preferences, setPreferences] = useState<MobilePreferences>(DEFAULT_MOBILE_PREFERENCES);
   const [activeTab, setActiveTab] = useState<MobileTab>("sessions");
   const [selectedCapture, setSelectedCapture] = useState<CaptureHistoryItem | null>(null);
   const [selectedSession, setSelectedSession] = useState<TodaySessionItem | null>(null);
@@ -77,10 +84,14 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
 
-    (async () => {
-      const restored = await restoreSession();
+    void (async () => {
+      const [restored, storedPreferences] = await Promise.all([
+        restoreSession(),
+        readMobilePreferences(),
+      ]);
       if (cancelled) return;
       setSession(restored);
+      setPreferences(storedPreferences);
       setBooting(false);
     })();
 
@@ -88,6 +99,13 @@ export default function App() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    document.body.dataset.mobileContrast = preferences.highContrastMode ? "high" : "default";
+    return () => {
+      delete document.body.dataset.mobileContrast;
+    };
+  }, [preferences.highContrastMode]);
 
   useEffect(() => {
     if (!session) return;
@@ -118,7 +136,7 @@ export default function App() {
   }, [refreshIfNeeded, session]);
 
   useEffect(() => {
-    if (!session) return;
+    if (!session || !preferences.historyWarmupEnabled) return;
 
     const plant = session.user.plant && session.user.plant !== "ALL" ? session.user.plant : "ALL";
     const warmupKey = `${session.user.id}:${plant}`;
@@ -151,7 +169,15 @@ export default function App() {
       cancelled = true;
       window.clearTimeout(timeout);
     };
-  }, [session]);
+  }, [preferences.historyWarmupEnabled, session]);
+
+  const handlePreferencesChange = useCallback(
+    async (patch: Partial<MobilePreferences>) => {
+      const next = await updateMobilePreferences(patch);
+      setPreferences(next);
+    },
+    [],
+  );
 
   async function handleLogin(credentials: { identifier: string; password: string }) {
     setLoginPending(true);
@@ -234,7 +260,12 @@ export default function App() {
         />
       ) : null}
       {activeTab === "settings" && !selectedCapture ? (
-        <SettingsScreen user={session.user} onSignOut={handleLogout} />
+        <SettingsScreen
+          session={session}
+          preferences={preferences}
+          onUpdatePreferences={handlePreferencesChange}
+          onSignOut={handleLogout}
+        />
       ) : null}
 
       <BottomNav
