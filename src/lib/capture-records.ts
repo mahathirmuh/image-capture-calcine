@@ -1,9 +1,21 @@
-import sql from "mssql";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
-import { getCardDbPool, getCardDbSchema, isCardDbConfigured } from "./carddb";
 import { isSafeFileName } from "./network-path";
+
+type SqlModule = typeof import("mssql").default;
+type SqlRequest = import("mssql").Request;
+type SqlConnectionPool = import("mssql").ConnectionPool;
+
+async function getCaptureRecordDbRuntime() {
+  const [{ default: sql }, carddb] = await Promise.all([import("mssql"), import("./carddb")]);
+  return {
+    sql,
+    getCardDbPool: carddb.getCardDbPool,
+    getCardDbSchema: carddb.getCardDbSchema,
+    isCardDbConfigured: carddb.isCardDbConfigured,
+  };
+}
 
 // "app-network" adalah jalur utama sekarang: app server menarik byte dari edge
 // lalu menulis sendiri ke share. "edge-network" ditahan supaya record lama --
@@ -467,8 +479,9 @@ function applyDeviceEventBaseFilters({
   request,
   whereClauses,
   data,
+  sql,
 }: {
-  request: sql.Request;
+  request: SqlRequest;
   whereClauses: string[];
   data: {
     deviceCode?: string;
@@ -476,6 +489,7 @@ function applyDeviceEventBaseFilters({
     rangeStart?: string;
     rangeEnd?: string;
   };
+  sql: SqlModule;
 }) {
   if (data.deviceCode) {
     request.input("deviceCode", sql.NVarChar(50), data.deviceCode);
@@ -528,13 +542,15 @@ function applyDeviceEventScopedFilters({
   request,
   whereClauses,
   data,
+  sql,
 }: {
-  request: sql.Request;
+  request: SqlRequest;
   whereClauses: string[];
   data: {
     severity: z.infer<typeof deviceEventSeverityFilterSchema>;
     eventType: z.infer<typeof deviceEventTypeFilterSchema>;
   };
+  sql: SqlModule;
 }) {
   if (data.severity !== "all") {
     request.input("severity", sql.NVarChar(20), data.severity);
@@ -559,11 +575,13 @@ async function countDeviceEventsForFilter({
   schema,
   deviceCode,
   filter,
+  sql,
 }: {
-  pool: sql.ConnectionPool;
+  pool: SqlConnectionPool;
   schema: string;
   deviceCode?: string;
   filter: z.infer<typeof deviceEventSavedViewCountFilterSchema>;
+  sql: SqlModule;
 }) {
   const request = pool.request();
   const whereClauses: string[] = [];
@@ -577,6 +595,7 @@ async function countDeviceEventsForFilter({
       rangeStart: filter.rangeStart,
       rangeEnd: filter.rangeEnd,
     },
+    sql,
   });
 
   applyDeviceEventScopedFilters({
@@ -586,6 +605,7 @@ async function countDeviceEventsForFilter({
       severity: filter.severity,
       eventType: filter.eventType,
     },
+    sql,
   });
 
   const result = await request.query(`
@@ -604,13 +624,14 @@ function getRelativeRangeStart(days: number) {
 }
 
 async function resolveCaptureRecordId(
-  pool: sql.ConnectionPool,
+  pool: SqlConnectionPool,
   schema: string,
   input: {
     recordId?: number | null;
     fileName: string;
     capturedAt: number;
   },
+  sql: SqlModule,
 ): Promise<number | null> {
   if (input.recordId) return input.recordId;
 
@@ -679,6 +700,8 @@ export async function deleteCaptureRecordById(input: {
   | { ok: true; recordId: number; fileLeftOnShare: string | null }
   | { ok: false; code: string; message: string }
 > {
+  const { sql, isCardDbConfigured, getCardDbSchema, getCardDbPool } =
+    await getCaptureRecordDbRuntime();
   if (!isCardDbConfigured()) {
     return {
       ok: false,
@@ -810,9 +833,10 @@ export async function deleteCaptureRecordById(input: {
 }
 
 async function resolveDeviceId(
-  request: sql.Request,
+  request: SqlRequest,
   schema: string,
   deviceCode: string,
+  sql: SqlModule,
 ): Promise<number | null> {
   const result = await request.input("deviceCode", sql.NVarChar(50), deviceCode).query(`
       SELECT TOP 1 id
@@ -825,10 +849,11 @@ async function resolveDeviceId(
 }
 
 async function resolveLocationId(
-  request: sql.Request,
+  request: SqlRequest,
   schema: string,
   input: RecordCaptureInput,
   deviceId: number,
+  sql: SqlModule,
 ): Promise<number | null> {
   const preferredBin = normalizeCaptureBinLabel(input.captureBin);
   const result = await request
@@ -865,127 +890,6 @@ async function resolveLocationId(
   return result.recordset[0] ? Number(result.recordset[0].id) : null;
 }
 
-export async function upsertCaptureRecordResult(
-  data: RecordCaptureInput,
-  operator: CaptureOperator = null,
-): Promise<
-  | { ok: true; recordId: number; locationId: number | null; replaced: boolean }
-  | { ok: false; code: string; message: string }
-> {
-  if (!isCardDbConfigured()) {
-    return {
-      ok: false,
-      code: "CARDDB_NOT_CONFIGURED",
-      message: "Konfigurasi CARDDB belum lengkap di server aplikasi.",
-    };
-  }
-
-  try {
-    const schema = `[${getCardDbSchema()}]`;
-    const pool = await getCardDbPool();
-    const request = pool.request();
-    const deviceId = await resolveDeviceId(request, schema, data.deviceCode);
-
-    if (!deviceId) {
-      return {
-        ok: false,
-        code: "DEVICE_NOT_FOUND",
-        message: `Device ${data.deviceCode} belum terdaftar di registry MSSQL.`,
-      };
-    }
-
-    const locationId = await resolveLocationId(pool.request(), schema, data, deviceId);
-    const metadataJson = JSON.stringify(buildCaptureRecordMetadata(data, operator));
-
-    const replacesExisting = !isLocalOnlySave(data.saveMethod);
-    let recordId: number | null = null;
-
-    if (replacesExisting) {
-      const existing = await pool.request().input("filePath", sql.NVarChar(500), data.filePath)
-        .query(`
-          SELECT TOP 1 id FROM ${schema}.capture_records
-          WHERE file_path = @filePath
-          ORDER BY id DESC;
-        `);
-      const found = existing.recordset[0]?.id;
-      if (found != null) recordId = Number(found);
-    }
-
-    const write = pool
-      .request()
-      .input("deviceId", sql.BigInt, deviceId)
-      .input("locationId", sql.BigInt, locationId)
-      .input("capturedAt", sql.DateTime2, new Date(data.capturedAt))
-      .input("fileName", sql.NVarChar(255), data.fileName)
-      .input("filePath", sql.NVarChar(500), data.filePath)
-      .input("status", sql.NVarChar(30), toCaptureRecordStatus(data.saveMethod))
-      .input("fileSizeBytes", sql.BigInt, data.fileSizeBytes)
-      .input("checksumSha256", sql.NVarChar(64), data.checksumSha256 ?? null)
-      .input("metadataJson", sql.NVarChar(sql.MAX), metadataJson);
-
-    if (recordId !== null) {
-      await write.input("recordId", sql.BigInt, recordId).query(`
-        UPDATE ${schema}.capture_records
-        SET
-          device_id = @deviceId,
-          location_id = @locationId,
-          captured_at = @capturedAt,
-          file_name = @fileName,
-          status = @status,
-          file_size_bytes = @fileSizeBytes,
-          checksum_sha256 = @checksumSha256,
-          metadata_json = @metadataJson
-        WHERE id = @recordId;
-      `);
-
-      await logCaptureCreated(data, operator, recordId, true);
-      return { ok: true, recordId, locationId, replaced: true };
-    }
-
-    const result = await write.query(`
-        INSERT INTO ${schema}.capture_records (
-          device_id,
-          location_id,
-          captured_at,
-          file_name,
-          file_path,
-          status,
-          file_size_bytes,
-          checksum_sha256,
-          metadata_json
-        )
-        OUTPUT INSERTED.id
-        VALUES (
-          @deviceId,
-          @locationId,
-          @capturedAt,
-          @fileName,
-          @filePath,
-          @status,
-          @fileSizeBytes,
-          @checksumSha256,
-          @metadataJson
-        );
-      `);
-
-    const insertedId = Number(result.recordset[0].id);
-    await logCaptureCreated(data, operator, insertedId, false);
-    return {
-      ok: true,
-      recordId: insertedId,
-      locationId,
-      replaced: false,
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      code: "CAPTURE_RECORD_FAILED",
-      message:
-        error instanceof Error ? error.message : "Gagal menyimpan metadata capture ke registry MSSQL.",
-    };
-  }
-}
-
 export const recordCaptureResult = createServerFn({ method: "POST" })
   .validator(recordCaptureSchema)
   .handler(async ({ data }) => {
@@ -999,12 +903,15 @@ export const recordCaptureResult = createServerFn({ method: "POST" })
       operator = null;
     }
 
+    const { upsertCaptureRecordResult } = await import("./server/capture-record-write");
     return upsertCaptureRecordResult(data, operator);
   });
 
 export const listCaptureRecords = createServerFn({ method: "GET" })
   .validator(listCaptureRecordsSchema)
   .handler(async ({ data }) => {
+    const { sql, isCardDbConfigured, getCardDbSchema, getCardDbPool } =
+      await getCaptureRecordDbRuntime();
     if (!isCardDbConfigured()) {
       return {
         ok: false as const,
@@ -1052,47 +959,11 @@ export const listCaptureRecords = createServerFn({ method: "GET" })
     }
   });
 
-/**
- * Catat satu capture ke jejak aktivitas.
- *
- * Severity membedakan dua keadaan yang tidak boleh terlihat sama: capture yang
- * mendarat di folder jaringan itu urusan selesai, sedangkan yang jatuh ke
- * unduhan browser menyisakan berkas di PC operator dan pekerjaan manual bagi
- * seseorang. Menyebut keduanya "info" membuat yang kedua tenggelam.
- *
- * Pelakunya diambil dari `operator`, yang sudah dibaca dari sesi di sisi server
- * untuk mengisi capturedBy -- jadi jejak dan metadata capture selalu menyebut
- * orang yang sama.
- */
-async function logCaptureCreated(
-  data: RecordCaptureInput,
-  operator: CaptureOperator,
-  recordId: number,
-  replaced: boolean,
-): Promise<void> {
-  const { recordActivity } = await import("./server/activity");
-  const keNetwork = data.saveMethod === "app-network";
-  const bagian = [
-    `${data.plant} / ${data.captureBin}`,
-    data.captureSession ? `sesi ${data.captureSession}` : null,
-    `metode ${data.saveMethod}`,
-    replaced ? "menimpa capture sebelumnya di sesi yang sama" : null,
-  ].filter(Boolean);
-
-  await recordActivity({
-    action: "capture.created",
-    severity: keNetwork || data.saveMethod === "spooled" ? "info" : "warning",
-    actorId: operator?.id ?? null,
-    actorUsername: operator?.name ?? null,
-    targetId: recordId,
-    targetUsername: data.fileName,
-    detail: bagian.join(" - "),
-  });
-}
-
 export const getCaptureDashboardSummary = createServerFn({ method: "GET" })
   .validator(captureDashboardSummarySchema)
   .handler(async ({ data }) => {
+    const { sql, isCardDbConfigured, getCardDbSchema, getCardDbPool } =
+      await getCaptureRecordDbRuntime();
     if (!isCardDbConfigured()) {
       return {
         ok: false as const,
@@ -1254,6 +1125,8 @@ export const getCaptureDashboardSummary = createServerFn({ method: "GET" })
 export const listDeviceEvents = createServerFn({ method: "GET" })
   .validator(listDeviceEventsSchema)
   .handler(async ({ data }) => {
+    const { sql, isCardDbConfigured, getCardDbSchema, getCardDbPool } =
+      await getCaptureRecordDbRuntime();
     if (!isCardDbConfigured()) {
       return {
         ok: false as const,
@@ -1272,6 +1145,7 @@ export const listDeviceEvents = createServerFn({ method: "GET" })
         request,
         whereClauses,
         data,
+        sql,
       });
 
       if (data.beforeId && data.beforeCreatedAt) {
@@ -1290,6 +1164,7 @@ export const listDeviceEvents = createServerFn({ method: "GET" })
           severity: data.severity,
           eventType: data.eventType,
         },
+        sql,
       });
 
       const result = await request.query(`
@@ -1340,6 +1215,8 @@ export const listDeviceEvents = createServerFn({ method: "GET" })
 export const getDeviceEventSavedViewCounts = createServerFn({ method: "POST" })
   .validator(deviceEventSavedViewCountsSchema)
   .handler(async ({ data }) => {
+    const { sql, isCardDbConfigured, getCardDbSchema, getCardDbPool } =
+      await getCaptureRecordDbRuntime();
     if (!isCardDbConfigured()) {
       return {
         ok: false as const,
@@ -1367,6 +1244,7 @@ export const getDeviceEventSavedViewCounts = createServerFn({ method: "POST" })
                   schema,
                   deviceCode: data.deviceCode,
                   filter: view.state,
+                  sql,
                 })
               : 0,
           ]),
@@ -1395,6 +1273,8 @@ export const getDeviceEventSavedViewCounts = createServerFn({ method: "POST" })
 export const getDeviceEventPresetCounts = createServerFn({ method: "GET" })
   .validator(deviceEventPresetCountsSchema)
   .handler(async ({ data }) => {
+    const { sql, isCardDbConfigured, getCardDbSchema, getCardDbPool } =
+      await getCaptureRecordDbRuntime();
     if (!isCardDbConfigured()) {
       return {
         ok: false as const,
@@ -1464,6 +1344,7 @@ export const getDeviceEventPresetCounts = createServerFn({ method: "GET" })
               schema,
               deviceCode: data.deviceCode,
               filter,
+              sql,
             }),
           ]),
         ),
@@ -1491,6 +1372,8 @@ export const getDeviceEventPresetCounts = createServerFn({ method: "GET" })
 export const getDeviceEventAggregates = createServerFn({ method: "GET" })
   .validator(deviceEventAggregateSchema)
   .handler(async ({ data }) => {
+    const { sql, isCardDbConfigured, getCardDbSchema, getCardDbPool } =
+      await getCaptureRecordDbRuntime();
     if (!isCardDbConfigured()) {
       return {
         ok: false as const,
@@ -1510,6 +1393,7 @@ export const getDeviceEventAggregates = createServerFn({ method: "GET" })
         request,
         whereClauses,
         data,
+        sql,
       });
 
       if (data.customRangeStart) {
@@ -1624,6 +1508,8 @@ export const getDeviceEventAggregates = createServerFn({ method: "GET" })
 export const logDeviceEvent = createServerFn({ method: "POST" })
   .validator(logDeviceEventSchema)
   .handler(async ({ data }) => {
+    const { sql, isCardDbConfigured, getCardDbSchema, getCardDbPool } =
+      await getCaptureRecordDbRuntime();
     if (!isCardDbConfigured()) {
       return {
         ok: false as const,
@@ -1635,7 +1521,7 @@ export const logDeviceEvent = createServerFn({ method: "POST" })
     try {
       const schema = `[${getCardDbSchema()}]`;
       const pool = await getCardDbPool();
-      const deviceId = await resolveDeviceId(pool.request(), schema, data.deviceCode);
+      const deviceId = await resolveDeviceId(pool.request(), schema, data.deviceCode, sql);
 
       if (!deviceId) {
         return {
@@ -1687,6 +1573,8 @@ export const logDeviceEvent = createServerFn({ method: "POST" })
 export const renameCaptureRecord = createServerFn({ method: "POST" })
   .validator(renameCaptureRecordSchema)
   .handler(async ({ data }) => {
+    const { sql, isCardDbConfigured, getCardDbSchema, getCardDbPool } =
+      await getCaptureRecordDbRuntime();
     if (!isCardDbConfigured()) {
       return {
         ok: false as const,
@@ -1707,11 +1595,16 @@ export const renameCaptureRecord = createServerFn({ method: "POST" })
     try {
       const schema = `[${getCardDbSchema()}]`;
       const pool = await getCardDbPool();
-      const recordId = await resolveCaptureRecordId(pool, schema, {
-        recordId: data.recordId ?? null,
-        fileName: data.currentFileName,
-        capturedAt: data.capturedAt,
-      });
+      const recordId = await resolveCaptureRecordId(
+        pool,
+        schema,
+        {
+          recordId: data.recordId ?? null,
+          fileName: data.currentFileName,
+          capturedAt: data.capturedAt,
+        },
+        sql,
+      );
 
       if (!recordId) {
         return {
@@ -1795,6 +1688,7 @@ export const renameCaptureRecord = createServerFn({ method: "POST" })
 export const deleteCaptureRecord = createServerFn({ method: "POST" })
   .validator(deleteCaptureRecordSchema)
   .handler(async ({ data }) => {
+    const { getCardDbSchema, getCardDbPool } = await getCaptureRecordDbRuntime();
     const gate = await requireCaptureManagementActor();
     if (!gate.ok) {
       return {
@@ -1807,11 +1701,15 @@ export const deleteCaptureRecord = createServerFn({ method: "POST" })
     try {
       const schema = `[${getCardDbSchema()}]`;
       const pool = await getCardDbPool();
-      const recordId = await resolveCaptureRecordId(pool, schema, {
-        recordId: data.recordId ?? null,
-        fileName: data.fileName,
-        capturedAt: data.capturedAt,
-      });
+      const recordId = await resolveCaptureRecordId(
+        pool,
+        schema,
+        {
+          recordId: data.recordId ?? null,
+          fileName: data.fileName,
+          capturedAt: data.capturedAt,
+        },
+      );
 
       if (!recordId) {
         return {

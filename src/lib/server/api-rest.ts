@@ -32,7 +32,6 @@ import {
   deleteCaptureRecordById,
   guardCaptureManagementUser,
   mapCaptureRecordRow,
-  upsertCaptureRecordResult,
   type CaptureRecordView,
 } from "../capture-records";
 import { CAPTURE_SESSION_HOURS, formatSessionLabel } from "../capture-session";
@@ -41,6 +40,7 @@ import { BIN_SLOTS, PLANTS, toBinLabel, toBinTitle, toLocationToken } from "../l
 import { joinNetworkPath, normalizeRelativeSegments } from "../network-path";
 import { buildSessionCoverage, toLocalDateKey, type CoverageRecord } from "../session-coverage";
 import { parseSessionLabel, sessionDateFromCapturedAt } from "../session-coverage";
+import { upsertCaptureRecordResult } from "./capture-record-write";
 import {
   API_KEY_HEADER,
   authenticateApiRequest,
