@@ -1,24 +1,19 @@
 import { useState } from "react";
 
 import { BottomNav, type MobileTab } from "./components/BottomNav";
+import { MOCK_CAPTURES, type CaptureRecord } from "./mockData";
+import { CaptureScreen } from "./screens/CaptureScreen";
+import { CaptureDetailScreen } from "./screens/CaptureDetailScreen";
 import { LoginScreen } from "./screens/LoginScreen";
+import { MyDeviceScreen } from "./screens/MyDeviceScreen";
+import { RecentCapturesScreen } from "./screens/RecentCapturesScreen";
+import { SettingsScreen } from "./screens/SettingsScreen";
 import { TodaySessionsScreen } from "./screens/TodaySessionsScreen";
-
-function PlaceholderScreen({ title, body }: { title: string; body: string }) {
-  return (
-    <main className="app-page-shell">
-      <section className="page-card placeholder-card">
-        <p className="section-kicker">Operator Module</p>
-        <h1 className="page-title">{title}</h1>
-        <p className="section-copy">{body}</p>
-      </section>
-    </main>
-  );
-}
 
 export default function App() {
   const [signedIn, setSignedIn] = useState(false);
   const [activeTab, setActiveTab] = useState<MobileTab>("sessions");
+  const [selectedCapture, setSelectedCapture] = useState<CaptureRecord | null>(null);
 
   if (!signedIn) {
     return (
@@ -33,33 +28,34 @@ export default function App() {
 
   return (
     <div className="mobile-app-shell">
-      {activeTab === "sessions" ? <TodaySessionsScreen /> : null}
-      {activeTab === "capture" ? (
-        <PlaceholderScreen
-          title="Capture"
-          body="Capture flow screen will live here. This tab is reserved for camera session, autofocus, capture trigger, and job progress."
+      {selectedCapture ? <CaptureDetailScreen capture={selectedCapture} onBack={() => setSelectedCapture(null)} /> : null}
+      {activeTab === "sessions" && !selectedCapture ? <TodaySessionsScreen /> : null}
+      {activeTab === "capture" && !selectedCapture ? (
+        <CaptureScreen
+          latestCapture={MOCK_CAPTURES[0]}
+          onOpenLatest={(capture) => {
+            setActiveTab("history");
+            setSelectedCapture(capture);
+          }}
         />
       ) : null}
-      {activeTab === "history" ? (
-        <PlaceholderScreen
-          title="Recent Captures"
-          body="Recent capture history will be added here for operators to verify the latest photos and review capture outcomes."
-        />
+      {activeTab === "history" && !selectedCapture ? (
+        <RecentCapturesScreen captures={MOCK_CAPTURES} onOpenDetail={setSelectedCapture} />
       ) : null}
-      {activeTab === "device" ? (
-        <PlaceholderScreen
-          title="My Device"
-          body="Assigned device status will be shown here, including reachability, health state, and latest capture activity."
-        />
+      {activeTab === "device" && !selectedCapture ? (
+        <MyDeviceScreen />
       ) : null}
-      {activeTab === "settings" ? (
-        <PlaceholderScreen
-          title="Settings"
-          body="Operator settings will be kept minimal here: account context, plant assignment, preferences, and logout."
-        />
+      {activeTab === "settings" && !selectedCapture ? (
+        <SettingsScreen />
       ) : null}
 
-      <BottomNav activeTab={activeTab} onChange={setActiveTab} />
+      <BottomNav
+        activeTab={activeTab}
+        onChange={(tab) => {
+          setSelectedCapture(null);
+          setActiveTab(tab);
+        }}
+      />
     </div>
   );
 }

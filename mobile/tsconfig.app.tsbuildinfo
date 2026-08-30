@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/mockdata.ts","./src/components/bottomnav.tsx","./src/screens/capturedetailscreen.tsx","./src/screens/capturescreen.tsx","./src/screens/loginscreen.tsx","./src/screens/mydevicescreen.tsx","./src/screens/recentcapturesscreen.tsx","./src/screens/settingsscreen.tsx","./src/screens/todaysessionsscreen.tsx"],"version":"5.9.3"}

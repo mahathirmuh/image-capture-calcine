@@ -30,7 +30,11 @@ export function BottomNav({ activeTab, onChange }: BottomNavProps) {
             <span
               className="material-symbols-outlined"
               aria-hidden="true"
-              style={active && tab.filled ? { fontVariationSettings: '"FILL" 1' } : undefined}
+              style={
+                active && "filled" in tab && tab.filled
+                  ? { fontVariationSettings: '"FILL" 1' }
+                  : undefined
+              }
             >
               {tab.icon}
             </span>

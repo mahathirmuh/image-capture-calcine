@@ -38,34 +38,34 @@ export function LoginScreen({ onSignIn }: LoginScreenProps) {
   return (
     <main className="app-shell">
       <section className="login-screen" aria-label="Operator sign in">
-        <header className="brand-panel">
-          <div className="brand-mark" aria-hidden="true">
-            <span className="material-symbols-outlined">precision_manufacturing</span>
-          </div>
-          <p className="brand-kicker">Calcine Sampling Operator Tool</p>
-          <h1 className="brand-title">Capture Calcine</h1>
-          <p className="brand-subtitle">
-            Sign in to continue your assigned sampling session and capture workflow.
-          </p>
-          <div className="status-row">
-            <div className="status-chip">
-              <span className="status-dot"></span>
-              Zone 04
+        <section className="card login-card">
+          <header className="login-hero">
+            <div className="login-hero__top">
+              <div className="brand-mark" aria-hidden="true">
+                <span className="material-symbols-outlined">precision_manufacturing</span>
+              </div>
+              <div>
+                <p className="brand-kicker">Calcine Sampling Operator Tool</p>
+                <h1 className="brand-title">Capture Calcine</h1>
+                <p className="brand-subtitle login-hero__copy">
+                  Sign in to continue your assigned sampling session and capture workflow.
+                </p>
+              </div>
             </div>
-            <div className="status-chip secure">
-              <span className="status-dot"></span>
-              Network Secure
-            </div>
-          </div>
-        </header>
 
-        <section className="card">
-          <p className="section-kicker">Operator Access</p>
-          <h2 className="section-title">Sign In</h2>
-          <p className="section-copy">
-            Use your operator account credentials to access today&apos;s sessions, capture flow,
-            and recent results.
-          </p>
+            <div className="status-row">
+              <div className="status-chip">
+                <span className="status-dot"></span>
+                Zone 04
+              </div>
+              <div className="status-chip secure">
+                <span className="status-dot"></span>
+                Network Secure
+              </div>
+            </div>
+          </header>
+
+          <div className="login-divider" aria-hidden="true" />
 
           <form className="form-grid" onSubmit={handleSubmit}>
             <div className="field">
@@ -146,7 +146,7 @@ export function LoginScreen({ onSignIn }: LoginScreenProps) {
             </div>
           </form>
 
-          <aside className="support-card" aria-label="Support information">
+          <aside className="support-card support-card--compact" aria-label="Support information">
             <span className="material-symbols-outlined" aria-hidden="true">
               shield
             </span>
@@ -158,17 +158,6 @@ export function LoginScreen({ onSignIn }: LoginScreenProps) {
               </p>
             </div>
           </aside>
-
-          <footer className="footer-meta">
-            <div className="meta-block">
-              <span className="meta-label">System Version</span>
-              <span className="meta-value">SYS_VER 4.2.1-BETA</span>
-            </div>
-            <div className="meta-block">
-              <span className="meta-label">Security State</span>
-              <span className="meta-value">SECURE LINK ACTIVE</span>
-            </div>
-          </footer>
         </section>
       </section>
     </main>
