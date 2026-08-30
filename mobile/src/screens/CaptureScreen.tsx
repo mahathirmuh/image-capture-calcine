@@ -1,10 +1,14 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { AuthSession } from "../lib/auth";
 import { MobileAuthError } from "../lib/auth";
 import {
   ensureCameraSession,
+  finalizeCaptureResult,
+  getPreviewFrame,
   getJob,
+  releaseCameraSession,
+  renewCameraSession,
   triggerAutofocus,
   triggerCapture,
   type CameraJob,
@@ -77,6 +81,25 @@ function errorMessageOf(error: unknown) {
   return "Unable to complete the camera action.";
 }
 
+function wait(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function slotLabel(plant: string, slot: 1 | 2) {
+  return `${plant === "Acid Plant" ? "Train" : "Bin"} ${slot}`;
+}
+
+function slotLabelUpper(plant: string, slot: 1 | 2) {
+  return `${plant === "Acid Plant" ? "TRAIN" : "BIN"} ${slot}`;
+}
+
+function extractAssetId(job: CameraJob | null): string | null {
+  const asset = job?.result?.asset;
+  if (!asset || typeof asset !== "object") return null;
+  const assetId = "assetId" in asset ? asset.assetId : null;
+  return typeof assetId === "string" && assetId.trim() ? assetId.trim() : null;
+}
+
 async function waitForJobCompletion(
   currentSession: AuthSession,
   jobId: string,
@@ -114,13 +137,22 @@ export function CaptureScreen({
   const [latestCapture, setLatestCapture] = useState<CaptureHistoryItem | null>(null);
   const [busyAction, setBusyAction] = useState<"session" | "autofocus" | "capture" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewBusy, setPreviewBusy] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [activeSlot, setActiveSlot] = useState<1 | 2>(selectedSession?.slot === 2 ? 2 : 1);
+  const sessionRef = useRef(session);
+  const leaseRef = useRef<CameraLease | null>(lease);
+  const previewUrlRef = useRef<string | null>(null);
 
   const hasSelectedSession = !!selectedSession;
+  const currentPlant = selectedSession?.plant ?? session.user.plant ?? "Acid Plant";
+  const currentSlotLabel = hasSelectedSession ? slotLabel(currentPlant, activeSlot) : null;
   const contextTitle = hasSelectedSession
-    ? `${selectedSession.location}`
+    ? currentSlotLabel ?? selectedSession.location
     : "Select a session from Today Sessions";
   const contextMeta = hasSelectedSession
-    ? `${selectedSession.plant} • ${selectedSession.displayTime} • Slot ${selectedSession.slot}`
+    ? `${selectedSession.plant} • ${selectedSession.displayTime} • ${currentSlotLabel}`
     : "Choose a scheduled slot first so capture actions run in the right operator context.";
   const headerTitle = hasSelectedSession
     ? `${selectedSession.plant} | ${selectedSession.displayTime}`
@@ -129,10 +161,197 @@ export function CaptureScreen({
   const progress = useMemo(() => jobProgress(job?.status ?? null), [job]);
   const sessionReady = !!lease;
 
-  async function refreshLatestCapture(currentSession: AuthSession) {
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
+
+  useEffect(() => {
+    leaseRef.current = lease;
+  }, [lease]);
+
+  useEffect(() => {
+    setActiveSlot(selectedSession?.slot === 2 ? 2 : 1);
+  }, [selectedSession?.key, selectedSession?.slot]);
+
+  useEffect(() => {
+    previewUrlRef.current = previewUrl;
+  }, [previewUrl]);
+
+  useEffect(() => {
+    return () => {
+      const activeLease = leaseRef.current;
+      const activePreviewUrl = previewUrlRef.current;
+      if (activePreviewUrl) {
+        URL.revokeObjectURL(activePreviewUrl);
+      }
+      if (activeLease) {
+        void releaseCameraSession(sessionRef.current, activeLease).catch(() => undefined);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (lease) return;
+
+    setPreviewBusy(false);
+    setPreviewError(null);
+    setPreviewUrl((previous) => {
+      if (previous) {
+        URL.revokeObjectURL(previous);
+      }
+      return null;
+    });
+  }, [lease]);
+
+  useEffect(() => {
+    if (!lease) return;
+    const activeLease = lease;
+
+    let cancelled = false;
+    let loopRunning = false;
+
+    async function pollPreview() {
+      if (loopRunning) return;
+      loopRunning = true;
+
+      while (!cancelled) {
+        if (document.visibilityState !== "visible") {
+          await wait(800);
+          continue;
+        }
+
+        setPreviewBusy(true);
+        try {
+          const response = await getPreviewFrame(sessionRef.current, activeLease);
+          if (cancelled) break;
+          onSessionUpdate(response.session);
+
+          const blob = await response.response.blob();
+          if (cancelled) break;
+
+          setPreviewError(null);
+          setPreviewUrl((previous) => {
+            if (previous) {
+              URL.revokeObjectURL(previous);
+            }
+            return URL.createObjectURL(blob);
+          });
+        } catch (previewLoadError) {
+          if (cancelled) break;
+
+          const message = errorMessageOf(previewLoadError);
+          setPreviewError(message);
+
+          if (
+            previewLoadError instanceof MobileAuthError &&
+            (previewLoadError.code === "INVALID_SESSION" ||
+              previewLoadError.code === "SESSION_LOST")
+          ) {
+            setLease(null);
+            setError(message);
+            break;
+          }
+        } finally {
+          if (!cancelled) {
+            setPreviewBusy(false);
+          }
+        }
+
+        await wait(1200);
+      }
+
+      loopRunning = false;
+    }
+
+    function handleVisibility() {
+      if (document.visibilityState === "visible") {
+        void pollPreview();
+      }
+    }
+
+    void pollPreview();
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [lease, onSessionUpdate]);
+
+  useEffect(() => {
+    if (!lease) return;
+    const activeLease = lease;
+
+    let cancelled = false;
+    let timeoutId: number | null = null;
+
+    async function renewLoop() {
+      try {
+        const response = await renewCameraSession(sessionRef.current, activeLease, {
+          leaseSeconds: 120,
+        });
+        if (cancelled) return;
+        onSessionUpdate(response.session);
+        setLease(response.data);
+      } catch (renewError) {
+        if (cancelled) return;
+
+        const message = errorMessageOf(renewError);
+        setPreviewError(message);
+        if (
+          renewError instanceof MobileAuthError &&
+          (renewError.code === "INVALID_SESSION" || renewError.code === "SESSION_LOST")
+        ) {
+          setLease(null);
+          setError(message);
+          return;
+        }
+      } finally {
+        if (!cancelled) {
+          timeoutId = window.setTimeout(() => {
+            void renewLoop();
+          }, 60_000);
+        }
+      }
+    }
+
+    timeoutId = window.setTimeout(() => {
+      void renewLoop();
+    }, 60_000);
+
+    return () => {
+      cancelled = true;
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [lease, onSessionUpdate]);
+
+  useEffect(() => {
+    if (!selectedSession) {
+      setLatestCapture(null);
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const latestSession = await refreshLatestCapture(sessionRef.current, activeSlot);
+        if (cancelled) return;
+        onSessionUpdate(latestSession);
+      } catch {
+        if (cancelled) return;
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSlot, onSessionUpdate, selectedSession?.key]);
+
+  async function refreshLatestCapture(currentSession: AuthSession, slot = activeSlot) {
     if (!selectedSession) return currentSession;
 
-    const expectedBin = selectedSession.location.split(" • ")[0]?.trim().toLowerCase();
+    const expectedBin = slotLabelUpper(selectedSession.plant, slot).trim().toLowerCase();
 
     const response = await listCaptures(currentSession, {
       plant: selectedSession.plant,
@@ -160,6 +379,25 @@ export function CaptureScreen({
       onSessionUpdate(response.session);
       setLease(response.data);
       setJob(null);
+      setPreviewError(null);
+    } catch (actionError) {
+      setError(errorMessageOf(actionError));
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function handleStopSession() {
+    if (!lease) return;
+    setBusyAction("session");
+    setError(null);
+
+    try {
+      const response = await releaseCameraSession(session, lease);
+      onSessionUpdate(response.session);
+      setLease(null);
+      setJob(null);
+      setPreviewError(null);
     } catch (actionError) {
       setError(errorMessageOf(actionError));
     } finally {
@@ -195,7 +433,28 @@ export function CaptureScreen({
       onSessionUpdate(latestSession);
 
       if (kind === "capture" && result.job.status === "succeeded") {
-        await refreshLatestCapture(latestSession);
+        const assetId = extractAssetId(result.job);
+        if (!assetId) {
+          throw new Error("Capture succeeded but the edge did not return an asset id for saving.");
+        }
+
+        const finalized = await finalizeCaptureResult(latestSession, {
+          assetId,
+          capturedAt: Date.now(),
+          plant: selectedSession.plant,
+          captureSession: selectedSession.session,
+          slot: activeSlot,
+          deviceId: leaseResponse.data.deviceId ?? undefined,
+        });
+        onSessionUpdate(finalized.session);
+
+        if (finalized.data.forwarded) {
+          setPreviewError(null);
+        } else {
+          setPreviewError(`Saved on app server queue (${finalized.data.pending} pending).`);
+        }
+
+        await refreshLatestCapture(finalized.session, activeSlot);
       }
     } catch (actionError) {
       setError(errorMessageOf(actionError));
@@ -241,6 +500,23 @@ export function CaptureScreen({
           </span>
           <span>{contextMeta}</span>
         </div>
+
+        {hasSelectedSession ? (
+          <div className="capture-slot-selector" role="group" aria-label="Capture target slot">
+            {[1, 2].map((slot) => (
+              <button
+                key={slot}
+                type="button"
+                className={`capture-slot-selector__button ${
+                  activeSlot === slot ? "capture-slot-selector__button--active" : ""
+                }`}
+                onClick={() => setActiveSlot(slot as 1 | 2)}
+              >
+                {slotLabel(selectedSession.plant, slot as 1 | 2)}
+              </button>
+            ))}
+          </div>
+        ) : null}
       </section>
 
       <section className="capture-session-bar">
@@ -252,13 +528,15 @@ export function CaptureScreen({
         <button
           className="capture-session-bar__button"
           type="button"
-          onClick={sessionReady ? onOpenSessions : handleStartSession}
+          onClick={sessionReady ? () => void handleStopSession() : () => void handleStartSession()}
           disabled={busyAction === "session" || !selectedSession}
         >
           {busyAction === "session"
-            ? "Starting..."
+            ? sessionReady
+              ? "Stopping..."
+              : "Starting..."
             : sessionReady
-              ? "Change Session"
+              ? "Stop Session"
               : "Start Session"}
         </button>
       </section>
@@ -266,9 +544,23 @@ export function CaptureScreen({
       <section className="capture-preview-grid">
         <div className="camera-feed-card" aria-label="Camera feed preview">
           <div className="camera-feed-card__image">
+            {previewUrl ? (
+              <img className="camera-feed-card__frame" src={previewUrl} alt="Live camera preview" />
+            ) : null}
             <div className="camera-feed-card__crosshair">
               <span className="camera-feed-card__crosshair-dot"></span>
             </div>
+          </div>
+          <div className="camera-feed-card__status">
+            {previewBusy
+              ? "Loading live preview..."
+              : previewError
+                ? previewError
+                : previewUrl
+                  ? "Live preview active"
+                  : sessionReady
+                    ? "Waiting for first frame..."
+                    : "Start session to load live preview."}
           </div>
         </div>
 
@@ -296,7 +588,7 @@ export function CaptureScreen({
             <span>
               {latestCapture
                 ? `${latestCapture.plant} • ${latestCapture.capturedTime}`
-                : "Run capture to fetch the newest record for this session."}
+                : "Run capture to save and fetch the newest record for this slot."}
             </span>
           </div>
         </button>

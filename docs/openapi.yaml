@@ -297,6 +297,97 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "503": { $ref: "#/components/responses/DatabaseUnavailable" }
 
+  /captures/finalize:
+    post:
+      tags: [Captures]
+      operationId: finalizeCapture
+      summary: Simpan hasil capture edge ke share dan registry
+      description: |
+        Dipakai sesudah `POST /camera/capture` menghasilkan job `Succeeded`.
+        Endpoint ini mengambil `assetId` dari edge device, menulis JPEG ke
+        `NETWORK_SAVE_ROOT` app server, lalu membuat atau memperbarui record
+        capture di MSSQL untuk kombinasi sesi+slot yang sama.
+
+        Scope plant tetap dipaksa dari device aktif akun. Kalau `plant` di body
+        tidak cocok dengan plant device yang sedang dipakai, permintaan ditolak.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [assetId, capturedAt, plant, captureSession, slot]
+              properties:
+                assetId:
+                  type: string
+                  description: Dari `job.result.asset.assetId`.
+                capturedAt:
+                  type: integer
+                  format: int64
+                  description: Unix epoch milliseconds saat capture diselesaikan di klien.
+                plant:
+                  $ref: "#/components/schemas/PlantName"
+                captureSession:
+                  $ref: "#/components/schemas/SessionLabel"
+                slot:
+                  type: integer
+                  enum: [1, 2]
+                deviceId:
+                  type: integer
+                  description: |
+                    Opsional, tetapi dianjurkan memakai `deviceId` dari
+                    `POST /camera/session` agar finalisasi tetap menempel ke
+                    device yang sama saat lebih dari satu kamera aktif.
+      responses:
+        "201":
+          description: Capture berhasil disimpan ke share app server dan registry.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  [recordId, replaced, fileName, filePath, saveMethod, forwarded, pending, captureBin]
+                properties:
+                  recordId: { type: integer, format: int64 }
+                  replaced:
+                    type: boolean
+                    description: True bila record sesi+slot lama ditimpa.
+                  fileName: { type: string }
+                  filePath: { type: string }
+                  saveMethod:
+                    type: string
+                    enum: [app-network, spooled]
+                  forwarded:
+                    type: boolean
+                    description: |
+                      True bila JPEG sudah sampai ke share jaringan. False bila
+                      masih aman di antrean app server dan menunggu jaringan pulih.
+                  pending:
+                    type: integer
+                  deviceCode: { type: string, nullable: true }
+                  plant: { $ref: "#/components/schemas/PlantName" }
+                  captureSession: { $ref: "#/components/schemas/SessionLabel" }
+                  captureBin: { type: string, example: "TRAIN 1" }
+                  capturedAt: { type: string, format: date-time }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/UserTokenRequired" }
+        "409":
+          description: |
+            Device tidak cocok dengan plant yang diminta, atau registry capture
+            tidak bisa diperbarui bersih.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "502": { $ref: "#/components/responses/EdgeUnavailable" }
+        "503":
+          description: Folder share atau database app server belum siap.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /captures/{id}:
     get:
       tags: [Captures]
@@ -317,6 +408,67 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404":
           description: Tidak ada record dengan id itu.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503": { $ref: "#/components/responses/DatabaseUnavailable" }
+    delete:
+      tags: [Captures]
+      operationId: deleteCapture
+      summary: Hapus satu capture secara permanen
+      description: |
+        Menghapus satu record capture dari registry MSSQL, lalu berusaha
+        membuang JPEG dan thumbnail yang berkaitan.
+
+        Endpoint ini **hanya** menerima token pengguna dan hanya boleh
+        dijalankan oleh **Super Admin**. Kunci API statis tetap baca-saja, dan
+        operator tidak boleh menghapus riwayat sampling.
+
+        Kalau berkas aslinya berada di luar `NETWORK_SAVE_ROOT` yang dikelola
+        app, record-nya tetap dihapus tetapi berkasnya dibiarkan di share lama.
+        Kondisi itu dilaporkan lewat `fileLeftOnShare` pada jawaban sukses.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+      responses:
+        "200":
+          description: Capture berhasil dihapus.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, deleted, fileLeftOnShare]
+                properties:
+                  id: { type: integer, format: int64 }
+                  deleted: { type: boolean, example: true }
+                  fileLeftOnShare:
+                    type: string
+                    nullable: true
+                    description: |
+                      Path berkas yang sengaja dibiarkan karena berada di luar
+                      root share yang dikelola app.
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: |
+            Token pengguna sah, tetapi akun ini bukan Super Admin; atau pemanggil
+            memakai kunci API statis pada endpoint tulis.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: Tidak ada record dengan id itu.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: |
+            Penghapusan dibatalkan karena record tidak bisa dilepas bersih dari
+            share atau registry.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -741,6 +893,151 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
         "502": { $ref: "#/components/responses/EdgeUnavailable" }
 
+  /camera/session/renew:
+    post:
+      tags: [Kamera]
+      operationId: renewCameraSession
+      summary: Perpanjang lease session kamera
+      description: |
+        Mobile preview perlu memanggil ini secara berkala agar lease kamera
+        tidak habis saat operator masih melihat framing. Kalau lease sudah
+        hilang atau token salah, app harus membuka session baru.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sessionId, leaseToken]
+              properties:
+                sessionId:
+                  type: string
+                  description: Dari `POST /camera/session`.
+                leaseToken:
+                  type: string
+                  description: Lease token dari `POST /camera/session`.
+                leaseSeconds:
+                  type: integer
+                  default: 120
+                deviceId:
+                  type: integer
+                  description: |
+                    Opsional, dengan aturan scope yang sama seperti
+                    `POST /camera/session`.
+      responses:
+        "200":
+          description: Lease berhasil diperpanjang.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, example: true }
+                  deviceId: { type: integer, nullable: true }
+                  deviceCode: { type: string, nullable: true }
+                  plant: { type: string, nullable: true }
+                  session:
+                    type: object
+                    properties:
+                      sessionId: { type: string }
+                      leaseToken: { type: string }
+                      expiresAt: { type: string, format: date-time }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/UserTokenRequired" }
+        "409":
+          description: Session sudah hilang atau tidak lagi valid.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "502": { $ref: "#/components/responses/EdgeUnavailable" }
+
+  /camera/session/{sessionId}:
+    delete:
+      tags: [Kamera]
+      operationId: releaseCameraSession
+      summary: Lepas lease session kamera
+      description: |
+        Dipakai saat operator keluar dari layar capture atau mengganti session,
+        supaya kamera cepat tersedia lagi untuk client lain tanpa menunggu
+        lease kedaluwarsa sendiri.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [leaseToken]
+              properties:
+                leaseToken:
+                  type: string
+                  description: Lease token dari `POST /camera/session`.
+                deviceId:
+                  type: integer
+      responses:
+        "200":
+          description: Lease dilepas atau sudah tidak ada lagi.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  released: { type: boolean }
+                  alreadyClosed: { type: boolean }
+                  sessionId: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/UserTokenRequired" }
+        "502": { $ref: "#/components/responses/EdgeUnavailable" }
+
+  /camera/preview:
+    get:
+      tags: [Kamera]
+      operationId: getCameraPreview
+      summary: Ambil satu frame preview live dari kamera
+      description: |
+        Mengembalikan satu frame JPEG terbaru dari kamera aktif. Klien mobile
+        bisa memoll endpoint ini untuk menampilkan live preview ringan tanpa
+        membuka stream panjang.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: X-Session-Token
+          in: header
+          required: true
+          schema: { type: string }
+          description: Lease token dari `POST /camera/session`.
+        - name: deviceId
+          in: query
+          required: false
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Frame preview JPEG.
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/UserTokenRequired" }
+        "409":
+          description: Session tidak valid atau preview sementara tidak tersedia.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "502": { $ref: "#/components/responses/EdgeUnavailable" }
+
   /camera/capture:
     post:
       tags: [Kamera]
@@ -750,8 +1047,9 @@ paths:
         **Menjatuhkan rana kamera sungguhan di lantai pabrik.**
 
         Menjawab `202` dengan sebuah job; tunggui lewat `GET /jobs/{jobId}`.
-        Berkasnya diturunkan ke edge, lalu ditarik dan disimpan aplikasi ke
-        folder jaringan dengan penamaan sesi yang berlaku.
+        Hasil job sukses membawa `assetId`; klien lalu memanggil
+        `POST /captures/finalize` untuk menyimpan JPEG itu ke share aplikasi
+        dan mencatat metadata capture-nya.
 
         Device yang dipakai harus tetap berada dalam scope plant akun. Peran
         `admin` sendiri tidak membuka akses lintas-plant; yang menentukan
@@ -955,6 +1253,7 @@ components:
     CameraSession:
       type: object
       properties:
+        deviceId: { type: integer, nullable: true }
         deviceCode: { type: string, nullable: true }
         plant: { type: string, nullable: true }
         ownerId:

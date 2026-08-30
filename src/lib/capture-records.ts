@@ -89,6 +89,18 @@ const deleteCaptureRecordSchema = z.object({
   capturedAt: z.number().int().positive(),
 });
 
+export function guardCaptureManagementUser(
+  user: { isActive: boolean; role: string } | null | undefined,
+): string | null {
+  if (!user || !user.isActive) {
+    return "Akun Anda sudah tidak aktif.";
+  }
+  if (user.role !== "admin") {
+    return "Hanya Super Admin yang boleh mengubah atau menghapus capture.";
+  }
+  return null;
+}
+
 const captureDashboardSummarySchema = z.object({
   dayStart: z.number().int().positive(),
   dayEnd: z.number().int().positive(),
@@ -616,6 +628,187 @@ async function resolveCaptureRecordId(
   return result.recordset[0] ? Number(result.recordset[0].id) : null;
 }
 
+async function requireCaptureManagementActor(): Promise<
+  | { ok: true; actor: { id: number; username: string } }
+  | { ok: false; code: "UNAUTHENTICATED" | "FORBIDDEN"; message: string }
+> {
+  const { getAppSession, isSessionConfigured } = await import("./server/session");
+  if (!isSessionConfigured()) {
+    return {
+      ok: false,
+      code: "UNAUTHENTICATED",
+      message: "Sesi login belum aktif.",
+    };
+  }
+
+  let sessionUserId: number | undefined;
+  try {
+    sessionUserId = (await getAppSession()).data.user?.id;
+  } catch {
+    sessionUserId = undefined;
+  }
+  if (sessionUserId === undefined) {
+    return {
+      ok: false,
+      code: "UNAUTHENTICATED",
+      message: "Sesi Anda sudah berakhir. Masuk ulang untuk melanjutkan.",
+    };
+  }
+
+  const { findUserById } = await import("./server/users");
+  const current = await findUserById(sessionUserId);
+  const blocked = guardCaptureManagementUser(current);
+  if (!current || blocked) {
+    return {
+      ok: false,
+      code: current?.isActive ? "FORBIDDEN" : "UNAUTHENTICATED",
+      message: blocked ?? "Akun Anda sudah tidak aktif.",
+    };
+  }
+
+  return {
+    ok: true,
+    actor: { id: current.id, username: current.username },
+  };
+}
+
+export async function deleteCaptureRecordById(input: {
+  recordId: number;
+  actor?: { id: number; username: string } | null;
+}): Promise<
+  | { ok: true; recordId: number; fileLeftOnShare: string | null }
+  | { ok: false; code: string; message: string }
+> {
+  if (!isCardDbConfigured()) {
+    return {
+      ok: false,
+      code: "CARDDB_NOT_CONFIGURED",
+      message: "Konfigurasi CARDDB belum lengkap di server aplikasi.",
+    };
+  }
+
+  try {
+    const schema = `[${getCardDbSchema()}]`;
+    const pool = await getCardDbPool();
+    const recordId = input.recordId;
+
+    // Path-nya dibaca SEBELUM barisnya dihapus -- setelah DELETE tidak ada
+    // lagi yang tahu berkas mana yang dimaksud, dan JPEG-nya akan tinggal di
+    // share selamanya tanpa apa pun yang menyebutnya.
+    const existing = await pool.request().input("recordId", sql.BigInt, recordId).query(`
+      SELECT TOP 1 file_path
+      FROM ${schema}.capture_records
+      WHERE id = @recordId;
+    `);
+    const existingFilePath =
+      typeof existing.recordset[0]?.file_path === "string" ? existing.recordset[0].file_path : "";
+
+    if (existing.recordset.length === 0) {
+      return {
+        ok: false,
+        code: "CAPTURE_RECORD_NOT_FOUND",
+        message: "Record capture yang cocok tidak ditemukan di MSSQL.",
+      };
+    }
+
+    // Berkasnya TIDAK dibuang kalau masih ada record lain yang menunjuk path
+    // yang sama.
+    //
+    // Keadaan itu nyata: sebelum recordCaptureResult jadi upsert, capture
+    // ulang dalam satu sesi menghasilkan beberapa record untuk satu berkas.
+    // Tanpa pemeriksaan ini, menghapus salah satu kartu duplikat akan
+    // membuang JPEG yang masih diklaim kartu lainnya -- dan kartu yang
+    // tersisa berubah jadi penunjuk berkas yang sudah tidak ada.
+    const others = await pool
+      .request()
+      .input("recordId", sql.BigInt, recordId)
+      .input("filePath", sql.NVarChar(500), existingFilePath).query(`
+        SELECT COUNT(*) AS jumlah FROM ${schema}.capture_records
+        WHERE file_path = @filePath AND id <> @recordId;
+      `);
+    const stillReferenced = Number(others.recordset[0]?.jumlah ?? 0) > 0;
+
+    // Berkas lebih dulu, baris registry belakangan. Kalau share-nya sedang
+    // tidak bisa ditulis, penghapusannya BATAL seluruhnya: record yang sudah
+    // hilang duluan akan meninggalkan berkas yatim yang tidak bisa ditemukan
+    // siapa pun lagi. Sebaliknya, gagal yang dilaporkan masih bisa diulang.
+    const { deleteShareFile } = await import("./server/share-file");
+    const removed = stillReferenced
+      ? ({ ok: true, changed: false } as const)
+      : await deleteShareFile(existingFilePath);
+
+    // OUTSIDE_ROOT TIDAK boleh ikut menahan penghapusan record.
+    //
+    // Capture lama -- dari masa NETWORK_SAVE_ROOT masih menunjuk folder lain
+    // (/mnt/mti/ML/MTI/YYYY/MM/DD, sebelum "Calcine Project/.../Foto
+    // Sampling") -- path-nya berada di luar root yang dikelola sekarang, dan
+    // app memang tidak berhak menyentuh berkasnya. Tapi baris registry-nya
+    // jelas milik app ini. Menolak menghapusnya berarti kartu itu tidak akan
+    // pernah bisa dibuang siapa pun, selamanya.
+    //
+    // Kegagalan lain (izin ditolak, mount lepas) TETAP menahan: di sana
+    // berkasnya ada dan sebenarnya bisa dihapus, jadi meninggalkannya yatim
+    // adalah pilihan yang buruk, bukan keharusan.
+    let fileLeftOnShare: string | null = null;
+    if (!removed.ok) {
+      if (removed.code !== "OUTSIDE_ROOT") {
+        return {
+          ok: false,
+          code: removed.code,
+          message: `Record tidak dihapus karena berkasnya gagal dibuang: ${removed.message}`,
+        };
+      }
+      fileLeftOnShare = existingFilePath;
+    }
+
+    await pool.request().input("recordId", sql.BigInt, recordId).query(`
+      DELETE FROM ${schema}.capture_records
+      WHERE id = @recordId;
+    `);
+
+    // Thumbnail-nya ikut dibuang. Tanpa ini, berkas kecil itu menumpuk di
+    // volume app server untuk record yang sudah tidak ada -- tidak ada lagi
+    // yang menyebutnya, jadi tidak ada lagi yang akan membersihkannya.
+    //
+    // Kegagalannya sengaja tidak membatalkan penghapusan: record-nya sudah
+    // hilang, dan thumbnail yatim jauh lebih ringan akibatnya daripada
+    // penghapusan yang dilaporkan gagal padahal sudah terjadi.
+    const { deleteThumbnail } = await import("./server/thumb-store");
+    await deleteThumbnail(recordId).catch(() => {});
+
+    // Dicatat SETELAH penghapusan benar-benar terjadi, bukan sebelum: jejak
+    // yang mencatat niat, bukan hasil, akan berbohong setiap kali aksinya
+    // gagal di tengah jalan.
+    const { recordActivity } = await import("./server/activity");
+    await recordActivity({
+      action: "capture.deleted",
+      severity: "warning",
+      actorId: input.actor?.id ?? null,
+      actorUsername: input.actor?.username ?? null,
+      targetId: recordId,
+      targetUsername: existingFilePath ? existingFilePath.split(/[\\/]/).pop() ?? null : null,
+      detail: fileLeftOnShare
+        ? `Record dihapus. Berkas DIBIARKAN di ${fileLeftOnShare} (di luar folder yang dikelola app).`
+        : stillReferenced
+          ? `Record dihapus. Berkasnya DIPERTAHANKAN karena masih dipakai record lain: ${existingFilePath}`
+          : `Record dan berkasnya dihapus permanen dari folder jaringan: ${existingFilePath || "—"}`,
+    });
+
+    return {
+      ok: true,
+      recordId,
+      fileLeftOnShare,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      code: "CAPTURE_RECORD_DELETE_FAILED",
+      message:
+        error instanceof Error ? error.message : "Gagal menyinkronkan hapus capture ke MSSQL.",
+    };
+  }
+}
+
 async function resolveDeviceId(
   request: sql.Request,
   schema: string,
@@ -672,154 +865,141 @@ async function resolveLocationId(
   return result.recordset[0] ? Number(result.recordset[0].id) : null;
 }
 
+export async function upsertCaptureRecordResult(
+  data: RecordCaptureInput,
+  operator: CaptureOperator = null,
+): Promise<
+  | { ok: true; recordId: number; locationId: number | null; replaced: boolean }
+  | { ok: false; code: string; message: string }
+> {
+  if (!isCardDbConfigured()) {
+    return {
+      ok: false,
+      code: "CARDDB_NOT_CONFIGURED",
+      message: "Konfigurasi CARDDB belum lengkap di server aplikasi.",
+    };
+  }
+
+  try {
+    const schema = `[${getCardDbSchema()}]`;
+    const pool = await getCardDbPool();
+    const request = pool.request();
+    const deviceId = await resolveDeviceId(request, schema, data.deviceCode);
+
+    if (!deviceId) {
+      return {
+        ok: false,
+        code: "DEVICE_NOT_FOUND",
+        message: `Device ${data.deviceCode} belum terdaftar di registry MSSQL.`,
+      };
+    }
+
+    const locationId = await resolveLocationId(pool.request(), schema, data, deviceId);
+    const metadataJson = JSON.stringify(buildCaptureRecordMetadata(data, operator));
+
+    const replacesExisting = !isLocalOnlySave(data.saveMethod);
+    let recordId: number | null = null;
+
+    if (replacesExisting) {
+      const existing = await pool.request().input("filePath", sql.NVarChar(500), data.filePath)
+        .query(`
+          SELECT TOP 1 id FROM ${schema}.capture_records
+          WHERE file_path = @filePath
+          ORDER BY id DESC;
+        `);
+      const found = existing.recordset[0]?.id;
+      if (found != null) recordId = Number(found);
+    }
+
+    const write = pool
+      .request()
+      .input("deviceId", sql.BigInt, deviceId)
+      .input("locationId", sql.BigInt, locationId)
+      .input("capturedAt", sql.DateTime2, new Date(data.capturedAt))
+      .input("fileName", sql.NVarChar(255), data.fileName)
+      .input("filePath", sql.NVarChar(500), data.filePath)
+      .input("status", sql.NVarChar(30), toCaptureRecordStatus(data.saveMethod))
+      .input("fileSizeBytes", sql.BigInt, data.fileSizeBytes)
+      .input("checksumSha256", sql.NVarChar(64), data.checksumSha256 ?? null)
+      .input("metadataJson", sql.NVarChar(sql.MAX), metadataJson);
+
+    if (recordId !== null) {
+      await write.input("recordId", sql.BigInt, recordId).query(`
+        UPDATE ${schema}.capture_records
+        SET
+          device_id = @deviceId,
+          location_id = @locationId,
+          captured_at = @capturedAt,
+          file_name = @fileName,
+          status = @status,
+          file_size_bytes = @fileSizeBytes,
+          checksum_sha256 = @checksumSha256,
+          metadata_json = @metadataJson
+        WHERE id = @recordId;
+      `);
+
+      await logCaptureCreated(data, operator, recordId, true);
+      return { ok: true, recordId, locationId, replaced: true };
+    }
+
+    const result = await write.query(`
+        INSERT INTO ${schema}.capture_records (
+          device_id,
+          location_id,
+          captured_at,
+          file_name,
+          file_path,
+          status,
+          file_size_bytes,
+          checksum_sha256,
+          metadata_json
+        )
+        OUTPUT INSERTED.id
+        VALUES (
+          @deviceId,
+          @locationId,
+          @capturedAt,
+          @fileName,
+          @filePath,
+          @status,
+          @fileSizeBytes,
+          @checksumSha256,
+          @metadataJson
+        );
+      `);
+
+    const insertedId = Number(result.recordset[0].id);
+    await logCaptureCreated(data, operator, insertedId, false);
+    return {
+      ok: true,
+      recordId: insertedId,
+      locationId,
+      replaced: false,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      code: "CAPTURE_RECORD_FAILED",
+      message:
+        error instanceof Error ? error.message : "Gagal menyimpan metadata capture ke registry MSSQL.",
+    };
+  }
+}
+
 export const recordCaptureResult = createServerFn({ method: "POST" })
   .validator(recordCaptureSchema)
   .handler(async ({ data }) => {
-    if (!isCardDbConfigured()) {
-      return {
-        ok: false as const,
-        code: "CARDDB_NOT_CONFIGURED",
-        message: "Konfigurasi CARDDB belum lengkap di server aplikasi.",
-      };
-    }
-
+    let operator: CaptureOperator = null;
     try {
-      const schema = `[${getCardDbSchema()}]`;
-      const pool = await getCardDbPool();
-      const request = pool.request();
-      const deviceId = await resolveDeviceId(request, schema, data.deviceCode);
-
-      if (!deviceId) {
-        return {
-          ok: false as const,
-          code: "DEVICE_NOT_FOUND",
-          message: `Device ${data.deviceCode} belum terdaftar di registry MSSQL.`,
-        };
-      }
-
-      const locationId = await resolveLocationId(pool.request(), schema, data, deviceId);
-      // Identitas diambil dari sesi di sisi server, bukan dari payload klien.
-      // Gagal membacanya tidak membatalkan pencatatan capture -- foto yang
-      // sudah tersimpan tetap harus punya record, sekadar tanpa atribusi.
-      let operator: CaptureOperator = null;
-      try {
-        const { getAppSession } = await import("./server/session");
-        const session = await getAppSession();
-        const user = session.data.user;
-        if (user) operator = { id: user.id, name: user.fullName || user.username };
-      } catch {
-        operator = null;
-      }
-
-      const metadataJson = JSON.stringify(buildCaptureRecordMetadata(data, operator));
-
-      // SATU BERKAS DI SHARE = SATU RECORD.
-      //
-      // Capture ulang dalam sesi yang sama MENIMPA berkasnya -- itu perilaku
-      // yang memang diminta. Tapi sampai sebelum ini registry tetap menambah
-      // baris baru setiap kali, jadi tiga kali capture sesi 14.00 menghasilkan
-      // tiga kartu galeri yang semuanya menunjuk berkas yang sama. Dua di
-      // antaranya hantu: thumbnail-nya memperlihatkan gambar lama yang byte-nya
-      // sudah tertimpa, dan membukanya justru menampilkan foto yang terakhir.
-      // Jumlah record pun berhenti cocok dengan jumlah berkas di folder.
-      //
-      // Path adalah identitas berkasnya, jadi path itu pula yang dipakai
-      // mencocokkan. Jalur cadangan browser dikecualikan: `browser-download/...`
-      // bukan lokasi di server mana pun melainkan folder Unduhan masing-masing
-      // PC, sehingga dua operator berbeda yang kebetulan menghasilkan nama sama
-      // memang dua kejadian yang berbeda.
-      const replacesExisting = !isLocalOnlySave(data.saveMethod);
-      let recordId: number | null = null;
-
-      if (replacesExisting) {
-        const existing = await pool.request().input("filePath", sql.NVarChar(500), data.filePath)
-          .query(`
-            SELECT TOP 1 id FROM ${schema}.capture_records
-            WHERE file_path = @filePath
-            ORDER BY id DESC;
-          `);
-        const found = existing.recordset[0]?.id;
-        if (found != null) recordId = Number(found);
-      }
-
-      const write = pool
-        .request()
-        .input("deviceId", sql.BigInt, deviceId)
-        .input("locationId", sql.BigInt, locationId)
-        .input("capturedAt", sql.DateTime2, new Date(data.capturedAt))
-        .input("fileName", sql.NVarChar(255), data.fileName)
-        .input("filePath", sql.NVarChar(500), data.filePath)
-        .input("status", sql.NVarChar(30), toCaptureRecordStatus(data.saveMethod))
-        .input("fileSizeBytes", sql.BigInt, data.fileSizeBytes)
-        .input("checksumSha256", sql.NVarChar(64), data.checksumSha256 ?? null)
-        .input("metadataJson", sql.NVarChar(sql.MAX), metadataJson);
-
-      if (recordId !== null) {
-        // Diperbarui seluruhnya, termasuk capturedAt dan operatornya: yang ada
-        // di share sekarang adalah hasil capture TERAKHIR, jadi record-nya
-        // harus menggambarkan capture itu, bukan yang pertama.
-        await write.input("recordId", sql.BigInt, recordId).query(`
-          UPDATE ${schema}.capture_records
-          SET
-            device_id = @deviceId,
-            location_id = @locationId,
-            captured_at = @capturedAt,
-            file_name = @fileName,
-            status = @status,
-            file_size_bytes = @fileSizeBytes,
-            checksum_sha256 = @checksumSha256,
-            metadata_json = @metadataJson
-          WHERE id = @recordId;
-        `);
-
-        await logCaptureCreated(data, operator, recordId, true);
-        return { ok: true as const, recordId, locationId, replaced: true };
-      }
-
-      const result = await write.query(`
-          INSERT INTO ${schema}.capture_records (
-            device_id,
-            location_id,
-            captured_at,
-            file_name,
-            file_path,
-            status,
-            file_size_bytes,
-            checksum_sha256,
-            metadata_json
-          )
-          OUTPUT INSERTED.id
-          VALUES (
-            @deviceId,
-            @locationId,
-            @capturedAt,
-            @fileName,
-            @filePath,
-            @status,
-            @fileSizeBytes,
-            @checksumSha256,
-            @metadataJson
-          );
-        `);
-
-      const insertedId = Number(result.recordset[0].id);
-      await logCaptureCreated(data, operator, insertedId, false);
-      return {
-        ok: true as const,
-        recordId: insertedId,
-        locationId,
-        replaced: false,
-      };
-    } catch (error) {
-      return {
-        ok: false as const,
-        code: "CAPTURE_RECORD_FAILED",
-        message:
-          error instanceof Error
-            ? error.message
-            : "Gagal menyimpan metadata capture ke registry MSSQL.",
-      };
+      const { getAppSession } = await import("./server/session");
+      const session = await getAppSession();
+      const user = session.data.user;
+      if (user) operator = { id: user.id, name: user.fullName || user.username };
+    } catch {
+      operator = null;
     }
+
+    return upsertCaptureRecordResult(data, operator);
   });
 
 export const listCaptureRecords = createServerFn({ method: "GET" })
@@ -1515,6 +1695,15 @@ export const renameCaptureRecord = createServerFn({ method: "POST" })
       };
     }
 
+    const gate = await requireCaptureManagementActor();
+    if (!gate.ok) {
+      return {
+        ok: false as const,
+        code: gate.code,
+        message: gate.message,
+      };
+    }
+
     try {
       const schema = `[${getCardDbSchema()}]`;
       const pool = await getCardDbPool();
@@ -1578,12 +1767,11 @@ export const renameCaptureRecord = createServerFn({ method: "POST" })
           WHERE id = @recordId;
         `);
 
-      const { currentActor, recordActivity } = await import("./server/activity");
-      const actor = await currentActor();
+      const { recordActivity } = await import("./server/activity");
       await recordActivity({
         action: "capture.renamed",
-        actorId: actor?.id ?? null,
-        actorUsername: actor?.username ?? null,
+        actorId: gate.actor.id,
+        actorUsername: gate.actor.username,
         targetId: recordId,
         targetUsername: data.nextFileName,
         detail: `"${data.currentFileName}" -> "${data.nextFileName}" di ${nextFilePath}`,
@@ -1607,11 +1795,12 @@ export const renameCaptureRecord = createServerFn({ method: "POST" })
 export const deleteCaptureRecord = createServerFn({ method: "POST" })
   .validator(deleteCaptureRecordSchema)
   .handler(async ({ data }) => {
-    if (!isCardDbConfigured()) {
+    const gate = await requireCaptureManagementActor();
+    if (!gate.ok) {
       return {
         ok: false as const,
-        code: "CARDDB_NOT_CONFIGURED",
-        message: "Konfigurasi CARDDB belum lengkap di server aplikasi.",
+        code: gate.code,
+        message: gate.message,
       };
     }
 
@@ -1632,109 +1821,10 @@ export const deleteCaptureRecord = createServerFn({ method: "POST" })
         };
       }
 
-      // Path-nya dibaca SEBELUM barisnya dihapus -- setelah DELETE tidak ada
-      // lagi yang tahu berkas mana yang dimaksud, dan JPEG-nya akan tinggal di
-      // share selamanya tanpa apa pun yang menyebutnya.
-      const existing = await pool.request().input("recordId", sql.BigInt, recordId).query(`
-        SELECT TOP 1 file_path
-        FROM ${schema}.capture_records
-        WHERE id = @recordId;
-      `);
-      const existingFilePath =
-        typeof existing.recordset[0]?.file_path === "string" ? existing.recordset[0].file_path : "";
-
-      // Berkasnya TIDAK dibuang kalau masih ada record lain yang menunjuk path
-      // yang sama.
-      //
-      // Keadaan itu nyata: sebelum recordCaptureResult jadi upsert, capture
-      // ulang dalam satu sesi menghasilkan beberapa record untuk satu berkas.
-      // Tanpa pemeriksaan ini, menghapus salah satu kartu duplikat akan
-      // membuang JPEG yang masih diklaim kartu lainnya -- dan kartu yang
-      // tersisa berubah jadi penunjuk berkas yang sudah tidak ada.
-      const others = await pool
-        .request()
-        .input("recordId", sql.BigInt, recordId)
-        .input("filePath", sql.NVarChar(500), existingFilePath).query(`
-          SELECT COUNT(*) AS jumlah FROM ${schema}.capture_records
-          WHERE file_path = @filePath AND id <> @recordId;
-        `);
-      const stillReferenced = Number(others.recordset[0]?.jumlah ?? 0) > 0;
-
-      // Berkas lebih dulu, baris registry belakangan. Kalau share-nya sedang
-      // tidak bisa ditulis, penghapusannya BATAL seluruhnya: record yang sudah
-      // hilang duluan akan meninggalkan berkas yatim yang tidak bisa ditemukan
-      // siapa pun lagi. Sebaliknya, gagal yang dilaporkan masih bisa diulang.
-      const { deleteShareFile } = await import("./server/share-file");
-      const removed = stillReferenced
-        ? ({ ok: true, changed: false } as const)
-        : await deleteShareFile(existingFilePath);
-
-      // OUTSIDE_ROOT TIDAK boleh ikut menahan penghapusan record.
-      //
-      // Capture lama -- dari masa NETWORK_SAVE_ROOT masih menunjuk folder lain
-      // (/mnt/mti/ML/MTI/YYYY/MM/DD, sebelum "Calcine Project/.../Foto
-      // Sampling") -- path-nya berada di luar root yang dikelola sekarang, dan
-      // app memang tidak berhak menyentuh berkasnya. Tapi baris registry-nya
-      // jelas milik app ini. Menolak menghapusnya berarti kartu itu tidak akan
-      // pernah bisa dibuang siapa pun, selamanya.
-      //
-      // Kegagalan lain (izin ditolak, mount lepas) TETAP menahan: di sana
-      // berkasnya ada dan sebenarnya bisa dihapus, jadi meninggalkannya yatim
-      // adalah pilihan yang buruk, bukan keharusan.
-      let fileLeftOnShare: string | null = null;
-      if (!removed.ok) {
-        if (removed.code !== "OUTSIDE_ROOT") {
-          return {
-            ok: false as const,
-            code: removed.code,
-            message: `Record tidak dihapus karena berkasnya gagal dibuang: ${removed.message}`,
-          };
-        }
-        fileLeftOnShare = existingFilePath;
-      }
-
-      await pool.request().input("recordId", sql.BigInt, recordId).query(`
-        DELETE FROM ${schema}.capture_records
-        WHERE id = @recordId;
-      `);
-
-      // Thumbnail-nya ikut dibuang. Tanpa ini, berkas kecil itu menumpuk di
-      // volume app server untuk record yang sudah tidak ada -- tidak ada lagi
-      // yang menyebutnya, jadi tidak ada lagi yang akan membersihkannya.
-      //
-      // Kegagalannya sengaja tidak membatalkan penghapusan: record-nya sudah
-      // hilang, dan thumbnail yatim jauh lebih ringan akibatnya daripada
-      // penghapusan yang dilaporkan gagal padahal sudah terjadi.
-      const { deleteThumbnail } = await import("./server/thumb-store");
-      await deleteThumbnail(recordId).catch(() => {});
-
-      // Dicatat SETELAH penghapusan benar-benar terjadi, bukan sebelum: jejak
-      // yang mencatat niat, bukan hasil, akan berbohong setiap kali aksinya
-      // gagal di tengah jalan.
-      const { currentActor, recordActivity } = await import("./server/activity");
-      const actor = await currentActor();
-      await recordActivity({
-        action: "capture.deleted",
-        severity: "warning",
-        actorId: actor?.id ?? null,
-        actorUsername: actor?.username ?? null,
-        targetId: recordId,
-        targetUsername: data.fileName,
-        detail: fileLeftOnShare
-          ? `Record dihapus. Berkas DIBIARKAN di ${fileLeftOnShare} (di luar folder yang dikelola app).`
-          : stillReferenced
-            ? `Record dihapus. Berkasnya DIPERTAHANKAN karena masih dipakai record lain: ${existingFilePath}`
-            : `Record dan berkasnya dihapus permanen dari folder jaringan: ${existingFilePath || "—"}`,
-      });
-
-      return {
-        ok: true as const,
+      return deleteCaptureRecordById({
         recordId,
-        // Diberitahukan ke pemanggil, bukan didiamkan: berkas yang ditinggal
-        // tidak akan pernah disebut record mana pun lagi, jadi kalau tidak
-        // dilaporkan sekarang tidak ada lagi yang bisa menemukannya.
-        fileLeftOnShare,
-      };
+        actor: gate.actor,
+      });
     } catch (error) {
       return {
         ok: false as const,

@@ -32,7 +32,7 @@
 
 - `Login`: wired to live auth API
 - `Today Sessions`: wired to live `GET /sessions`, including operator-plant scoping, summary chips, loading/error/empty states, and tap-to-capture handoff
-- `Capture`: uses live camera session, autofocus, capture, and job polling APIs, and now includes latest-result preview lookup for the selected slot
+- `Capture`: uses live camera session, live preview polling, autofocus, capture, job polling, automatic save/finalize APIs, and latest-result preview lookup for the selected slot
 - `Recent Captures`: wired to live `GET /captures` with plant scoping, latest-20 loading, and loading/error/empty states
 - `Capture Detail`: wired to live `GET /captures/{id}` and attempts preview loading from `GET /captures/{id}/image`
 - `My Device`: wired to live `GET /devices` and `GET /devices/{code}/status` with primary-device resolution and degraded/offline handling
@@ -60,11 +60,13 @@
 
 ## M3 Implementation Notes
 
-- `mobile/src/lib/camera.ts` wraps camera session, autofocus, capture, and job polling contracts
+- `mobile/src/lib/camera.ts` wraps camera session, session renew/release, live preview frame loading, autofocus, capture, job polling, and capture-finalize contracts
 - the mobile client currently asks backend to resolve the operator device implicitly unless backend requires explicit device selection
-- lease tokens are reused until close to expiry, then a new camera session is requested
+- while the capture screen is open, the mobile client now polls `GET /camera/preview` for JPEG frames and refreshes the lease with `POST /camera/session/renew`
+- the capture screen releases the lease through `DELETE /camera/session/{sessionId}` when the operator leaves the screen so the camera becomes available faster for the next client
+- the capture screen now exposes a slot selector (`Train 1/Train 2` on Acid, `Bin 1/Bin 2` on Chloride) and auto-finalizes every successful camera job through `POST /captures/finalize`
 - latest-result preview now queries recent captures for the selected plant/session and matches by `captureBin` to avoid opening the wrong slot
-- runtime verification has covered success and conflict paths in browser, but final uncontested re-check of the latest-result preview is still pending
+- browser verification on 2026-08-30 confirmed `Start Session` on mobile now switches the screen into `Live preview active` and renders real camera frames
 
 ## M4 Implementation Notes
 
@@ -79,12 +81,16 @@
 - `GET /auth/me`
 - `POST /auth/logout`
 - `GET /captures`
+- `POST /captures/finalize`
 - `GET /captures/{id}`
 - `GET /captures/{id}/image`
 - `GET /sessions`
 - `GET /devices`
 - `GET /devices/{code}/status`
 - `POST /camera/session`
+- `POST /camera/session/renew`
+- `DELETE /camera/session/{sessionId}`
+- `GET /camera/preview`
 - `POST /camera/capture`
 - `POST /camera/autofocus`
 - `GET /jobs/{jobId}`

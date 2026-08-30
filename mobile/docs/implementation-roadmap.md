@@ -216,8 +216,14 @@ Connect the operator capture screen to live camera session, autofocus, capture, 
 - [x] Define device/session ownership rules for operator-triggered capture
 - [x] Define when the mobile client opens, reuses, or closes a camera session
 - [x] Implement camera session acquisition via `POST /camera/session`
+- [x] Implement live preview polling via `GET /camera/preview`
+- [x] Implement camera session renewal via `POST /camera/session/renew`
+- [x] Implement camera session release via `DELETE /camera/session/{sessionId}`
+- [x] Replace `Change Session` with explicit `Stop Session`
+- [x] Add in-screen slot selector for `Train 1/Train 2` or `Bin 1/Bin 2`
 - [x] Implement autofocus action via `POST /camera/autofocus`
 - [x] Implement capture action via `POST /camera/capture`
+- [x] Implement capture auto-save/finalize via `POST /captures/finalize`
 - [x] Implement job polling via `GET /jobs/{jobId}`
 - [x] Show live status transitions for queued, running, succeeded, and failed
 - [x] Connect latest result preview to live capture results
@@ -230,16 +236,22 @@ Connect the operator capture screen to live camera session, autofocus, capture, 
 
 ### Challenge / Verification
 
-- Reviewed `POST /camera/session`, `POST /camera/autofocus`, `POST /camera/capture`, and `GET /jobs/{jobId}` contracts in `docs/openapi.yaml`
+- Reviewed `POST /camera/session`, `POST /camera/autofocus`, `POST /camera/capture`, `POST /captures/finalize`, and `GET /jobs/{jobId}` contracts in `docs/openapi.yaml`
 - Implemented camera-session creation and reuse logic with lease-expiry checks in `mobile/src/lib/camera.ts`
-- Implemented live autofocus/capture job triggering and polling in `mobile/src/screens/CaptureScreen.tsx`
+- Implemented mobile live preview frame polling via `GET /camera/preview`, plus lease renewal/release via `POST /camera/session/renew` and `DELETE /camera/session/{sessionId}`
+- Implemented explicit `Stop Session` action and in-screen slot switching on the mobile capture screen
+- Implemented live autofocus/capture job triggering, job polling, and automatic finalize/save in `mobile/src/screens/CaptureScreen.tsx`
 - Implemented latest-result preview lookup tied to the selected plant/session/slot so the capture preview does not open the wrong record
 - Implemented operator-visible failure states for session conflict, edge unavailability, and polling timeout through shared API error handling
 - Ran `npm run build` in `mobile/` successfully on 2026-08-30 after M3 capture workflow wiring changes
+- Ran `npm run build` in root app successfully on 2026-08-30 after exposing mobile preview/session lifecycle endpoints in the REST API
+- Verified statically on 2026-08-30 that successful mobile capture jobs now continue into backend finalize/save instead of stopping at the camera job response
 - Verified in browser runtime that selected-session handoff works, camera session start succeeds, autofocus job reaches `Succeeded`, and capture job reaches `Succeeded`
 - Verified preview-to-detail navigation once during browser runtime, then found a slot-mismatch issue in preview lookup and fixed it by matching `captureBin`
 - Verified browser failure path after the fix: session conflict surfaced as `Kamera sedang dipakai client lain.`
-- Final browser re-check for latest-result preview after the slot-matching fix is still pending because the camera session became contested during retest
+- Verified on 2026-08-30 that the local mobile app at `http://127.0.0.1:5174` logs in, opens a missing session, starts the camera session, and reaches `Live preview active` with repeated `GET /camera/preview` requests against the local app server at `http://127.0.0.1:3000`
+- Evidence screenshot captured during mobile live-preview verification:
+  - `/var/folders/s4/_h6390qs7rscy8lyhg58xd300000gn/T/trae/screenshots/page-2026-08-30T10-01-39-190Z.png`
 
 ## Phase M4 - My Device Live Status
 

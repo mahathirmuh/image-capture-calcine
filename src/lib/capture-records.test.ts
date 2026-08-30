@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildCaptureRecordMetadata,
   CAPTURE_RECORDS_MAX_LIMIT,
+  guardCaptureManagementUser,
   isLocalOnlySave,
   listCaptureRecordsSchema,
   normalizeCaptureBinLabel,
@@ -164,5 +165,23 @@ describe("batas limit listCaptureRecords", () => {
   it("memakai 200 kalau tidak disebut", () => {
     const parsed = listCaptureRecordsSchema.safeParse({});
     expect(parsed.success && parsed.data?.limit).toBe(200);
+  });
+});
+
+describe("guardCaptureManagementUser", () => {
+  it("membolehkan Super Admin aktif", () => {
+    expect(guardCaptureManagementUser({ isActive: true, role: "admin" })).toBeNull();
+  });
+
+  it("menolak operator aktif", () => {
+    expect(guardCaptureManagementUser({ isActive: true, role: "operator" })).toMatch(
+      /Super Admin/i,
+    );
+  });
+
+  it("menolak akun yang sudah nonaktif", () => {
+    expect(guardCaptureManagementUser({ isActive: false, role: "admin" })).toMatch(
+      /tidak aktif/i,
+    );
   });
 });

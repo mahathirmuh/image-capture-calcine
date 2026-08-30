@@ -764,6 +764,32 @@ input {
   font-size: 18px;
 }
 
+.capture-slot-selector {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.capture-slot-selector__button {
+  min-height: 42px;
+  border-radius: 12px;
+  border: 1px solid rgba(124, 233, 244, 0.16);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.capture-slot-selector__button--active {
+  border-color: rgba(124, 233, 244, 0.48);
+  background: rgba(124, 233, 244, 0.14);
+  color: var(--text);
+}
+
 .capture-session-bar {
   display: flex;
   align-items: center;
@@ -846,6 +872,16 @@ input {
   background-size: 20px 20px, 20px 20px, auto, auto;
 }
 
+.camera-feed-card__frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  z-index: 0;
+}
+
 .camera-feed-card__image::after {
   content: "";
   position: absolute;
@@ -860,6 +896,7 @@ input {
   inset: 0;
   display: grid;
   place-items: center;
+  z-index: 1;
 }
 
 .camera-feed-card__crosshair::before {
@@ -875,6 +912,13 @@ input {
   height: 4px;
   border-radius: 999px;
   background: var(--primary);
+}
+
+.camera-feed-card__status {
+  margin-top: 10px;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .result-preview-card {

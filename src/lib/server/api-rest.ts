@@ -28,11 +28,19 @@ import sql from "mssql";
 // mungkin menggambarkan versi yang berbeda dari yang ada di repo.
 import openapiSpec from "../../../docs/openapi.yaml?raw";
 import { getCardDbPool, getCardDbSchema, isCardDbConfigured } from "../carddb";
-import { mapCaptureRecordRow, type CaptureRecordView } from "../capture-records";
+import {
+  deleteCaptureRecordById,
+  guardCaptureManagementUser,
+  mapCaptureRecordRow,
+  upsertCaptureRecordResult,
+  type CaptureRecordView,
+} from "../capture-records";
 import { CAPTURE_SESSION_HOURS, formatSessionLabel } from "../capture-session";
 import { getServerEnv } from "../env";
 import { BIN_SLOTS, PLANTS, toBinLabel, toBinTitle, toLocationToken } from "../locations";
+import { joinNetworkPath, normalizeRelativeSegments } from "../network-path";
 import { buildSessionCoverage, toLocalDateKey, type CoverageRecord } from "../session-coverage";
+import { parseSessionLabel, sessionDateFromCapturedAt } from "../session-coverage";
 import {
   API_KEY_HEADER,
   authenticateApiRequest,
@@ -43,8 +51,8 @@ import { isApiTokenConfigured } from "./api-token";
 import { renderApiDocsPage } from "./api-docs-page";
 
 export const API_PREFIX = "/api/v1";
-const API_CORS_ALLOW_METHODS = "GET, HEAD, POST, OPTIONS";
-const API_CORS_ALLOW_HEADERS = "Authorization, Content-Type, X-API-Key";
+const API_CORS_ALLOW_METHODS = "GET, HEAD, POST, DELETE, OPTIONS";
+const API_CORS_ALLOW_HEADERS = "Authorization, Content-Type, X-API-Key, X-Session-Token";
 const API_CORS_MAX_AGE_SECONDS = "600";
 const DEFAULT_ALLOWED_ORIGIN_PATTERNS = [
   /^https?:\/\/localhost(?::\d+)?$/i,
@@ -488,6 +496,307 @@ async function handleCaptureById(rawId: string): Promise<Response> {
   return json(mapCaptureRecordRow(row as Record<string, unknown>));
 }
 
+async function handleCaptureDelete(principal: ApiPrincipal, rawId: string): Promise<Response> {
+  const id = Number(rawId);
+  if (!Number.isInteger(id) || id < 1) {
+    return apiError(400, "INVALID_PARAM", `id capture tidak sah: ${rawId}`);
+  }
+  if (principal.kind !== "user") {
+    return apiError(
+      403,
+      "USER_TOKEN_REQUIRED",
+      "Endpoint ini mengenali orang, bukan kunci API. Login lewat POST /auth/login.",
+    );
+  }
+
+  const { findUserById } = await import("./users");
+  const user = await findUserById(principal.claims.userId);
+  const blocked = guardCaptureManagementUser(user);
+  if (!user || blocked) {
+    return apiError(
+      user?.isActive ? 403 : 401,
+      user?.isActive ? "CAPTURE_DELETE_FORBIDDEN" : "ACCOUNT_DISABLED",
+      blocked ?? "Akun ini sudah tidak aktif.",
+    );
+  }
+
+  const removed = await deleteCaptureRecordById({
+    recordId: id,
+    actor: { id: user.id, username: user.username },
+  });
+  if (!removed.ok) {
+    if (removed.code === "CAPTURE_RECORD_NOT_FOUND") {
+      return apiError(404, "NOT_FOUND", removed.message);
+    }
+    if (removed.code === "CARDDB_NOT_CONFIGURED") {
+      return apiError(503, removed.code, removed.message);
+    }
+    if (removed.code === "SHARE_DELETE_FAILED") {
+      return apiError(409, removed.code, removed.message);
+    }
+    return apiError(409, removed.code, removed.message);
+  }
+
+  return json({
+    id: removed.recordId,
+    deleted: true,
+    fileLeftOnShare: removed.fileLeftOnShare,
+  });
+}
+
+function normalizeCaptureSlot(value: unknown): 1 | 2 | null {
+  return value === 1 || value === 2 ? value : null;
+}
+
+function formatCaptureStoragePath(capturedAt: number, captureSession: string, plant: string, slot: 1 | 2) {
+  const sessionHour = parseSessionLabel(captureSession);
+  if (sessionHour === null) {
+    return {
+      ok: false as const,
+      code: "INVALID_BODY",
+      message: `captureSession tidak sah: ${captureSession}`,
+    };
+  }
+
+  const dateKey = sessionDateFromCapturedAt(new Date(capturedAt), sessionHour);
+  const [year, month, day] = dateKey.split("-");
+  const fileName = `${captureSession} ${toBinTitle(plant, slot)}.jpg`;
+  const relativePath = `${plant}/${year}/${month}/${day}/${fileName}`;
+  return { ok: true as const, fileName, relativePath };
+}
+
+async function saveEdgeAssetToNetworkForApi(args: {
+  targetBaseUrl: string;
+  assetId: string;
+  relativePath: string;
+  capturedAt: number;
+}): Promise<
+  | {
+      ok: true;
+      savedTo: string;
+      filename: string;
+      forwarded: boolean;
+      pending: number;
+      bytes: Buffer;
+    }
+  | { ok: false; code: string; message: string }
+> {
+  const targetRoot = getServerEnv().NETWORK_SAVE_ROOT;
+  if (!targetRoot) {
+    return {
+      ok: false,
+      code: "NETWORK_SAVE_NOT_CONFIGURED",
+      message: "Belum ada folder network save yang dikonfigurasi untuk aplikasi ini.",
+    };
+  }
+
+  const segments = normalizeRelativeSegments(args.relativePath);
+  if (!segments) {
+    return {
+      ok: false,
+      code: "INVALID_RELATIVE_PATH",
+      message: `Path relatif tidak layak dipakai: ${args.relativePath}`,
+    };
+  }
+
+  const directorySegments = segments.slice(0, -1);
+  const requestedName = segments[segments.length - 1];
+
+  let res: Response;
+  try {
+    res = await fetch(`${args.targetBaseUrl}/v1/media/${encodeURIComponent(args.assetId)}/content`, {
+      headers: edgeHeaders(),
+    });
+  } catch {
+    return { ok: false, code: "UNREACHABLE", message: "Tidak bisa menjangkau service kamera." };
+  }
+  if (!res.ok) {
+    return {
+      ok: false,
+      code: "MEDIA_FETCH_FAILED",
+      message: `Gagal mengambil gambar dari edge device (${res.status}).`,
+    };
+  }
+
+  const bytes = Buffer.from(await res.arrayBuffer());
+  const { enqueueCapture, ensureSpoolWorker, flushSpool, getSpoolStatus, getSpoolStatus: probeSpool } =
+    await import("./capture-spool");
+  ensureSpoolWorker();
+
+  if (!(await probeSpool()).configured) {
+    const { mkdir, writeFile } = await import("node:fs/promises");
+    const directory = joinNetworkPath(targetRoot, directorySegments);
+    const fullPath = joinNetworkPath(targetRoot, segments);
+    try {
+      await mkdir(directory, { recursive: true });
+      await writeFile(fullPath, bytes);
+    } catch (error: unknown) {
+      const code =
+        typeof error === "object" && error !== null && "code" in error
+          ? String((error as { code: unknown }).code)
+          : "WRITE_FAILED";
+      return {
+        ok: false,
+        code,
+        message: errorMessage(error, `Gagal menulis ke ${fullPath}.`),
+      };
+    }
+    return {
+      ok: true,
+      savedTo: fullPath,
+      filename: requestedName,
+      forwarded: true,
+      pending: 0,
+      bytes,
+    };
+  }
+
+  const queued = await enqueueCapture(bytes, {
+    relativePath: args.relativePath,
+    capturedAt: args.capturedAt,
+    fileName: requestedName,
+  });
+  if (!queued.ok) {
+    return queued;
+  }
+
+  const flushed = await flushSpool();
+  const fullPath = joinNetworkPath(targetRoot, segments);
+  if (flushed.forwarded > 0 && flushed.pending === 0) {
+    return {
+      ok: true,
+      savedTo: fullPath,
+      filename: requestedName,
+      forwarded: true,
+      pending: 0,
+      bytes,
+    };
+  }
+
+  const status = await getSpoolStatus();
+  return {
+    ok: true,
+    savedTo: fullPath,
+    filename: requestedName,
+    forwarded: false,
+    pending: status.pending,
+    bytes,
+  };
+}
+
+async function handleCaptureFinalize(principal: ApiPrincipal, request: Request): Promise<Response> {
+  if (principal.kind !== "user") {
+    return apiError(
+      403,
+      "USER_TOKEN_REQUIRED",
+      "Endpoint ini mengenali orang, bukan kunci API. Login lewat POST /auth/login.",
+    );
+  }
+
+  const body = await readJsonBody(request);
+  const assetId = text(body.assetId);
+  const plant = text(body.plant);
+  const captureSession = text(body.captureSession);
+  const slot = normalizeCaptureSlot(body.slot);
+  const capturedAt = typeof body.capturedAt === "number" ? body.capturedAt : Number.NaN;
+  const explicitDeviceId = typeof body.deviceId === "number" ? body.deviceId : null;
+
+  if (!assetId || !plant || !captureSession || slot === null || !Number.isFinite(capturedAt)) {
+    return apiError(
+      400,
+      "INVALID_BODY",
+      "Field `assetId`, `plant`, `captureSession`, `slot`, dan `capturedAt` wajib diisi dengan benar.",
+    );
+  }
+
+  const pathResult = formatCaptureStoragePath(capturedAt, captureSession, plant, slot);
+  if (!pathResult.ok) {
+    return apiError(400, pathResult.code, pathResult.message);
+  }
+
+  const target = await resolveEdgeForUser(principal, explicitDeviceId);
+  if (!target.ok) return edgeFailure(target);
+  if (!target.deviceCode) {
+    return apiError(
+      409,
+      "DEVICE_NOT_FOUND",
+      "Device aktif untuk session capture ini tidak bisa ditentukan dari registry.",
+    );
+  }
+  if (target.plant && target.plant !== plant) {
+    return apiError(
+      409,
+      "PLANT_DEVICE_MISMATCH",
+      `Device aktif berada di ${target.plant}, tidak cocok dengan capture plant ${plant}.`,
+    );
+  }
+
+  const saved = await saveEdgeAssetToNetworkForApi({
+    targetBaseUrl: target.baseUrl,
+    assetId,
+    relativePath: pathResult.relativePath,
+    capturedAt,
+  });
+  if (!saved.ok) {
+    const status =
+      saved.code === "NETWORK_SAVE_NOT_CONFIGURED"
+        ? 503
+        : saved.code === "INVALID_RELATIVE_PATH"
+          ? 400
+          : 502;
+    return apiError(status, saved.code, saved.message);
+  }
+
+  const { createHash } = await import("node:crypto");
+  const checksumSha256 = createHash("sha256").update(saved.bytes).digest("hex");
+
+  const { findUserById } = await import("./users");
+  const actor = await findUserById(principal.claims.userId);
+  const recorded = await upsertCaptureRecordResult(
+    {
+      deviceCode: target.deviceCode,
+      deviceName: target.deviceName,
+      plant,
+      captureBin: toBinLabel(plant, slot),
+      captureSession,
+      station: null,
+      fileName: saved.filename,
+      filePath: saved.savedTo,
+      saveMethod: saved.forwarded ? "app-network" : "spooled",
+      capturedAt,
+      fileSizeBytes: saved.bytes.byteLength,
+      checksumSha256,
+      assetId,
+    },
+    actor ? { id: actor.id, name: actor.fullName || actor.username } : null,
+  );
+  if (!recorded.ok) {
+    return apiError(
+      recorded.code === "CARDDB_NOT_CONFIGURED" ? 503 : 409,
+      recorded.code,
+      recorded.message,
+    );
+  }
+
+  return json(
+    {
+      recordId: recorded.recordId,
+      replaced: recorded.replaced,
+      fileName: saved.filename,
+      filePath: saved.savedTo,
+      saveMethod: saved.forwarded ? "app-network" : "spooled",
+      forwarded: saved.forwarded,
+      pending: saved.pending,
+      deviceCode: target.deviceCode,
+      plant,
+      captureSession,
+      captureBin: toBinLabel(plant, slot),
+      capturedAt: new Date(capturedAt).toISOString(),
+    },
+    201,
+  );
+}
+
 // --- GET /api/v1/sessions -----------------------------------------------------
 
 function toCoverageRecord(view: CaptureRecordView): CoverageRecord {
@@ -779,6 +1088,22 @@ async function readJsonBody(request: Request): Promise<Record<string, unknown>> 
 
 function text(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+async function readEdgeFailure(
+  response: Response,
+  fallbackCode: string,
+  fallbackMessage: string,
+): Promise<{ code: string; message: string }> {
+  const payload = (await response
+    .clone()
+    .json()
+    .catch(() => null)) as { code?: string; message?: string } | null;
+
+  return {
+    code: payload?.code?.trim() || fallbackCode,
+    message: payload?.message?.trim() || fallbackMessage,
+  };
 }
 
 /**
@@ -1178,10 +1503,167 @@ async function handleCameraSession(principal: ApiPrincipal, request: Request): P
   }
 
   return json({
+    deviceId: target.deviceId,
     deviceCode: target.deviceCode,
     plant: target.plant,
     ownerId,
     session: (await res.json()) as unknown,
+  });
+}
+
+async function handleCameraSessionRenew(
+  principal: ApiPrincipal,
+  request: Request,
+): Promise<Response> {
+  const body = await readJsonBody(request);
+  const sessionId = text(body.sessionId);
+  const leaseToken = text(body.leaseToken);
+  const leaseSeconds = typeof body.leaseSeconds === "number" ? body.leaseSeconds : 120;
+  const deviceId = typeof body.deviceId === "number" ? body.deviceId : null;
+
+  if (!sessionId || !leaseToken) {
+    return apiError(
+      400,
+      "INVALID_BODY",
+      "Field `sessionId` dan `leaseToken` wajib diisi untuk memperpanjang session kamera.",
+    );
+  }
+
+  const target = await resolveEdgeForUser(principal, deviceId);
+  if (!target.ok) return edgeFailure(target);
+
+  let res: Response;
+  try {
+    res = await fetch(`${target.baseUrl}/v1/sessions/${encodeURIComponent(sessionId)}/renew`, {
+      method: "POST",
+      headers: edgeHeaders({
+        "content-type": "application/json",
+        "X-Session-Token": leaseToken,
+      }),
+      body: JSON.stringify({ leaseSeconds }),
+    });
+  } catch {
+    return apiError(502, "EDGE_UNREACHABLE", "Tidak bisa menjangkau service kamera.");
+  }
+
+  if (!res.ok) {
+    const failure = await readEdgeFailure(
+      res,
+      "SESSION_LOST",
+      "Session kamera tidak bisa diperpanjang.",
+    );
+    const status =
+      failure.code === "INVALID_SESSION" || failure.code === "SESSION_LOST" ? 409 : 502;
+    return apiError(status, failure.code, failure.message);
+  }
+
+  return json({
+    ok: true,
+    deviceId: target.deviceId,
+    deviceCode: target.deviceCode,
+    plant: target.plant,
+    session: {
+      sessionId,
+      leaseToken,
+      expiresAt: new Date(Date.now() + leaseSeconds * 1000).toISOString(),
+    },
+  });
+}
+
+async function handleCameraSessionRelease(
+  principal: ApiPrincipal,
+  rawSessionId: string,
+  request: Request,
+): Promise<Response> {
+  const sessionId = decodeURIComponent(rawSessionId).trim();
+  if (!sessionId) {
+    return apiError(400, "INVALID_PARAM", "sessionId wajib diisi.");
+  }
+
+  const body = await readJsonBody(request);
+  const leaseToken = text(body.leaseToken);
+  const deviceId = typeof body.deviceId === "number" ? body.deviceId : null;
+  if (!leaseToken) {
+    return apiError(
+      400,
+      "INVALID_BODY",
+      "Field `leaseToken` wajib diisi untuk melepas session kamera.",
+    );
+  }
+
+  const target = await resolveEdgeForUser(principal, deviceId);
+  if (!target.ok) return edgeFailure(target);
+
+  try {
+    const res = await fetch(`${target.baseUrl}/v1/sessions/${encodeURIComponent(sessionId)}`, {
+      method: "DELETE",
+      headers: edgeHeaders({ "X-Session-Token": leaseToken }),
+    });
+
+    if (res.status === 404) {
+      return json({ released: false, alreadyClosed: true, sessionId });
+    }
+    if (!res.ok) {
+      const failure = await readEdgeFailure(
+        res,
+        "EDGE_REQUEST_FAILED",
+        "Session kamera tidak bisa dilepas.",
+      );
+      return apiError(502, failure.code, failure.message);
+    }
+  } catch {
+    return apiError(502, "EDGE_UNREACHABLE", "Tidak bisa menjangkau service kamera.");
+  }
+
+  return json({ released: true, alreadyClosed: false, sessionId });
+}
+
+async function handleCameraPreview(principal: ApiPrincipal, request: Request): Promise<Response> {
+  const leaseToken = request.headers.get("x-session-token")?.trim() ?? "";
+  if (!leaseToken) {
+    return apiError(
+      400,
+      "INVALID_SESSION",
+      "Header `X-Session-Token` wajib diisi. Ambil dulu lewat POST /camera/session.",
+    );
+  }
+
+  const url = new URL(request.url);
+  const rawDeviceId = url.searchParams.get("deviceId");
+  const deviceId = rawDeviceId ? Number(rawDeviceId) : null;
+  if (rawDeviceId && (!Number.isInteger(deviceId) || (deviceId ?? 0) < 1)) {
+    return apiError(400, "INVALID_PARAM", `deviceId tidak sah: ${rawDeviceId}`);
+  }
+
+  const target = await resolveEdgeForUser(principal, deviceId);
+  if (!target.ok) return edgeFailure(target);
+
+  let res: Response;
+  try {
+    res = await fetch(`${target.baseUrl}/v1/camera/preview`, {
+      headers: edgeHeaders({ "X-Session-Token": leaseToken }),
+    });
+  } catch {
+    return apiError(502, "EDGE_UNREACHABLE", "Tidak bisa menjangkau service kamera.");
+  }
+
+  if (!res.ok) {
+    const failure = await readEdgeFailure(
+      res,
+      "PREVIEW_UNAVAILABLE",
+      "Preview kamera belum tersedia.",
+    );
+    const status =
+      failure.code === "INVALID_SESSION" || failure.code === "PREVIEW_UNAVAILABLE" ? 409 : 502;
+    return apiError(status, failure.code, failure.message);
+  }
+
+  const bytes = await res.arrayBuffer();
+  return new Response(bytes, {
+    headers: {
+      "content-type": res.headers.get("content-type") ?? "image/jpeg",
+      "cache-control": "no-store",
+    },
   });
 }
 
@@ -1332,11 +1814,23 @@ const ROUTES: Route[] = [
   },
 
   // --- Baca ---
+  {
+    method: "POST",
+    pattern: /^\/captures\/finalize$/,
+    requiresUser: true,
+    handle: (c) => handleCaptureFinalize(c.principal!, c.request),
+  },
   { method: "GET", pattern: /^\/captures$/, handle: (c) => handleCapturesList(c.url) },
   {
     method: "GET",
     pattern: /^\/captures\/([^/]+)$/,
     handle: (c) => handleCaptureById(c.params[0]),
+  },
+  {
+    method: "DELETE",
+    pattern: /^\/captures\/([^/]+)$/,
+    requiresUser: true,
+    handle: (c) => handleCaptureDelete(c.principal!, c.params[0]),
   },
   {
     method: "GET",
@@ -1368,6 +1862,24 @@ const ROUTES: Route[] = [
     pattern: /^\/camera\/session$/,
     requiresUser: true,
     handle: (c) => handleCameraSession(c.principal!, c.request),
+  },
+  {
+    method: "POST",
+    pattern: /^\/camera\/session\/renew$/,
+    requiresUser: true,
+    handle: (c) => handleCameraSessionRenew(c.principal!, c.request),
+  },
+  {
+    method: "DELETE",
+    pattern: /^\/camera\/session\/([^/]+)$/,
+    requiresUser: true,
+    handle: (c) => handleCameraSessionRelease(c.principal!, c.params[0], c.request),
+  },
+  {
+    method: "GET",
+    pattern: /^\/camera\/preview$/,
+    requiresUser: true,
+    handle: (c) => handleCameraPreview(c.principal!, c.request),
   },
   {
     method: "POST",
