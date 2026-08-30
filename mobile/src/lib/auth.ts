@@ -57,10 +57,11 @@ export class MobileAuthError extends Error {
 }
 
 function configuredApiBaseUrl(): string {
-  const raw = import.meta.env.VITE_API_BASE_URL?.trim();
+  const raw =
+    import.meta.env.VITE_API_BASE_URL?.trim() || __MOBILE_DEFAULT_API_BASE_URL__?.trim();
   if (!raw) {
     throw new MobileAuthError(
-      "VITE_API_BASE_URL belum diisi untuk mobile app. Set dulu alamat app server /api/v1.",
+      "API base URL untuk mobile belum diisi. Set MOBILE_API_BASE_URL atau API_BASE_URL di root .env, atau override dengan VITE_API_BASE_URL di folder mobile.",
       500,
       "MOBILE_API_URL_MISSING",
     );
@@ -70,10 +71,10 @@ function configuredApiBaseUrl(): string {
 }
 
 function loginApiKey(): string {
-  const key = import.meta.env.VITE_API_KEY?.trim();
+  const key = import.meta.env.VITE_API_KEY?.trim() || __MOBILE_DEFAULT_API_KEY__?.trim();
   if (!key) {
     throw new MobileAuthError(
-      "VITE_API_KEY belum diisi untuk login mobile. App ini butuh kunci REST untuk POST /auth/login.",
+      "API key untuk login mobile belum diisi. Set MOBILE_API_KEY di root .env, isi API_KEYS, atau override dengan VITE_API_KEY di folder mobile.",
       500,
       "MOBILE_API_KEY_MISSING",
     );

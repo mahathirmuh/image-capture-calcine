@@ -54,6 +54,22 @@ info:
     Beri satu kunci per konsumen. Kunci bersama tidak bisa dicabut tanpa
     memutus semua yang lain sekaligus.
 
+    ## CORS untuk browser/mobile web
+
+    `/api/v1` menjawab preflight `OPTIONS` dan mengirim header CORS untuk
+    origin yang diizinkan. Secara bawaan, origin pengembangan lokal berikut
+    sudah boleh:
+
+    - `http://localhost:*`
+    - `http://127.0.0.1:*`
+    - `capacitor://localhost`
+    - `ionic://localhost`
+    - `app://localhost`
+
+    Untuk menambah atau mengganti daftar itu di app server, isi environment
+    `API_ALLOWED_ORIGINS` dengan daftar origin dipisah koma, atau `*` untuk
+    mengizinkan semuanya.
+
     ## Waktu dan tanggal
 
     Dua pengertian waktu hidup berdampingan di sini, dan membedakannya penting:

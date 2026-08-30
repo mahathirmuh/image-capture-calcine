@@ -43,6 +43,16 @@ import { isApiTokenConfigured } from "./api-token";
 import { renderApiDocsPage } from "./api-docs-page";
 
 export const API_PREFIX = "/api/v1";
+const API_CORS_ALLOW_METHODS = "GET, HEAD, POST, OPTIONS";
+const API_CORS_ALLOW_HEADERS = "Authorization, Content-Type, X-API-Key";
+const API_CORS_MAX_AGE_SECONDS = "600";
+const DEFAULT_ALLOWED_ORIGIN_PATTERNS = [
+  /^https?:\/\/localhost(?::\d+)?$/i,
+  /^https?:\/\/127\.0\.0\.1(?::\d+)?$/i,
+  /^capacitor:\/\/localhost$/i,
+  /^ionic:\/\/localhost$/i,
+  /^app:\/\/localhost$/i,
+] as const;
 
 /** Batas atas satu halaman. Tanpa batas, satu permintaan bisa menarik seluruh
  * tabel dan membuat registry terasa mati bagi halaman aplikasi. */
@@ -55,6 +65,77 @@ const HEALTH_CHECK_TIMEOUT_MS = 5_000;
 
 export function isApiRequest(pathname: string): boolean {
   return pathname === API_PREFIX || pathname.startsWith(`${API_PREFIX}/`);
+}
+
+function parseAllowedOrigins() {
+  const configured = (getServerEnv().API_ALLOWED_ORIGINS ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return {
+    wildcard: configured.includes("*"),
+    exact: new Set(configured.filter((value) => value !== "*")),
+  };
+}
+
+function isAllowedApiOrigin(origin: string): boolean {
+  const allowed = parseAllowedOrigins();
+  if (allowed.wildcard || allowed.exact.has(origin)) return true;
+  return DEFAULT_ALLOWED_ORIGIN_PATTERNS.some((pattern) => pattern.test(origin));
+}
+
+function setHeaderWithVary(headers: Headers, name: string, value: string, vary?: string) {
+  headers.set(name, value);
+  if (!vary) return;
+  const existing = headers.get("vary");
+  if (!existing) {
+    headers.set("vary", vary);
+    return;
+  }
+  const parts = existing
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (!parts.includes(vary)) {
+    headers.set("vary", `${existing}, ${vary}`);
+  }
+}
+
+export function withApiCors(request: Request, response: Response): Response {
+  const origin = request.headers.get("origin");
+  if (!origin || !isAllowedApiOrigin(origin)) return response;
+
+  const headers = new Headers(response.headers);
+  setHeaderWithVary(headers, "access-control-allow-origin", origin, "Origin");
+  headers.set("access-control-allow-methods", API_CORS_ALLOW_METHODS);
+  headers.set("access-control-allow-headers", API_CORS_ALLOW_HEADERS);
+  headers.set("access-control-max-age", API_CORS_MAX_AGE_SECONDS);
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+function buildPreflightResponse(request: Request): Response {
+  const origin = request.headers.get("origin");
+  if (!origin) {
+    return new Response(null, { status: 204, headers: { allow: API_CORS_ALLOW_METHODS } });
+  }
+  if (!isAllowedApiOrigin(origin)) {
+    return apiError(
+      403,
+      "ORIGIN_NOT_ALLOWED",
+      `Origin ${origin} tidak diizinkan memanggil REST API ini.`,
+    );
+  }
+  return withApiCors(
+    request,
+    new Response(null, {
+      status: 204,
+      headers: { allow: API_CORS_ALLOW_METHODS },
+    }),
+  );
 }
 
 function json(body: unknown, status = 200, extraHeaders: Record<string, string> = {}): Response {
@@ -1285,6 +1366,11 @@ const UNAUTHENTICATED_PATHS = new Set(["/auth/refresh"]);
 export async function handleApiRequest(request: Request): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname.slice(API_PREFIX.length) || "/";
+  const respond = (response: Response) => withApiCors(request, response);
+
+  if (request.method === "OPTIONS") {
+    return buildPreflightResponse(request);
+  }
 
   // HEAD dilayani oleh route GET yang sama. Handler-nya diberi tahu supaya
   // tidak membuka berkas 11 MB hanya untuk membuang isinya.
@@ -1293,21 +1379,25 @@ export async function handleApiRequest(request: Request): Promise<Response> {
   let principal: ApiPrincipal | null = null;
   if (UNAUTHENTICATED_PATHS.has(path)) {
     if (!isApiEnabled()) {
-      return apiError(
+      return respond(
+        apiError(
         503,
         "API_DISABLED",
         "REST API belum diaktifkan di app server ini. Isi API_KEYS di environment untuk menyalakannya.",
+        ),
       );
     }
   } else if (!(PUBLIC_PATHS.has(path) && isApiEnabled())) {
     const auth = await authenticateApiRequest(request);
     if (!auth.ok) {
-      return json(
-        { error: { code: auth.code, message: auth.message } },
-        auth.status,
-        // Menyebut skema yang dipakai, supaya klien yang gagal tahu harus
-        // mengirim apa tanpa perlu membuka dokumentasi.
-        auth.status === 401 ? { "www-authenticate": `ApiKey header="${API_KEY_HEADER}"` } : {},
+      return respond(
+        json(
+          { error: { code: auth.code, message: auth.message } },
+          auth.status,
+          // Menyebut skema yang dipakai, supaya klien yang gagal tahu harus
+          // mengirim apa tanpa perlu membuka dokumentasi.
+          auth.status === 401 ? { "www-authenticate": `ApiKey header="${API_KEY_HEADER}"` } : {},
+        ),
       );
     }
     principal = auth.principal;
@@ -1315,18 +1405,22 @@ export async function handleApiRequest(request: Request): Promise<Response> {
 
   const matched = ROUTES.find((route) => route.pattern.test(path));
   if (!matched) {
-    return apiError(404, "NOT_FOUND", `Endpoint tidak dikenal: ${request.method} ${url.pathname}`);
+    return respond(
+      apiError(404, "NOT_FOUND", `Endpoint tidak dikenal: ${request.method} ${url.pathname}`),
+    );
   }
   if (lookupMethod !== matched.method) {
-    return json(
-      {
-        error: {
-          code: "METHOD_NOT_ALLOWED",
-          message: `${url.pathname} hanya menerima ${matched.method}.`,
+    return respond(
+      json(
+        {
+          error: {
+            code: "METHOD_NOT_ALLOWED",
+            message: `${url.pathname} hanya menerima ${matched.method}.`,
+          },
         },
-      },
-      405,
-      { allow: matched.method === "GET" ? "GET, HEAD" : matched.method },
+        405,
+        { allow: matched.method === "GET" ? "GET, HEAD" : matched.method },
+      ),
     );
   }
 
@@ -1334,28 +1428,32 @@ export async function handleApiRequest(request: Request): Promise<Response> {
   // bertindak atas nama seseorang, sebanyak apa pun endpoint yang ditambahkan
   // nanti -- pemeriksaannya di sini, bukan di dalam handler.
   if (matched.requiresUser && principal?.kind !== "user") {
-    return apiError(
-      403,
-      "USER_TOKEN_REQUIRED",
-      "Endpoint ini menuntut token pengguna. Ambil lewat POST /auth/login, lalu kirim Authorization: Bearer <token>.",
+    return respond(
+      apiError(
+        403,
+        "USER_TOKEN_REQUIRED",
+        "Endpoint ini menuntut token pengguna. Ambil lewat POST /auth/login, lalu kirim Authorization: Bearer <token>.",
+      ),
     );
   }
 
   if (NEEDS_DATABASE.test(path) && !isCardDbConfigured()) {
-    return apiError(
-      503,
-      "CARDDB_NOT_CONFIGURED",
-      "Konfigurasi CARDDB belum lengkap di app server ini.",
+    return respond(
+      apiError(
+        503,
+        "CARDDB_NOT_CONFIGURED",
+        "Konfigurasi CARDDB belum lengkap di app server ini.",
+      ),
     );
   }
 
   try {
     const params = matched.pattern.exec(path)?.slice(1) ?? [];
-    return (await matched.handle({ url, params, request, principal })) as Response;
+    return respond((await matched.handle({ url, params, request, principal })) as Response);
   } catch (error: unknown) {
     // Pesan aslinya dicatat di log server, bukan dikirim ke klien: pesan error
     // MSSQL memuat nama server, database, dan kadang potongan query.
     console.error(`[api] ${request.method} ${url.pathname}`, error);
-    return apiError(500, "INTERNAL_ERROR", "Permintaan gagal diproses di app server.");
+    return respond(apiError(500, "INTERNAL_ERROR", "Permintaan gagal diproses di app server."));
   }
 }

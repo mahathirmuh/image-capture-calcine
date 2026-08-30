@@ -33,6 +33,9 @@ const serverEnvSchema = z.object({
   // Beri satu kunci per konsumen, jangan dipakai bersama -- kunci bersama tidak
   // bisa dicabut tanpa memutus semua yang lain sekaligus.
   API_KEYS: z.preprocess(emptyStringToUndefined, z.string().optional()),
+  // Origin browser yang boleh memanggil /api/v1 lintas-domain. Pisahkan koma.
+  // Kosong = pakai daftar aman bawaan untuk localhost/webview mobile.
+  API_ALLOWED_ORIGINS: z.preprocess(emptyStringToUndefined, z.string().optional()),
   // Thumbnail galeri (~50 KB per capture), dibuat di browser operator lalu
   // dititipkan ke sini. Kosong = fitur mati: galeri jatuh ke memuat foto
   // ukuran penuh dari folder jaringan, seperti sebelum thumbnail ada.

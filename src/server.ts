@@ -87,17 +87,21 @@ export default {
       // menerima <html> pada kegagalan akan melaporkannya sebagai "respons
       // tidak bisa diurai", bukan sebagai server yang sedang bermasalah.
       if (isApiPath(new URL(request.url).pathname)) {
-        return new Response(
-          JSON.stringify({
-            error: { code: "INTERNAL_ERROR", message: "Permintaan gagal diproses di app server." },
-          }),
-          {
-            status: 500,
-            headers: {
-              "content-type": "application/json; charset=utf-8",
-              "cache-control": "no-store",
+        const { withApiCors } = await import("./lib/server/api-rest");
+        return withApiCors(
+          request,
+          new Response(
+            JSON.stringify({
+              error: { code: "INTERNAL_ERROR", message: "Permintaan gagal diproses di app server." },
+            }),
+            {
+              status: 500,
+              headers: {
+                "content-type": "application/json; charset=utf-8",
+                "cache-control": "no-store",
+              },
             },
-          },
+          ),
         );
       }
       return new Response(renderErrorPage(), {
