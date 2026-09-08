@@ -51,3 +51,12 @@ The Capture location controls camera selection as well as naming and storage. Ac
 - Added React effect tests using `react-test-renderer` via npm; no Bun commands were used. The initial 18 plant-access/lifecycle tests passed, including permission denial, reassignment, ambiguous placement, missing URL, delayed lease release, and stale preview handling.
 - Reviewed `docs/openapi.yaml`: the public REST contract is unchanged. The new plant selection is a TanStack server-function input; existing REST caller identity and operator checks are preserved.
 - Mobile remains completed through M5; this maintenance changes web Capture and shared backend helpers, not mobile workflows.
+
+### Final verification
+
+- 41 tests passed across capture-session lifecycle, backend target resolution, selected-device persistence, and profile suites. After the final synchronization-label/cancellation cleanup, all 20 lifecycle/target tests passed again.
+- ESLint passed with no warnings for the changed Capture hook/tests, resolver/tests, camera API, network save, and Capture route. `git diff --check` passed.
+- `npm run build` passed in an isolated workspace copy, including the final source changes. The user's existing `.output` and development process were left intact. TypeScript still reports existing project-wide issues (including camera-settings types and MSSQL declarations); this is not a clean whole-project typecheck.
+- Browser validation on the isolated dev server at `localhost:8082/capture`: selecting Acid Plant automatically chose `edge-camera-01`, showed the Canon EOS R50 as ready, acquired a session, and displayed live previews in both train panels.
+- Switching to Chloride Plant cleared Acid previews, disabled capture during the switch, and selected `edge-camera-02`. Its edge API responded, but the physical USB camera was not detected; Capture remained disabled with the USB error. No still capture was triggered and no capture metadata was written during this verification.
+- Stopped the test session through the UI, closed the test tab, and stopped both temporary development servers. Only ignored verification files remain; the main development server must use the updated source/dependencies.
