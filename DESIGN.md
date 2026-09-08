@@ -35,3 +35,7 @@ Overview and Health share `DeviceTelemetryPanel`. Show CPU/RAM as host metrics, 
 ### Automatic registration identity (2026-09-09)
 
 Device Code is read-only and detected from the entered Camera API endpoint on blur or explicit probe. Do not ask operators to copy it manually. Changing an endpoint invalidates prior verification. Re-registering a deleted code restores its original database identity and history; listed duplicates are rejected.
+
+## Gallery viewing scope (2026-09-09)
+
+Only the authenticated server response establishes gallery visibility. Single-plant users see their plant; Superadmin and explicit ALL users see all. Keep the existing layout while stating the scope under the title. Loading or denied scope must not expose local cache or look like a successful empty gallery. Filters, visible counts, CSV and thumbnails follow the authorized records; retain hidden cache without displaying it. Gallery state is reset on account changes. Device-control restrictions remain separate from gallery viewing permissions.
