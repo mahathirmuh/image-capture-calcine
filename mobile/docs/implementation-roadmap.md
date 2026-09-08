@@ -366,3 +366,14 @@ Finish the operator settings surface and align runtime configuration behavior wi
 - Evidence screenshot captured during settings verification:
   - `/var/folders/s4/_h6390qs7rscy8lyhg58xd300000gn/T/trae/screenshots/mobile-settings-runtime-2026-08-30.png`
   - `/var/folders/s4/_h6390qs7rscy8lyhg58xd300000gn/T/trae/screenshots/mobile-settings-logo-privacy-2026-08-30.png`
+
+## Post-M5 Maintenance — Windows APK Shortcut (2026-09-08)
+
+- Fixed mobile/scripts/build-debug-apk.mjs to select gradlew.bat on Windows and ./gradlew on other platforms.
+- Updated README.md with the shortcut stages and APK output path.
+- Verification: npm run dev:capacitor passed the TypeScript/Vite build and Capacitor Android sync on Windows. The Windows Gradle wrapper launched successfully and started downloading Gradle 8.11.1; full APK assembly is pending completion of the first-run download/build.
+- git diff --check passed. Existing M0–M5 completion checkboxes are unchanged.
+- docs/openapi.yaml reviewed for applicability: no backend, payload, or route change; no API contract update required.
+- Follow-up: the assistant's first-run Gradle download held the distribution lock and a concurrent user build timed out after 120 seconds. Stopped only the identified assistant Gradle wrapper process and verified exclusive access to the lock file succeeded. APK assembly remains unverified; no build remains running from this verification session.
+
+- SDK follow-up: the 55-minute user build failed with SDK location not found (daemon-104648.out.log). Created ignored mobile/android/local.properties pointing to the installed Android SDK under the current user's AppData/Local/Android/Sdk; Android API 35 and build tools are installed. Offline assembleDebug passed SDK discovery and reached checkDebugAarMetadata, then failed because AndroidX/Cordova artifacts are not cached. A normal online build is still required; no build was left running. No backend or OpenAPI change.

@@ -23,4 +23,5 @@ if (!existsSync(androidDir)) {
 }
 
 run("npx cap sync android");
-run("./gradlew assembleDebug", androidDir);
+const gradleWrapper = process.platform === "win32" ? "gradlew.bat" : "./gradlew";
+run(`${gradleWrapper} assembleDebug`, androidDir);

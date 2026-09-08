@@ -60,6 +60,8 @@ Capacitor debug APK:
 npm run dev:capacitor
 ```
 
+This shortcut builds the mobile web assets, syncs Capacitor Android, and runs Gradle assembleDebug. It selects gradlew.bat on Windows and ./gradlew on Linux/macOS. The first run may download the Gradle distribution. The debug APK is written to mobile/android/app/build/outputs/apk/debug/app-debug.apk.
+
 Database migrations:
 
 ```bash
