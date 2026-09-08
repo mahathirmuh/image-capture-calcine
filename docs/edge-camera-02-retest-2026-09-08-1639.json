@@ -1,0 +1,195 @@
+{
+  "testedAt": "2026-09-08T08:39:29.935Z",
+  "base": "http://10.60.20.96:3000",
+  "results": [
+    {
+      "name": "status",
+      "path": "/v1/camera/status",
+      "status": 200,
+      "elapsedMs": 296,
+      "data": {
+        "connectionState": "error",
+        "batteryLevel": null,
+        "lensName": null,
+        "availableShots": null,
+        "storage": [],
+        "settings": []
+      }
+    },
+    {
+      "name": "configs",
+      "path": "/v1/camera/configs",
+      "status": 502,
+      "elapsedMs": 74,
+      "data": {
+        "code": "CAMERA_COMMAND_FAILED",
+        "message": "*** Error ***              \nAn error occurred in the io-library ('Could not find the requested device on the USB port'): The supplied vendor or product id (0x0,0x0) is not valid.\n\n*** Error ***              \nAn error occurred in the io-library ('Could not find the requested device on the USB port'): The supplied vendor or product id (0x0,0x0) is not valid.\n*** Error (-52: 'Could not find the requested device on the USB port') ***",
+        "details": {
+          "args": [
+            "--get-config",
+            "/main/settings/capture"
+          ]
+        }
+      }
+    },
+    {
+      "name": "create-session",
+      "path": "/v1/sessions",
+      "status": 201,
+      "elapsedMs": 42,
+      "data": {
+        "sessionId": "c6e945db-4b56-4634-90a8-8b712b63058c",
+        "leaseToken": "[redacted]",
+        "ownerType": "automation",
+        "ownerId": "authorized-edge-camera-02-retest",
+        "status": "active",
+        "createdAt": "2026-09-08T08:39:20.367Z",
+        "expiresAt": "2026-09-08T08:44:20.367Z"
+      }
+    },
+    {
+      "name": "renew-session",
+      "path": "/v1/sessions/c6e945db-4b56-4634-90a8-8b712b63058c/renew",
+      "status": 200,
+      "elapsedMs": 36,
+      "data": {
+        "sessionId": "c6e945db-4b56-4634-90a8-8b712b63058c",
+        "leaseToken": "[redacted]",
+        "ownerType": "automation",
+        "ownerId": "authorized-edge-camera-02-retest",
+        "status": "active",
+        "createdAt": "2026-09-08T08:39:20.367Z",
+        "expiresAt": "2026-09-08T08:44:20.403Z"
+      }
+    },
+    {
+      "name": "preview",
+      "path": "/v1/camera/preview",
+      "status": 502,
+      "elapsedMs": 266,
+      "data": {
+        "code": "CAMERA_COMMAND_FAILED",
+        "message": "*** Error ***              \nAn error occurred in the io-library ('Could not find the requested device on the USB port'): The supplied vendor or product id (0x0,0x0) is not valid.\n*** Error (-52: 'Could not find the requested device on the USB port') ***",
+        "details": {
+          "args": [
+            "--force-overwrite",
+            "--capture-preview",
+            "--filename",
+            "data/media/preview-e8c6512e-c970-43db-8e03-991dca92163b.jpg"
+          ]
+        }
+      }
+    },
+    {
+      "name": "autofocus",
+      "path": "/v1/camera/focus/autofocus",
+      "status": 202,
+      "elapsedMs": 16,
+      "data": {
+        "jobId": "95ed4008-c67c-4cc4-a214-b624303845a2",
+        "status": "queued",
+        "type": "autofocus"
+      }
+    },
+    {
+      "name": "autofocus-job",
+      "path": "/v1/jobs/95ed4008-c67c-4cc4-a214-b624303845a2",
+      "status": 200,
+      "elapsedMs": 9,
+      "data": {
+        "jobId": "95ed4008-c67c-4cc4-a214-b624303845a2",
+        "type": "autofocus",
+        "status": "running",
+        "createdAt": "2026-09-08T08:39:20.686Z",
+        "startedAt": "2026-09-08T08:39:20.687Z",
+        "finishedAt": null,
+        "result": null,
+        "error": null
+      }
+    },
+    {
+      "name": "autofocus-job",
+      "path": "/v1/jobs/95ed4008-c67c-4cc4-a214-b624303845a2",
+      "status": 200,
+      "elapsedMs": 79,
+      "data": {
+        "jobId": "95ed4008-c67c-4cc4-a214-b624303845a2",
+        "type": "autofocus",
+        "status": "failed",
+        "createdAt": "2026-09-08T08:39:20.686Z",
+        "startedAt": "2026-09-08T08:39:20.687Z",
+        "finishedAt": "2026-09-08T08:39:20.731Z",
+        "result": null,
+        "error": {
+          "code": "CAMERA_COMMAND_FAILED",
+          "message": "*** Error ***              \nAn error occurred in the io-library ('Could not find the requested device on the USB port'): The supplied vendor or product id (0x0,0x0) is not valid.\n\n*** Error ***              \nAn error occurred in the io-library ('Could not find the requested device on the USB port'): The supplied vendor or product id (0x0,0x0) is not valid.\n*** Error (-52: 'Could not find the requested device on the USB port') ***",
+          "details": {
+            "args": [
+              "--set-config",
+              "/main/actions/autofocusdrive=1"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "capture",
+      "path": "/v1/captures",
+      "status": 202,
+      "elapsedMs": 31,
+      "data": {
+        "jobId": "f3fa38a2-cbae-4be7-96ee-fbd734d6c7ba",
+        "status": "queued",
+        "type": "captureStill"
+      }
+    },
+    {
+      "name": "capture-job",
+      "path": "/v1/jobs/f3fa38a2-cbae-4be7-96ee-fbd734d6c7ba",
+      "status": 200,
+      "elapsedMs": 12,
+      "data": {
+        "jobId": "f3fa38a2-cbae-4be7-96ee-fbd734d6c7ba",
+        "type": "captureStill",
+        "status": "running",
+        "createdAt": "2026-09-08T08:39:21.805Z",
+        "startedAt": "2026-09-08T08:39:21.820Z",
+        "finishedAt": null,
+        "result": null,
+        "error": null
+      }
+    },
+    {
+      "name": "capture-job",
+      "path": "/v1/jobs/f3fa38a2-cbae-4be7-96ee-fbd734d6c7ba",
+      "status": 200,
+      "elapsedMs": 73,
+      "data": {
+        "jobId": "f3fa38a2-cbae-4be7-96ee-fbd734d6c7ba",
+        "type": "captureStill",
+        "status": "failed",
+        "createdAt": "2026-09-08T08:39:21.805Z",
+        "startedAt": "2026-09-08T08:39:21.820Z",
+        "finishedAt": "2026-09-08T08:39:21.911Z",
+        "result": null,
+        "error": {
+          "code": "CAMERA_COMMAND_FAILED",
+          "message": "*** Error ***              \nAn error occurred in the io-library ('Could not find the requested device on the USB port'): The supplied vendor or product id (0x0,0x0) is not valid.\n\n*** Error ***              \nAn error occurred in the io-library ('Could not find the requested device on the USB port'): The supplied vendor or product id (0x0,0x0) is not valid.\n*** Error (-52: 'Could not find the requested device on the USB port') ***",
+          "details": {
+            "args": [
+              "--set-config",
+              "/main/settings/capturetarget=Memory card"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "release-session",
+      "path": "/v1/sessions/c6e945db-4b56-4634-90a8-8b712b63058c",
+      "status": 204,
+      "elapsedMs": 28,
+      "data": ""
+    }
+  ]
+}

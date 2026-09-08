@@ -1,0 +1,195 @@
+{
+  "testedAt": "2026-09-08T08:49:47.720Z",
+  "base": "http://10.60.20.96:3000",
+  "results": [
+    {
+      "name": "status",
+      "path": "/v1/camera/status",
+      "status": 200,
+      "elapsedMs": 163,
+      "data": {
+        "connectionState": "disconnected",
+        "batteryLevel": null,
+        "lensName": null,
+        "availableShots": null,
+        "storage": [],
+        "settings": []
+      }
+    },
+    {
+      "name": "configs",
+      "path": "/v1/camera/configs",
+      "status": 502,
+      "elapsedMs": 106,
+      "data": {
+        "code": "CAMERA_COMMAND_FAILED",
+        "message": "*** Error (-52: 'Could not find the requested device on the USB port') ***",
+        "details": {
+          "args": [
+            "--get-config",
+            "/main/settings/capture"
+          ]
+        }
+      }
+    },
+    {
+      "name": "create-session",
+      "path": "/v1/sessions",
+      "status": 201,
+      "elapsedMs": 15,
+      "data": {
+        "sessionId": "62169a3a-2e69-4f51-9868-870468f5d92b",
+        "leaseToken": "[redacted]",
+        "ownerType": "automation",
+        "ownerId": "authorized-edge-camera-02-retest",
+        "status": "active",
+        "createdAt": "2026-09-08T08:49:38.234Z",
+        "expiresAt": "2026-09-08T08:54:38.234Z"
+      }
+    },
+    {
+      "name": "renew-session",
+      "path": "/v1/sessions/62169a3a-2e69-4f51-9868-870468f5d92b/renew",
+      "status": 200,
+      "elapsedMs": 8,
+      "data": {
+        "sessionId": "62169a3a-2e69-4f51-9868-870468f5d92b",
+        "leaseToken": "[redacted]",
+        "ownerType": "automation",
+        "ownerId": "authorized-edge-camera-02-retest",
+        "status": "active",
+        "createdAt": "2026-09-08T08:49:38.234Z",
+        "expiresAt": "2026-09-08T08:54:38.247Z"
+      }
+    },
+    {
+      "name": "preview",
+      "path": "/v1/camera/preview",
+      "status": 502,
+      "elapsedMs": 228,
+      "data": {
+        "code": "CAMERA_COMMAND_FAILED",
+        "message": "*** Error (-52: 'Could not find the requested device on the USB port') ***",
+        "details": {
+          "args": [
+            "--force-overwrite",
+            "--capture-preview",
+            "--filename",
+            "data/media/preview-ea0821d2-76dd-43c9-87a3-a18938ae104b.jpg"
+          ]
+        }
+      }
+    },
+    {
+      "name": "autofocus",
+      "path": "/v1/camera/focus/autofocus",
+      "status": 202,
+      "elapsedMs": 13,
+      "data": {
+        "jobId": "e38bf762-4339-417c-bfbc-f8b00c15d232",
+        "status": "queued",
+        "type": "autofocus"
+      }
+    },
+    {
+      "name": "autofocus-job",
+      "path": "/v1/jobs/e38bf762-4339-417c-bfbc-f8b00c15d232",
+      "status": 200,
+      "elapsedMs": 8,
+      "data": {
+        "jobId": "e38bf762-4339-417c-bfbc-f8b00c15d232",
+        "type": "autofocus",
+        "status": "running",
+        "createdAt": "2026-09-08T08:49:38.489Z",
+        "startedAt": "2026-09-08T08:49:38.489Z",
+        "finishedAt": null,
+        "result": null,
+        "error": null
+      }
+    },
+    {
+      "name": "autofocus-job",
+      "path": "/v1/jobs/e38bf762-4339-417c-bfbc-f8b00c15d232",
+      "status": 200,
+      "elapsedMs": 84,
+      "data": {
+        "jobId": "e38bf762-4339-417c-bfbc-f8b00c15d232",
+        "type": "autofocus",
+        "status": "failed",
+        "createdAt": "2026-09-08T08:49:38.489Z",
+        "startedAt": "2026-09-08T08:49:38.489Z",
+        "finishedAt": "2026-09-08T08:49:38.526Z",
+        "result": null,
+        "error": {
+          "code": "CAMERA_COMMAND_FAILED",
+          "message": "*** Error (-52: 'Could not find the requested device on the USB port') ***",
+          "details": {
+            "args": [
+              "--set-config",
+              "/main/actions/autofocusdrive=1"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "capture",
+      "path": "/v1/captures",
+      "status": 202,
+      "elapsedMs": 31,
+      "data": {
+        "jobId": "63d83550-717b-4dd1-9d57-0730ab9edde7",
+        "status": "queued",
+        "type": "captureStill"
+      }
+    },
+    {
+      "name": "capture-job",
+      "path": "/v1/jobs/63d83550-717b-4dd1-9d57-0730ab9edde7",
+      "status": 200,
+      "elapsedMs": 12,
+      "data": {
+        "jobId": "63d83550-717b-4dd1-9d57-0730ab9edde7",
+        "type": "captureStill",
+        "status": "running",
+        "createdAt": "2026-09-08T08:49:39.605Z",
+        "startedAt": "2026-09-08T08:49:39.620Z",
+        "finishedAt": null,
+        "result": null,
+        "error": null
+      }
+    },
+    {
+      "name": "capture-job",
+      "path": "/v1/jobs/63d83550-717b-4dd1-9d57-0730ab9edde7",
+      "status": 200,
+      "elapsedMs": 74,
+      "data": {
+        "jobId": "63d83550-717b-4dd1-9d57-0730ab9edde7",
+        "type": "captureStill",
+        "status": "failed",
+        "createdAt": "2026-09-08T08:49:39.605Z",
+        "startedAt": "2026-09-08T08:49:39.620Z",
+        "finishedAt": "2026-09-08T08:49:39.689Z",
+        "result": null,
+        "error": {
+          "code": "CAMERA_COMMAND_FAILED",
+          "message": "*** Error (-52: 'Could not find the requested device on the USB port') ***",
+          "details": {
+            "args": [
+              "--set-config",
+              "/main/settings/capturetarget=Memory card"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "release-session",
+      "path": "/v1/sessions/62169a3a-2e69-4f51-9868-870468f5d92b",
+      "status": 204,
+      "elapsedMs": 28,
+      "data": ""
+    }
+  ]
+}
