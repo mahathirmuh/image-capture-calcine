@@ -759,7 +759,7 @@ async function handleCaptureFinalize(principal: ApiPrincipal, request: Request):
       plant,
       captureBin: toBinLabel(plant, slot),
       captureSession,
-      station: null,
+      station: target.station ?? null,
       fileName: saved.filename,
       filePath: saved.savedTo,
       saveMethod: saved.forwarded ? "app-network" : "spooled",
@@ -1114,10 +1114,16 @@ async function readEdgeFailure(
  * juga di sini. Resolver kedua yang lebih longgar akan jadi jalan memutar
  * mengelilingi aturan yang justru sedang dijaga.
  */
-async function resolveEdgeForUser(principal: ApiPrincipal, deviceId?: number | null) {
+async function resolveEdgeForUser(principal: ApiPrincipal, deviceId?: number | null, plant?: unknown) {
+  if (plant != null && (typeof plant !== "string" || !(PLANTS as readonly string[]).includes(plant))) {
+    return { ok: false as const, code: "INVALID_PARAM", message: "Plant tidak sah." };
+  }
+  if (deviceId != null && (!Number.isInteger(deviceId) || deviceId < 1)) {
+    return { ok: false as const, code: "INVALID_PARAM", message: "deviceId tidak sah." };
+  }
   const { resolveEdgeTarget } = await import("./edge-target");
   const actorId = principal.kind === "user" ? principal.claims.userId : undefined;
-  return resolveEdgeTarget(deviceId ?? null, actorId);
+  return resolveEdgeTarget(deviceId ?? null, actorId, undefined, plant as string | undefined);
 }
 
 /**
@@ -1129,8 +1135,8 @@ async function resolveEdgeForUser(principal: ApiPrincipal, deviceId?: number | n
  * sudah boleh membaca data seluruh plant. Jadi status kamera dan status job
  * dibaca lewat jalur ini, dan HANYA jalur baca yang memakainya.
  */
-async function resolveEdgeForRead(principal: ApiPrincipal, deviceId?: number | null) {
-  if (principal.kind === "user") return resolveEdgeForUser(principal, deviceId);
+async function resolveEdgeForRead(principal: ApiPrincipal, deviceId?: number | null, plant?: unknown) {
+  if (principal.kind === "user") return resolveEdgeForUser(principal, deviceId, plant);
 
   const { findEdgeDevice } = await import("./edge-target");
   const fallback = getServerEnv().CAMERA_API_URL;
@@ -1443,11 +1449,16 @@ async function handleDeviceStatus(principal: ApiPrincipal, rawCode: string): Pro
   });
 }
 
-async function handleJob(principal: ApiPrincipal, rawJobId: string): Promise<Response> {
+async function handleJob(principal: ApiPrincipal, rawJobId: string, url: URL): Promise<Response> {
   const jobId = decodeURIComponent(rawJobId).trim();
   if (!jobId) return apiError(400, "INVALID_PARAM", "jobId wajib diisi.");
 
-  const target = await resolveEdgeForRead(principal);
+  const rawDeviceId = url.searchParams.get("deviceId");
+  const deviceId = rawDeviceId === null ? null : Number(rawDeviceId);
+  if (rawDeviceId !== null && (!Number.isInteger(deviceId) || (deviceId ?? 0) < 1)) {
+    return apiError(400, "INVALID_PARAM", "deviceId tidak sah.");
+  }
+  const target = await resolveEdgeForRead(principal, deviceId, url.searchParams.get("plant"));
   if (!target.ok) return edgeFailure(target);
 
   let res: Response;
@@ -1478,7 +1489,7 @@ async function handleCameraSession(principal: ApiPrincipal, request: Request): P
   const leaseSeconds = typeof body.leaseSeconds === "number" ? body.leaseSeconds : 120;
   const deviceId = typeof body.deviceId === "number" ? body.deviceId : null;
 
-  const target = await resolveEdgeForUser(principal, deviceId);
+  const target = await resolveEdgeForUser(principal, deviceId, body.plant);
   if (!target.ok) return edgeFailure(target);
 
   // ownerId diambil dari token, TIDAK dari badan permintaan. Kalau klien boleh
@@ -1529,7 +1540,7 @@ async function handleCameraSessionRenew(
     );
   }
 
-  const target = await resolveEdgeForUser(principal, deviceId);
+  const target = await resolveEdgeForUser(principal, deviceId, body.plant);
   if (!target.ok) return edgeFailure(target);
 
   let res: Response;
@@ -1591,7 +1602,7 @@ async function handleCameraSessionRelease(
     );
   }
 
-  const target = await resolveEdgeForUser(principal, deviceId);
+  const target = await resolveEdgeForUser(principal, deviceId, body.plant);
   if (!target.ok) return edgeFailure(target);
 
   try {
@@ -1635,7 +1646,7 @@ async function handleCameraPreview(principal: ApiPrincipal, request: Request): P
     return apiError(400, "INVALID_PARAM", `deviceId tidak sah: ${rawDeviceId}`);
   }
 
-  const target = await resolveEdgeForUser(principal, deviceId);
+  const target = await resolveEdgeForUser(principal, deviceId, url.searchParams.get("plant"));
   if (!target.ok) return edgeFailure(target);
 
   let res: Response;
@@ -1683,7 +1694,7 @@ async function handleCameraCommand(
   }
   const deviceId = typeof body.deviceId === "number" ? body.deviceId : null;
 
-  const target = await resolveEdgeForUser(principal, deviceId);
+  const target = await resolveEdgeForUser(principal, deviceId, body.plant);
   if (!target.ok) return edgeFailure(target);
 
   let res: Response;
@@ -1853,7 +1864,7 @@ const ROUTES: Route[] = [
   {
     method: "GET",
     pattern: /^\/jobs\/([^/]+)$/,
-    handle: (c) => handleJob(c.principal!, c.params[0]),
+    handle: (c) => handleJob(c.principal!, c.params[0], c.url),
   },
 
   // --- Kendali kamera: token pengguna saja ---

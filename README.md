@@ -47,6 +47,11 @@ npm install
 npm run build
 ```
 
+Docker installs dependencies from `bun.lock` with `--frozen-lockfile`. After changing
+root dependencies with npm, also run `bun install --lockfile-only` and commit the
+updated `bun.lock` together with `package.json` and `package-lock.json`. Verify with
+`bun install --frozen-lockfile --lockfile-only` before building the image.
+
 For local web development, run `npm run dev` and open `http://localhost:8080`.
 The Vite config warms the server-function modules so cached browser tabs can
 call RPCs after a dev restart without `Invalid server function ID`. When adding

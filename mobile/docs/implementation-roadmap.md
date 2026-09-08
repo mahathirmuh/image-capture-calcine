@@ -393,3 +393,17 @@ Finish the operator settings surface and align runtime configuration behavior wi
 - Added SSR warmup for the existing RPC modules in `vite.config.ts`; documented local dev startup and maintaining the warmup list in `README.md`. Import protection and server-function validation remain enabled.
 - Verification: two fresh Vite starts on port 8089, with no preceding page/client-module requests, both returned HTTP 200 for media URL RPC (expected UNAUTHENTICATED without cookies) and empty thumbnail batch RPC (success). Test servers were stopped afterward. `npm run build` and `git diff --check` passed. An initial check encountered a concurrently edited, temporarily invalid UTF-8 gallery file; repeated checks passed after that file was valid again.
 - OpenAPI applicability reviewed: development compiler configuration only; no API contract or mobile phase change. Authenticated image retrieval was not tested.
+
+## Post-M5 Review — Plant-Scoped Camera Alignment (2026-09-08)
+
+- Completed code and REST contract audit against the updated web camera flow; see [plant-camera-alignment-audit.md](plant-camera-alignment-audit.md) for findings and acceptance checks.
+- Pending: pin device identity across preview/actions/jobs, validate plant and lease context, align My Device selection, handle readiness/automatic connection lifecycle, and preserve station metadata.
+- Verification: mobile `npm run build` passed (TypeScript and Vite, 50 modules). No Bun; no APK/device runtime test in this audit.
+- Reviewed `docs/openapi.yaml`; no contract change for this documentation-only audit. Explicit job targeting will require a contract update during implementation.
+- Application source and M0–M5 completion checkboxes remain unchanged.
+
+## Post-M5 Maintenance — Docker Lockfile Sync (2026-09-08)
+
+- Docker dependency installation failed because root `package.json` declared `react-test-renderer@19.2.5` while `bun.lock` did not. Regenerated only the Bun lockfile using Bun 1.3.14, matching the reported container build. The diff adds the renderer and its react-is resolution while preserving Recharts react-is 18.3.1.
+- Verification: `bun x bun@1.3.14 install --frozen-lockfile --lockfile-only --ignore-scripts` passed (653 packages); root dependency maps match the Bun workspace manifest; `git diff --check` passed. Full Linux Docker image build was not run locally.
+- README documents synchronizing Bun lockfile after npm dependency changes. No backend/API contract or mobile phase changes.

@@ -68,6 +68,7 @@ export function MyDeviceScreen({ session, user, onSessionUpdate, onSignOut }: My
   const mountedRef = useRef(true);
 
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
     };
@@ -81,6 +82,8 @@ export function MyDeviceScreen({ session, user, onSessionUpdate, onSignOut }: My
         setRefreshing(true);
       }
       setError(null);
+      setDevice(null);
+      setStatus(null);
 
       try {
         const devicesResponse = await listDevices(session);
@@ -266,7 +269,7 @@ export function MyDeviceScreen({ session, user, onSessionUpdate, onSignOut }: My
           <div>
             <strong>{user.username}</strong>
             <p>
-              Auth Level: {user.role} {device?.plant ? `• ${device.plant}` : user.plant ? `• ${user.plant}` : ""}
+              Auth Level: {user.role} {device?.plant ? `â€¢ ${device.plant}` : user.plant ? `â€¢ ${user.plant}` : ""}
             </p>
           </div>
         </div>

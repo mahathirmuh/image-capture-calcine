@@ -5,6 +5,7 @@ import type { AuthSession } from "../lib/auth";
 import { MobileAuthError } from "../lib/auth";
 import {
   ensureCameraSession,
+  sessionValid,
   finalizeCaptureResult,
   getPreviewFrame,
   getJob,
@@ -122,13 +123,17 @@ function extractAssetId(job: CameraJob | null): string | null {
 async function waitForJobCompletion(
   currentSession: AuthSession,
   jobId: string,
+  lease: CameraLease,
+  isCurrent: () => boolean,
   onSessionUpdate: (session: AuthSession) => void,
   onTick: (job: CameraJob) => void,
 ) {
   let latestSession = currentSession;
 
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    const response = await getJob(latestSession, jobId);
+    if (!isCurrent()) throw new Error("Camera operation cancelled.");
+    const response = await getJob(latestSession, jobId, lease);
+    if (!isCurrent()) throw new Error("Camera operation cancelled.");
     latestSession = response.session;
     onSessionUpdate(response.session);
     onTick(response.data);
@@ -143,7 +148,13 @@ async function waitForJobCompletion(
   throw new Error("Camera job did not finish before the mobile polling timeout.");
 }
 
-export function CaptureScreen({
+export function CaptureScreen(props: CaptureScreenProps) {
+  // A new account or scheduled context must never inherit another camera lease.
+  const key = `${props.session.user.id}:${props.session.user.plant}:${props.selectedSession?.key}:${props.selectedSession?.plant}`;
+  return <CaptureWorkflow key={key} {...props} />;
+}
+
+function CaptureWorkflow({
   session,
   operatorName,
   selectedSession,
@@ -168,22 +179,28 @@ export function CaptureScreen({
   const sessionRef = useRef(session);
   const leaseRef = useRef<CameraLease | null>(lease);
   const previewUrlRef = useRef<string | null>(null);
+  const mountedRef = useRef(false);
+  const generationRef = useRef(0);
+  const actionRef = useRef(false);
+  const lifecycleRef = useRef<Promise<unknown>>(Promise.resolve());
 
   const hasSelectedSession = !!selectedSession;
-  const currentPlant = selectedSession?.plant ?? session.user.plant ?? "Acid Plant";
+  const currentPlant = selectedSession?.plant ?? session.user.plant ?? "";
   const currentSlotLabel = hasSelectedSession ? slotLabel(currentPlant, activeSlot) : null;
   const contextTitle = hasSelectedSession
     ? currentSlotLabel ?? selectedSession.location
     : "Select a session from Today Sessions";
   const contextMeta = hasSelectedSession
-    ? `${selectedSession.plant} • ${selectedSession.displayTime} • ${currentSlotLabel}`
+    ? `${selectedSession.plant} â€¢ ${selectedSession.displayTime} â€¢ ${currentSlotLabel}`
     : "Choose a scheduled slot first so capture actions run in the right operator context.";
   const headerTitle = hasSelectedSession
     ? `${selectedSession.plant} | ${selectedSession.displayTime}`
     : "Capture Workflow";
   const jobLabel = useMemo(() => jobStatusLabel(job?.status ?? null), [job]);
   const progress = useMemo(() => jobProgress(job?.status ?? null), [job]);
-  const sessionReady = !!lease;
+  const contextValid = !!selectedSession && !!currentPlant && currentPlant !== "ALL" && session.user.plant === currentPlant;
+  const sessionReady = contextValid && sessionValid(lease);
+  const cameraReady = sessionReady && !!previewUrl && !previewError;
   const captureBusy = busyAction === "capture";
   const captureProcess = captureProcessLabel(job?.status ?? null, busyAction);
 
@@ -204,14 +221,18 @@ export function CaptureScreen({
   }, [previewUrl]);
 
   useEffect(() => {
+    mountedRef.current = true;
+    void handleStartSession();
     return () => {
+      mountedRef.current = false;
+      generationRef.current += 1;
       const activeLease = leaseRef.current;
-      const activePreviewUrl = previewUrlRef.current;
-      if (activePreviewUrl) {
-        URL.revokeObjectURL(activePreviewUrl);
-      }
+      leaseRef.current = null;
+      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
       if (activeLease) {
-        void releaseCameraSession(sessionRef.current, activeLease).catch(() => undefined);
+        lifecycleRef.current = lifecycleRef.current.catch(() => undefined).then(() =>
+          releaseCameraSession(sessionRef.current, activeLease).catch(() => undefined),
+        );
       }
     };
   }, []);
@@ -396,32 +417,55 @@ export function CaptureScreen({
   }
 
   async function handleStartSession() {
-    if (!selectedSession) return;
+    if (!contextValid) {
+      setError("Select a scheduled session that matches your assigned plant.");
+      return;
+    }
+    const generation = ++generationRef.current;
+    const isCurrent = () => mountedRef.current && generationRef.current === generation;
     setBusyAction("session");
     setError(null);
     setCaptureNotice(null);
-
-    try {
-      const response = await ensureCameraSession(session, lease);
+    const task = lifecycleRef.current.catch(() => undefined).then(async () => {
+      if (!isCurrent()) return;
+      const oldLease = leaseRef.current;
+      if (oldLease && !sessionValid(oldLease)) {
+        await releaseCameraSession(sessionRef.current, oldLease);
+        leaseRef.current = null;
+      }
+      if (!isCurrent()) return;
+      const response = await ensureCameraSession(sessionRef.current, leaseRef.current, currentPlant);
+      if (!isCurrent()) {
+        await releaseCameraSession(response.session, response.data).catch(() => undefined);
+        return;
+      }
+      leaseRef.current = response.data;
       onSessionUpdate(response.session);
       setLease(response.data);
       setJob(null);
       setPreviewError(null);
+    });
+    lifecycleRef.current = task;
+    try {
+      await task;
     } catch (actionError) {
-      setError(errorMessageOf(actionError));
+      if (isCurrent()) setError(errorMessageOf(actionError));
     } finally {
-      setBusyAction(null);
+      if (isCurrent()) setBusyAction(null);
     }
   }
 
   async function handleStopSession() {
-    if (!lease) return;
+    if (!lease || actionRef.current) return;
+    const generation = ++generationRef.current;
     setBusyAction("session");
     setError(null);
     setCaptureNotice(null);
 
     try {
-      const response = await releaseCameraSession(session, lease);
+      const response = await releaseCameraSession(sessionRef.current, lease);
+      if (!mountedRef.current || generation !== generationRef.current) return;
+      leaseRef.current = null;
       onSessionUpdate(response.session);
       setLease(null);
       setJob(null);
@@ -434,7 +478,11 @@ export function CaptureScreen({
   }
 
   async function runJob(kind: "capture") {
-    if (!selectedSession) return;
+    if (!selectedSession || !cameraReady || !lease || actionRef.current) return;
+    actionRef.current = true;
+    const generation = generationRef.current;
+    const isCurrent = () => mountedRef.current && generationRef.current === generation;
+    const activeLease = lease;
     setBusyAction(kind);
     setError(null);
     setCaptureNotice({
@@ -444,24 +492,24 @@ export function CaptureScreen({
     });
 
     try {
-      const leaseResponse = await ensureCameraSession(session, lease);
-      onSessionUpdate(leaseResponse.session);
-      setLease(leaseResponse.data);
-
       const actionResponse = await triggerCapture(
-        leaseResponse.session,
-        leaseResponse.data.session.leaseToken,
+        sessionRef.current,
+        activeLease,
       );
 
+      if (!isCurrent()) return;
       onSessionUpdate(actionResponse.session);
       setJob(actionResponse.data.job);
 
       const result = await waitForJobCompletion(
         actionResponse.session,
         actionResponse.data.job.jobId,
+        activeLease,
+        isCurrent,
         onSessionUpdate,
         setJob,
       );
+      if (!isCurrent()) return;
       const latestSession = result.session;
       onSessionUpdate(latestSession);
 
@@ -477,8 +525,9 @@ export function CaptureScreen({
           plant: selectedSession.plant,
           captureSession: selectedSession.session,
           slot: activeSlot,
-          deviceId: leaseResponse.data.deviceId ?? undefined,
+          deviceId: activeLease.deviceId,
         });
+        if (!isCurrent()) return;
         onSessionUpdate(finalized.session);
 
         if (finalized.data.forwarded) {
@@ -502,10 +551,12 @@ export function CaptureScreen({
         setCaptureNotice(null);
       }
     } catch (actionError) {
+      if (!isCurrent()) return;
       setCaptureNotice(null);
       setError(errorMessageOf(actionError));
     } finally {
-      setBusyAction(null);
+      actionRef.current = false;
+      if (isCurrent()) setBusyAction(null);
     }
   }
 
@@ -551,6 +602,7 @@ export function CaptureScreen({
                   activeSlot === slot ? "capture-slot-selector__button--active" : ""
                 }`}
                 onClick={() => setActiveSlot(slot as 1 | 2)}
+                disabled={captureBusy}
               >
                 {slotLabel(selectedSession.plant, slot as 1 | 2)}
               </button>
@@ -562,7 +614,7 @@ export function CaptureScreen({
       <section className="capture-session-bar">
         <div className="capture-session-bar__status">
           <span className="capture-session-bar__pulse" aria-hidden="true"></span>
-          <span>{sessionReady ? "Camera session active" : sessionStatusCopy(selectedSession?.status ?? null)}</span>
+          <span>{cameraReady ? `Camera ready • ${lease?.deviceCode}` : sessionReady ? "Session active • waiting for camera preview" : sessionStatusCopy(selectedSession?.status ?? null)}</span>
         </div>
 
         <div className="capture-session-bar__actions">
@@ -570,7 +622,7 @@ export function CaptureScreen({
             className="capture-session-bar__button capture-session-bar__button--primary capture-session-bar__button--icon"
             type="button"
             onClick={() => void runJob("capture")}
-            disabled={!selectedSession || busyAction !== null || !sessionReady}
+            disabled={!contextValid || busyAction !== null || !cameraReady}
             aria-label={captureBusy ? "Capturing image" : "Capture image"}
             title={captureBusy ? "Capturing image" : "Capture image"}
           >
@@ -588,7 +640,7 @@ export function CaptureScreen({
             className="capture-session-bar__button"
             type="button"
             onClick={sessionReady ? () => void handleStopSession() : () => void handleStartSession()}
-            disabled={busyAction === "session" || captureBusy || !selectedSession}
+            disabled={busyAction === "session" || captureBusy || !contextValid}
           >
             {busyAction === "session"
               ? sessionReady
@@ -680,7 +732,7 @@ export function CaptureScreen({
             <strong>{latestCapture?.title ?? "Awaiting capture result"}</strong>
             <span>
               {latestCapture
-                ? `${latestCapture.plant} • ${latestCapture.capturedTime}`
+                ? `${latestCapture.plant} â€¢ ${latestCapture.capturedTime}`
                 : "After capture completes, the newest saved image will appear here."}
             </span>
           </div>
@@ -711,7 +763,7 @@ export function CaptureScreen({
               >
                 settings
               </span>
-              <span>JOB_ID: {job?.jobId ?? "—"}</span>
+              <span>JOB_ID: {job?.jobId ?? "â€”"}</span>
             </div>
             <span className="job-progress-card__status">{jobLabel}</span>
           </div>

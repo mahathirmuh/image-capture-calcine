@@ -27,22 +27,18 @@ type DeviceListResponse = {
   devices: DeviceListItem[];
 };
 
-function rankDevice(device: DeviceListItem, preferredPlant: string | null) {
-  const plantMatch = preferredPlant && preferredPlant !== "ALL" && device.plant === preferredPlant ? 1000 : 0;
-  const activeScore = device.isActive ? 100 : 0;
-  const lastCaptureScore = device.lastCapturedAt ? Date.parse(device.lastCapturedAt) / 1_000_000_000 : 0;
-  return plantMatch + activeScore + lastCaptureScore;
-}
-
 export function pickPrimaryDevice(
   devices: DeviceListItem[],
   preferredPlant: string | null,
 ): DeviceListItem | null {
-  if (!devices.length) return null;
-
-  return [...devices].sort((left, right) => {
-    return rankDevice(right, preferredPlant) - rankDevice(left, preferredPlant);
-  })[0] ?? null;
+  if (!preferredPlant || preferredPlant === "ALL") {
+    throw new Error("Your account needs an assigned plant. Contact your administrator.");
+  }
+  const eligible = devices.filter((device) => device.isActive && device.plant === preferredPlant);
+  if (eligible.length > 1) {
+    throw new Error("More than one active camera is assigned to your plant. Contact your administrator.");
+  }
+  return eligible[0] ?? null;
 }
 
 export async function listDevices(
