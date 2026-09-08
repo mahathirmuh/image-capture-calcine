@@ -1,3 +1,4 @@
+import { saveSelectedEdgeDevice } from "./selected-edge-device";
 import { z } from "zod";
 
 import { PLANTS } from "./locations";
@@ -435,6 +436,7 @@ export function loadDeviceProfile(): DeviceProfile | null {
 export function saveDeviceProfile(profile: DeviceProfile): void {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(DEVICE_PROFILE_KEY, JSON.stringify(profile));
+  saveSelectedEdgeDevice(profile.deviceCode);
 }
 
 export function clearDeviceProfile(): void {

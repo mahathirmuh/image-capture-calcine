@@ -25,7 +25,14 @@ import {
   X,
 } from "lucide-react";
 import { type GalleryItem, loadGallery, saveGallery, removeGalleryItem } from "@/lib/gallery-store";
-import { getDeviceStatus, type DeviceStatus } from "@/lib/camera-api";
+import { useEdgeStatusSelection } from "@/hooks/use-edge-status-selection";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   createCaptureMediaUrl,
   createCaptureThumbUrls,
@@ -378,9 +385,12 @@ function GalleryPage() {
   const isAdmin = useIsAdmin();
   const [gallery, setGallery] = useState<GalleryItem[]>([]);
   const [hydrated, setHydrated] = useState(false);
-  const [deviceStatus, setDeviceStatus] = useState<DeviceStatus | null>(null);
-  const [deviceStatusLoading, setDeviceStatusLoading] = useState(false);
-  const [deviceStatusCheckedAt, setDeviceStatusCheckedAt] = useState<Date | null>(null);
+  const edgeSelection = useEdgeStatusSelection(isAdmin);
+  const {
+    status: deviceStatus,
+    loading: deviceStatusLoading,
+    checkedAt: deviceStatusCheckedAt,
+  } = edgeSelection;
   const [captureRecords, setCaptureRecords] = useState<CaptureRecordView[]>([]);
   const [captureRecordsError, setCaptureRecordsError] = useState<string | null>(null);
   const [operatorPlant, setOperatorPlant] = useState<OperatorPlant | null>(null);
@@ -485,13 +495,7 @@ function GalleryPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(24);
 
-  const refreshDeviceStatus = useCallback(async () => {
-    setDeviceStatusLoading(true);
-    const result = await getDeviceStatus();
-    setDeviceStatus(result);
-    setDeviceStatusCheckedAt(new Date());
-    setDeviceStatusLoading(false);
-  }, []);
+  const refreshDeviceStatus = () => edgeSelection.refresh(edgeSelection.selectedCode);
 
   useEffect(() => {
     let cancelled = false;
@@ -545,11 +549,6 @@ function GalleryPage() {
         );
         setCaptureRecords([]);
       });
-    getDeviceStatus().then((result) => {
-      if (cancelled) return;
-      setDeviceStatus(result);
-      setDeviceStatusCheckedAt(new Date());
-    });
     return () => {
       cancelled = true;
     };
@@ -1417,16 +1416,26 @@ function GalleryPage() {
     : "border-amber-500/30 bg-amber-500/5 text-amber-700";
   const deviceStatusBadgeLabel = deviceStatusLoading
     ? "Menyegarkan status"
-    : deviceStatus?.online
-      ? deviceStatus.camera?.connected
-        ? "Siap capture"
-        : "Edge aktif"
-      : "Tidak terhubung";
-  const deviceStatusDetail = deviceStatus?.online
-    ? deviceStatus.camera?.connected
-      ? `Kamera ${[deviceStatus.camera.manufacturer, deviceStatus.camera.model].filter(Boolean).join(" ") || "aktif"} terhubung ke edge device.`
-      : "Edge device terhubung, tetapi kamera USB belum siap dipakai untuk capture."
-    : cameraStateHint;
+    : !edgeSelection.selectedCode
+      ? "Pilih device"
+      : deviceStatus?.online
+        ? deviceStatus.camera?.connected
+          ? "Siap capture"
+          : "Edge aktif"
+        : "Tidak terhubung";
+  const deviceStatusDetail =
+    edgeSelection.error ??
+    (deviceStatusLoading
+      ? "Memuat daftar device dan memeriksa status kamera..."
+      : !edgeSelection.selectedCode
+        ? edgeSelection.devices.length > 0
+          ? "Pilih device di bawah untuk memeriksa koneksi kamera."
+          : "Belum ada device aktif. Buka Devices untuk memeriksa registrasi."
+        : deviceStatus?.online
+          ? deviceStatus.camera?.connected
+            ? `Kamera ${[deviceStatus.camera.manufacturer, deviceStatus.camera.model].filter(Boolean).join(" ") || "aktif"} terhubung ke edge device.`
+            : "Edge device terhubung, tetapi kamera USB belum siap dipakai untuk capture."
+          : cameraStateHint);
   const deviceCheckedAtLabel = deviceStatusCheckedAt
     ? formatDateTime(deviceStatusCheckedAt.getTime())
     : "Belum pernah dicek";
@@ -1604,6 +1613,34 @@ function GalleryPage() {
                   {deviceStatus?.online ? null : <AlertTriangle className="h-3.5 w-3.5" />}
                 </div>
                 <p className="mt-1 text-sm font-medium text-foreground">{deviceStatusDetail}</p>
+                <div className="mt-3 w-full max-w-sm">
+                  <label
+                    id="gallery-edge-device-label"
+                    className="mb-1 block text-xs font-medium text-foreground"
+                  >
+                    Device kamera
+                  </label>
+                  <Select
+                    value={edgeSelection.selectedCode}
+                    onValueChange={edgeSelection.select}
+                    disabled={deviceStatusLoading || edgeSelection.devices.length === 0}
+                  >
+                    <SelectTrigger
+                      aria-labelledby="gallery-edge-device-label"
+                      className="w-full bg-background text-foreground"
+                    >
+                      <SelectValue placeholder="Pilih device kamera" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {edgeSelection.devices.map((device) => (
+                        <SelectItem key={device.id} value={device.deviceCode}>
+                          {device.deviceName || device.deviceCode} / {device.deviceCode} /{" "}
+                          {device.plant}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
                 <p className="mt-1 text-xs text-foreground/70">
                   Cek terakhir: {deviceCheckedAtLabel}
                   {deviceStatus?.deviceId ? ` • Device ID: ${deviceStatus.deviceId}` : ""}

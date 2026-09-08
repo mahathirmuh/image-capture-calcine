@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/sidebar";
 import { loadGallery, subscribeGalleryChange } from "@/lib/gallery-store";
 import { getDeviceStatus, type DeviceStatus } from "@/lib/camera-api";
+import { EDGE_SELECTION_CHANGED, loadSelectedEdgeDevice } from "@/lib/selected-edge-device";
 import { NAV_GROUPS, NAV_ITEMS } from "@/lib/nav-items";
 import { useIsAdmin } from "@/lib/use-session-user";
 
@@ -42,8 +43,12 @@ function DeviceStatusCard() {
 
   useEffect(() => {
     let cancelled = false;
+    let requestId = 0;
     async function tick() {
-      const result = await getDeviceStatus().catch(
+      const current = ++requestId;
+      const result = await getDeviceStatus({
+        data: { deviceCode: loadSelectedEdgeDevice() || undefined },
+      }).catch(
         (): DeviceStatus => ({
           online: false,
           target: null,
@@ -55,15 +60,19 @@ function DeviceStatusCard() {
           camera: null,
         }),
       );
-      if (cancelled) return;
+      if (cancelled || current !== requestId) return;
       setStatus(result);
       setLastSync(new Date());
     }
     tick();
+    window.addEventListener(EDGE_SELECTION_CHANGED, tick);
+    window.addEventListener("storage", tick);
     const interval = setInterval(tick, DEVICE_STATUS_POLL_MS);
     return () => {
       cancelled = true;
       clearInterval(interval);
+      window.removeEventListener(EDGE_SELECTION_CHANGED, tick);
+      window.removeEventListener("storage", tick);
     };
   }, []);
 

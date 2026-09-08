@@ -33,7 +33,6 @@ import {
   type CaptureSaveMethod,
   type DeviceEventSeverity,
 } from "@/lib/capture-records";
-import { loadDeviceProfile } from "@/lib/device-config";
 import {
   describeCameraRuntimeIssue,
   getCaptureActionHint,
@@ -323,6 +322,7 @@ function CapturePage() {
   const previousSessionIdRef = useRef<string | null>(null);
 
   const {
+    captureDevice,
     cameraAsleep,
     cameraBusyRef,
     cameraFrame,
@@ -339,16 +339,35 @@ function CapturePage() {
     stopCamera,
     cancelStart,
     waitingForCamera,
-  } = useCaptureCameraSession({ setError, setStatus, previewEnabled: livePreview });
+  } = useCaptureCameraSession({
+    setError,
+    setStatus,
+    previewEnabled: livePreview,
+    plant: activePlant,
+    enabled: prefsLoaded && operatorPlant !== null,
+  });
 
   function getActiveDeviceContext() {
-    const profile = loadDeviceProfile();
     return {
-      deviceCode: profile?.deviceCode || deviceStatus?.deviceId || "edge-camera-01",
-      deviceName: profile?.deviceName || deviceStatus?.deviceId || null,
-      station: profile?.station ?? null,
+      deviceCode: captureDevice?.deviceCode ?? null,
+      deviceName: captureDevice?.deviceName ?? null,
+      station: captureDevice?.station ?? null,
     };
   }
+
+  function changeCapturePlant(nextPlant: string) {
+    if (cameraBusyRef.current || savingRef.current) return;
+    setLocation(nextPlant);
+  }
+
+  useEffect(() => {
+    for (const setBin of [setBin1, setBin2]) {
+      setBin((previous) => {
+        if (previous) URL.revokeObjectURL(previous.url);
+        return null;
+      });
+    }
+  }, [activePlant]);
 
   async function logOperationalEvent(
     eventType: string,
@@ -357,6 +376,7 @@ function CapturePage() {
     payload?: Record<string, unknown>,
   ) {
     const context = getActiveDeviceContext();
+    if (!context.deviceCode) return;
     await logDeviceEvent({
       data: {
         deviceCode: context.deviceCode,
@@ -385,11 +405,13 @@ function CapturePage() {
     setSupportsFS(supports);
 
     // Plant pengikat dibaca dari server, bukan dari cookie sesi -- lihat
-    // operator-plant.ts. Kegagalannya sengaja dibiarkan senyap: hasilnya
-    // dropdown tetap bebas seperti sebelumnya, bukan halaman yang macet.
+    // operator-plant.ts. Jangan mulai kamera sebelum penempatan akun diketahui.
     void getOperatorPlant()
       .then(setOperatorPlant)
-      .catch(() => setOperatorPlant(null));
+      .catch(() => {
+        setOperatorPlant(null);
+        setError("Gagal membaca penempatan akun. Muat ulang halaman sebelum memakai kamera.");
+      });
 
     const prefs = loadPrefs();
     setLocation(resolveCapturePagePlant(prefs.location));
@@ -398,20 +420,6 @@ function CapturePage() {
     setCounter(prefs.counter);
     setLivePreview(prefs.livePreview);
     setPrefsLoaded(true);
-
-    let cancelled = false;
-    (async () => {
-      // Yield one tick first: in dev, React (Strict Mode) mounts this
-      // effect, tears it down, then mounts it again, all synchronously.
-      // Without this yield, both the discarded and the real invocation
-      // would race to POST /v1/sessions, and the edge API's single-writer
-      // lock turns that into a spurious "camera is in use" error on the
-      // instance that loses the race -- even though only this tab is really
-      // using it.
-      await Promise.resolve();
-      if (cancelled) return;
-      await startCamera();
-    })();
 
     if (supports) {
       loadDirHandle().then(async (handle) => {
@@ -429,11 +437,7 @@ function CapturePage() {
         }
       });
     }
-
-    return () => {
-      cancelled = true;
-    };
-  }, [startCamera]);
+  }, []);
 
   // Persist preferences whenever they change (after the initial load).
   useEffect(() => {
@@ -452,7 +456,8 @@ function CapturePage() {
   }, [livePreview, sessionId]);
 
   async function captureToBin(bin: Bin) {
-    if (!sessionId || !leaseToken) return;
+    if (!sessionId || !leaseToken || !captureDevice || !cameraUsable || cameraBusyRef.current)
+      return;
     setError(null);
     setCapturingBin(bin);
     // Take the camera away from the preview loop, then let any preview frame
@@ -460,7 +465,9 @@ function CapturePage() {
     cameraBusyRef.current = true;
     await new Promise((r) => setTimeout(r, 300));
     try {
-      const triggered = await triggerCapture({ data: { sessionId, leaseToken } });
+      const triggered = await triggerCapture({
+        data: { sessionId, leaseToken, deviceId: captureDevice.deviceId, plant: activePlant },
+      });
       if (!triggered.ok) {
         void logOperationalEvent("capture-trigger-failed", "warning", triggered.message, {
           bin,
@@ -468,7 +475,10 @@ function CapturePage() {
         setError(triggered.message);
         return;
       }
-      const job = await pollJob(triggered.job.jobId);
+      const job = await pollJob(triggered.job.jobId, 500, {
+        deviceId: captureDevice.deviceId,
+        plant: activePlant,
+      });
       if (job.status === "failed") {
         void logOperationalEvent(
           "capture-job-failed",
@@ -482,7 +492,7 @@ function CapturePage() {
         setError(job.error?.message ?? "Capture gagal");
         return;
       }
-      const assetId = job.result?.asset.assetId;
+      const assetId = job.result?.asset?.assetId;
       if (!assetId) {
         void logOperationalEvent(
           "capture-missing-asset",
@@ -497,7 +507,9 @@ function CapturePage() {
         return;
       }
       const capturedAt = Date.now();
-      const res = await getMediaContent({ data: { assetId } });
+      const res = await getMediaContent({
+        data: { assetId, deviceId: captureDevice.deviceId, plant: activePlant },
+      });
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const captured: BinPreview = { blob, url, assetId, capturedAt };
@@ -530,19 +542,25 @@ function CapturePage() {
   }
 
   async function runAutofocus() {
-    if (!sessionId || !leaseToken) return;
+    if (!sessionId || !leaseToken || !captureDevice || !cameraUsable || cameraBusyRef.current)
+      return;
     setError(null);
     setAutofocusing(true);
     cameraBusyRef.current = true;
     await new Promise((r) => setTimeout(r, 300));
     try {
-      const triggered = await triggerAutofocus({ data: { sessionId, leaseToken } });
+      const triggered = await triggerAutofocus({
+        data: { sessionId, leaseToken, deviceId: captureDevice.deviceId, plant: activePlant },
+      });
       if (!triggered.ok) {
         void logOperationalEvent("autofocus-trigger-failed", "warning", triggered.message);
         setError(triggered.message);
         return;
       }
-      const job = await pollJob(triggered.job.jobId);
+      const job = await pollJob(triggered.job.jobId, 500, {
+        deviceId: captureDevice.deviceId,
+        plant: activePlant,
+      });
       if (job.status === "failed") {
         void logOperationalEvent(
           "autofocus-job-failed",
@@ -631,7 +649,7 @@ function CapturePage() {
   // belum diperbarui pada tick yang sama -- membacanya dari sana akan
   // menyimpan gambar SEBELUMNYA.
   async function saveBin(bin: Bin, previewItem: BinPreview) {
-    if (savingRef.current) return;
+    if (savingRef.current || !captureDevice) return;
     savingRef.current = true;
     setSavingBin(bin);
     setError(null);
@@ -688,6 +706,8 @@ function CapturePage() {
         const relativePath = `${activePlant}/${sessionPathSegment(activeSession)}/${base}.${ext}`;
         const saved = await saveMediaToNetwork({
           data: {
+            deviceId: captureDevice.deviceId,
+            plant: activePlant,
             assetId: previewItem.assetId,
             relativePath,
             capturedAt: previewItem.capturedAt,
@@ -835,16 +855,15 @@ function CapturePage() {
         }
       }
 
-      const profile = loadDeviceProfile();
       const checksumSha256 = await sha256Hex(previewItem.blob);
       const captureRecord = await recordCaptureResult({
         data: {
-          deviceCode: profile?.deviceCode || deviceStatus?.deviceId || "edge-camera-01",
-          deviceName: profile?.deviceName || deviceStatus?.deviceId || null,
+          deviceCode: captureDevice.deviceCode,
+          deviceName: captureDevice.deviceName,
           plant: activePlant,
           captureBin: binLabel(bin),
           captureSession: activeSession.label,
-          station: profile?.station ?? null,
+          station: captureDevice?.station ?? null,
           fileName: filename,
           filePath: persistedPath ?? savedNetworkPath ?? `browser-download/${filename}`,
           saveMethod,
@@ -946,8 +965,7 @@ function CapturePage() {
   const sessionIssueDetails = sessionIssue
     ? describeCameraRuntimeIssue(sessionIssue.code, sessionIssue.message)
     : null;
-  const runtimeBootstrapping =
-    !deviceStatusLoaded && !sessionIssue && !sessionId && !waitingForCamera && !sessionStarting;
+  const runtimeBootstrapping = !deviceStatusLoaded && !sessionIssue;
   const sessionSummary = getCaptureSessionSummary({
     deviceStatus,
     sessionId,
@@ -1093,7 +1111,14 @@ function CapturePage() {
             ) : (
               <select
                 value={activePlant}
-                onChange={(e) => setLocation(e.target.value)}
+                onChange={(e) => changeCapturePlant(e.target.value)}
+                disabled={
+                  plantLocked ||
+                  capturingBin !== null ||
+                  savingBin !== null ||
+                  autofocusing ||
+                  !operatorPlant
+                }
                 className="cursor-pointer bg-transparent text-sm font-semibold outline-none"
               >
                 {CAPTURE_PAGE_PLANTS.map((plant) => (
@@ -1525,8 +1550,14 @@ function CapturePage() {
               <label className="mb-1 block text-sm font-medium">Lokasi</label>
               <select
                 value={activePlant}
-                onChange={(e) => setLocation(e.target.value)}
-                disabled={plantLocked}
+                onChange={(e) => changeCapturePlant(e.target.value)}
+                disabled={
+                  plantLocked ||
+                  capturingBin !== null ||
+                  savingBin !== null ||
+                  autofocusing ||
+                  !operatorPlant
+                }
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {(plantLocked ? [activePlant] : CAPTURE_PAGE_PLANTS).map((plant) => (

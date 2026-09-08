@@ -7,6 +7,7 @@ export type EdgeDevice = {
   code: string;
   name: string;
   plant: string | null;
+  station?: string | null;
   edgeApiUrl: string | null;
   isActive: boolean;
 };
@@ -17,6 +18,7 @@ export type EdgeTarget = {
   deviceCode: string | null;
   deviceName: string | null;
   plant: string | null;
+  station?: string | null;
   baseUrl: string;
 };
 
@@ -35,13 +37,14 @@ function mapDevice(row: Record<string, unknown>): EdgeDevice {
     code: String(row.code ?? ""),
     name: String(row.name ?? ""),
     plant: teks(row.plant),
+    station: teks(row.station),
     edgeApiUrl: teks(row.edge_api_url),
     isActive: Boolean(row.is_active),
   };
 }
 
 const DEVICE_QUERY = `
-  SELECT d.id, d.code, d.name, d.edge_api_url, d.is_active, l.plant
+  SELECT d.id, d.code, d.name, d.edge_api_url, d.is_active, l.plant, l.station
   FROM {schema}.devices d
   LEFT JOIN {schema}.device_assignments da ON da.device_id = d.id AND da.is_current = 1
   LEFT JOIN {schema}.locations l ON l.id = da.location_id
@@ -98,6 +101,8 @@ export async function findEdgeDevice(deviceId: number): Promise<EdgeDevice | nul
 export async function resolveEdgeTarget(
   deviceId?: number | null,
   actorUserId?: number,
+  deviceCode?: string | null,
+  requestedPlant?: string | null,
 ): Promise<EdgeTargetResult> {
   const fallback = getServerEnv().CAMERA_API_URL;
 
@@ -110,6 +115,13 @@ export async function resolveEdgeTarget(
   // identitas untuk diperiksa. Instalasi satu-device yang masih sepenuhnya
   // dikendalikan .env tetap jalan lewat jalur ini.
   if (!isCardDbConfigured() || !isSessionConfigured()) {
+    if (requestedPlant) {
+      return {
+        ok: false,
+        code: "DEVICE_ASSIGNMENT_REQUIRED",
+        message: "Registry dan sesi pengguna diperlukan untuk memilih kamera berdasarkan plant.",
+      };
+    }
     return {
       ok: true,
       deviceId: null,
@@ -148,6 +160,13 @@ export async function resolveEdgeTarget(
   const { resolveUserPlantScope } = await import("../operator-plant");
   const plantScope = resolveUserPlantScope(user);
   const bebas = !plantScope.locked;
+  if (requestedPlant && !bebas && requestedPlant !== plantScope.plant) {
+    return {
+      ok: false,
+      code: "DEVICE_FORBIDDEN",
+      message: `Akun Anda hanya boleh mengakses kamera ${plantScope.plant}.`,
+    };
+  }
   const devices = await listEdgeDevices();
 
   let device: EdgeDevice | null = null;
@@ -157,12 +176,20 @@ export async function resolveEdgeTarget(
     if (!device) {
       return { ok: false, code: "DEVICE_NOT_FOUND", message: "Device tidak ada di registry." };
     }
+  } else if (deviceCode != null) {
+    device = devices.find((item) => item.code === deviceCode) ?? null;
+    if (!device) {
+      return { ok: false, code: "DEVICE_NOT_FOUND", message: "Device tidak ada di registry." };
+    }
   } else {
     // Tanpa device yang disebut, dipilihkan -- tapi hanya kalau pilihannya
     // tidak ambigu. Menebak saat ada dua kandidat berarti operator bisa
     // memotret lewat kamera di area yang salah tanpa pernah tahu.
     const kandidat = devices.filter(
-      (item) => item.isActive && (bebas || item.plant === plantScope.plant),
+      (item) =>
+        item.isActive &&
+        (bebas || item.plant === plantScope.plant) &&
+        (!requestedPlant || item.plant === requestedPlant),
     );
     if (kandidat.length === 1) {
       device = kandidat[0];
@@ -170,15 +197,19 @@ export async function resolveEdgeTarget(
       return {
         ok: false,
         code: "NO_DEVICE",
-        message: bebas
-          ? "Belum ada device aktif di registry. Daftarkan dulu di halaman Devices."
-          : `Belum ada device aktif untuk ${plantScope.plant}. Hubungi Super Admin.`,
+        message: requestedPlant
+          ? `Belum ada kamera aktif yang ditempatkan di ${requestedPlant}. Periksa penempatan di Devices.`
+          : bebas
+            ? "Belum ada device aktif di registry. Daftarkan dulu di halaman Devices."
+            : `Belum ada device aktif untuk ${plantScope.plant}. Hubungi Super Admin.`,
       };
     } else {
       return {
         ok: false,
         code: "DEVICE_AMBIGUOUS",
-        message: "Ada lebih dari satu device aktif. Pilih device dulu sebelum memakai kamera.",
+        message: requestedPlant
+          ? `Ada lebih dari satu kamera aktif di ${requestedPlant}. Periksa penempatan kamera di Devices.`
+          : "Ada lebih dari satu device aktif. Pilih device dulu sebelum memakai kamera.",
       };
     }
   }
@@ -199,12 +230,28 @@ export async function resolveEdgeTarget(
     };
   }
 
+  if (requestedPlant && device.plant !== requestedPlant) {
+    return {
+      ok: false,
+      code: "DEVICE_PLANT_MISMATCH",
+      message: `Kamera ini tidak lagi ditempatkan di ${requestedPlant}. Pilih ulang lokasi pengambilan.`,
+    };
+  }
+  if (requestedPlant && !device.edgeApiUrl) {
+    return {
+      ok: false,
+      code: "DEVICE_URL_REQUIRED",
+      message: `Alamat API kamera ${requestedPlant} belum diisi di Devices.`,
+    };
+  }
+
   return {
     ok: true,
     deviceId: device.id,
     deviceCode: device.code,
     deviceName: device.name,
     plant: device.plant,
+    station: device.station ?? null,
     // Alamat di registry yang berlaku. CAMERA_API_URL tinggal jadi cadangan
     // untuk device yang alamatnya belum diisi -- bukan lagi sumber utama.
     baseUrl: device.edgeApiUrl ?? fallback,

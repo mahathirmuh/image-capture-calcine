@@ -19,9 +19,9 @@ import { getServerEnv } from "./env";
  * balik pemanggilan yang terlihat murah akan mengundang pemanggilan berulang di
  * dalam satu handler.
  */
-async function resolveTarget(deviceId?: number) {
+async function resolveTarget(deviceId?: number, deviceCode?: string | null, plant?: string) {
   const { resolveEdgeTarget } = await import("./server/edge-target");
-  return resolveEdgeTarget(deviceId);
+  return resolveEdgeTarget(deviceId, undefined, deviceCode, plant);
 }
 
 function edgeHeaders(extra?: HeadersInit): Headers {
@@ -66,7 +66,10 @@ export type CameraSession = {
 // deviceId opsional, bukan wajib: instalasi satu-device tidak perlu
 // menyebutkannya dan resolver akan memilihkannya sendiri. Begitu ada lebih dari
 // satu device aktif, resolver menolak menebak dan menuntut nilai ini.
-const deviceRefSchema = z.object({ deviceId: z.number().int().positive().optional() });
+const deviceRefSchema = z.object({
+  deviceId: z.number().int().positive().optional(),
+  plant: z.string().trim().min(1).optional(),
+});
 
 const sessionRefSchema = z
   .object({ sessionId: z.string(), leaseToken: z.string() })
@@ -78,10 +81,33 @@ function createApiError(code: string, message: string): ErrorWithCode {
   return error;
 }
 
+// Resolve placement before acquiring a lease; no camera operation is performed here.
+export const resolveCaptureDevice = createServerFn({ method: "GET" })
+  .validator(z.object({ plant: z.string().trim().min(1) }))
+  .handler(async ({ data }) => {
+    const target = await resolveTarget(undefined, undefined, data.plant);
+    if (!target.ok) return target;
+    if (target.deviceId == null || !target.deviceCode) {
+      return {
+        ok: false as const,
+        code: "DEVICE_ASSIGNMENT_REQUIRED",
+        message: "Kamera belum ditempatkan di registry.",
+      };
+    }
+    return {
+      ok: true as const,
+      deviceId: target.deviceId,
+      deviceCode: target.deviceCode,
+      deviceName: target.deviceName,
+      station: target.station ?? null,
+      plant: data.plant,
+    };
+  });
+
 export const createSession = createServerFn({ method: "POST" })
   .validator(z.object({ ownerId: z.string(), leaseSeconds: z.number() }).merge(deviceRefSchema))
   .handler(async ({ data }): Promise<ApiSuccess<{ session: CameraSession }> | ApiFailure> => {
-    const target = await resolveTarget(data.deviceId);
+    const target = await resolveTarget(data.deviceId, undefined, data.plant);
     if (!target.ok) return target;
 
     let res: Response;
@@ -114,7 +140,7 @@ export const createSession = createServerFn({ method: "POST" })
 export const releaseSession = createServerFn({ method: "POST" })
   .validator(sessionRefSchema)
   .handler(async ({ data }) => {
-    const target = await resolveTarget(data.deviceId);
+    const target = await resolveTarget(data.deviceId, undefined, data.plant);
     // Best-effort: lease-nya akan kedaluwarsa sendiri kalau ini tidak jalan.
     if (!target.ok) return;
 
@@ -136,7 +162,7 @@ export const releaseSession = createServerFn({ method: "POST" })
 export const renewSession = createServerFn({ method: "POST" })
   .validator(sessionRefSchema.extend({ leaseSeconds: z.number().optional() }))
   .handler(async ({ data }): Promise<{ ok: true } | ApiFailure> => {
-    const target = await resolveTarget(data.deviceId);
+    const target = await resolveTarget(data.deviceId, undefined, data.plant);
     if (!target.ok) return target;
 
     try {
@@ -160,7 +186,7 @@ export const renewSession = createServerFn({ method: "POST" })
 export const getPreviewFrame = createServerFn({ method: "GET" })
   .validator(sessionRefSchema)
   .handler(async ({ data }) => {
-    const target = await resolveTarget(data.deviceId);
+    const target = await resolveTarget(data.deviceId, undefined, data.plant);
     if (!target.ok) throw createApiError(target.code, target.message);
 
     const res = await fetch(`${target.baseUrl}/v1/camera/preview`, {
@@ -182,7 +208,7 @@ export type CaptureJob = { jobId: string; status: string; type: string };
 export const triggerCapture = createServerFn({ method: "POST" })
   .validator(sessionRefSchema)
   .handler(async ({ data }): Promise<ApiSuccess<{ job: CaptureJob }> | ApiFailure> => {
-    const target = await resolveTarget(data.deviceId);
+    const target = await resolveTarget(data.deviceId, undefined, data.plant);
     if (!target.ok) return target;
 
     let res: Response;
@@ -218,7 +244,7 @@ export const triggerCapture = createServerFn({ method: "POST" })
 export const triggerAutofocus = createServerFn({ method: "POST" })
   .validator(sessionRefSchema)
   .handler(async ({ data }): Promise<ApiSuccess<{ job: CaptureJob }> | ApiFailure> => {
-    const target = await resolveTarget(data.deviceId);
+    const target = await resolveTarget(data.deviceId, undefined, data.plant);
     if (!target.ok) return target;
 
     let res: Response;
@@ -256,7 +282,7 @@ export type JobResult = {
 export const getJob = createServerFn({ method: "GET" })
   .validator(z.object({ jobId: z.string() }).merge(deviceRefSchema))
   .handler(async ({ data }): Promise<ApiSuccess<{ job: JobResult }> | ApiFailure> => {
-    const target = await resolveTarget(data.deviceId);
+    const target = await resolveTarget(data.deviceId, undefined, data.plant);
     if (!target.ok) return target;
 
     let res: Response;
@@ -273,9 +299,13 @@ export const getJob = createServerFn({ method: "GET" })
 
 // Client-side loop around `getJob` — not a server function itself, just
 // polls the RPC above until the capture job reaches a terminal state.
-export async function pollJob(jobId: string, intervalMs = 500): Promise<JobResult> {
+export async function pollJob(
+  jobId: string,
+  intervalMs = 500,
+  target?: { deviceId: number; plant: string },
+): Promise<JobResult> {
   for (;;) {
-    const polled = await getJob({ data: { jobId } });
+    const polled = await getJob({ data: { jobId, ...target } });
     if (!polled.ok) throw createApiError(polled.code, polled.message);
     if (polled.job.status === "succeeded" || polled.job.status === "failed") return polled.job;
     await new Promise((resolve) => setTimeout(resolve, intervalMs));
@@ -469,12 +499,12 @@ function logDeviceStatusIssue({
 
 // No session required -- /v1/device is read-only status, unlike the
 // capture/preview endpoints which need X-Session-Token.
-export const getDeviceStatus = createServerFn({ method: "GET" }).handler(
-  async (): Promise<DeviceStatus> => {
-    // Tanpa parameter: pemanggilnya sidebar dan dashboard yang menanyakan
-    // "device saya" -- resolver yang menentukan device mana itu, dan menolak
-    // menebak kalau operatornya punya lebih dari satu.
-    const target = await resolveTarget();
+export const getDeviceStatus = createServerFn({ method: "GET" })
+  .validator(deviceRefSchema.extend({ deviceCode: z.string().trim().min(1).optional() }).optional())
+  .handler(async ({ data }): Promise<DeviceStatus> => {
+    // Kode dari profil lokal menjaga pilihan device yang sudah dibuat di
+    // halaman Devices tetap berlaku saat halaman lain membaca status.
+    const target = await resolveTarget(data?.deviceId, data?.deviceCode, data?.plant);
     if (!target.ok) {
       return {
         online: false,
@@ -556,8 +586,7 @@ export const getDeviceStatus = createServerFn({ method: "GET" }).handler(
       });
       return createOfflineStatus(offlineStatus.statusMessage, describeTarget(target));
     }
-  },
-);
+  });
 
 export const listCameraConfigs = createServerFn({ method: "GET" }).handler(
   async (): Promise<ApiSuccess<{ items: CameraConfig[] }> | ApiFailure> => {
@@ -707,7 +736,9 @@ async function pollEdgeJob(
 }
 
 export const upsertAndApplyEdgePreset = createServerFn({ method: "POST" })
-  .validator(applyEdgePresetProfileSchema.merge(deviceRefSchema))
+  .validator(
+    applyEdgePresetProfileSchema.extend({ deviceId: z.number().int().positive().optional() }),
+  )
   .handler(
     async ({
       data,
@@ -721,7 +752,7 @@ export const upsertAndApplyEdgePreset = createServerFn({ method: "POST" })
         }>
       | ApiFailure
     > => {
-      const target = await resolveTarget(data.deviceId);
+      const target = await resolveTarget(data.deviceId, undefined, data.plant);
       if (!target.ok) return target;
 
       const device = await getDeviceStatus();
@@ -883,7 +914,7 @@ export const upsertAndApplyEdgePreset = createServerFn({ method: "POST" })
 export const getMediaContent = createServerFn({ method: "GET" })
   .validator(z.object({ assetId: z.string() }).merge(deviceRefSchema))
   .handler(async ({ data }) => {
-    const target = await resolveTarget(data.deviceId);
+    const target = await resolveTarget(data.deviceId, undefined, data.plant);
     if (!target.ok) throw createApiError(target.code, target.message);
 
     const res = await fetch(`${target.baseUrl}/v1/media/${data.assetId}/content`, {
@@ -919,7 +950,7 @@ export const exportMediaToNetwork = createServerFn({ method: "POST" })
   .validator(sessionRefSchema.extend({ assetId: z.string(), relativePath: z.string() }))
   .handler(
     async ({ data }): Promise<ApiSuccess<{ savedTo: string; filename: string }> | ApiFailure> => {
-      const target = await resolveTarget(data.deviceId);
+      const target = await resolveTarget(data.deviceId, undefined, data.plant);
       if (!target.ok) return target;
 
       const targetRoot = getServerEnv().NETWORK_SAVE_ROOT;

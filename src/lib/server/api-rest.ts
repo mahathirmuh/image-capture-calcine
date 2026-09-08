@@ -29,7 +29,6 @@ import sql from "mssql";
 import openapiSpec from "../../../docs/openapi.yaml?raw";
 import { getCardDbPool, getCardDbSchema, isCardDbConfigured } from "../carddb";
 import {
-  deleteCaptureRecordById,
   guardCaptureManagementUser,
   mapCaptureRecordRow,
   type CaptureRecordView,
@@ -40,6 +39,7 @@ import { BIN_SLOTS, PLANTS, toBinLabel, toBinTitle, toLocationToken } from "../l
 import { joinNetworkPath, normalizeRelativeSegments } from "../network-path";
 import { buildSessionCoverage, toLocalDateKey, type CoverageRecord } from "../session-coverage";
 import { parseSessionLabel, sessionDateFromCapturedAt } from "../session-coverage";
+import { deleteCaptureRecordById } from "./capture-record-delete";
 import { upsertCaptureRecordResult } from "./capture-record-write";
 import {
   API_KEY_HEADER,

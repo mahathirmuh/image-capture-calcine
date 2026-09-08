@@ -117,6 +117,24 @@ export default defineConfig(async ({ command, mode }) => {
     server: {
       host: "::",
       port: 8080,
+      // Register RPCs even when a browser reuses cached client modules after
+      // a dev restart. Start's lazy lookup can ingest a module without
+      // compiling its server functions, leaving otherwise valid IDs unknown.
+      warmup: {
+        ssrFiles: [
+          "./src/lib/activity-log.ts",
+          "./src/lib/auth.ts",
+          "./src/lib/camera-api.ts",
+          "./src/lib/capture-records.ts",
+          "./src/lib/device-registry.ts",
+          "./src/lib/edge-targets.ts",
+          "./src/lib/media-access.ts",
+          "./src/lib/network-save.ts",
+          "./src/lib/operator-plant.ts",
+          "./src/lib/storage-diagnostics.ts",
+          "./src/lib/user-admin.ts",
+        ],
+      },
       watch: {
         awaitWriteFinish: { stabilityThreshold: 1000, pollInterval: 100 },
       },

@@ -9,12 +9,13 @@ import {
 
 import {
   createSession,
+  resolveCaptureDevice,
   getDeviceStatus,
   getPreviewFrame,
   releaseSession,
   renewSession,
   type DeviceStatus,
-} from "@/lib/camera-api";
+} from "../lib/camera-api";
 import {
   getDeviceStatusPollInterval,
   getRuntimeErrorCode,
@@ -22,12 +23,27 @@ import {
   isCameraReadyForLiveOps,
   isIgnorableSessionFetchError,
   shouldRenewSession,
-} from "@/lib/camera-runtime";
+} from "../lib/camera-runtime";
+import { saveSelectedEdgeDevice } from "../lib/selected-edge-device";
 
-export type CameraSessionRef = { sessionId: string; leaseToken: string };
+export type CaptureDevice = {
+  deviceId: number;
+  deviceCode: string;
+  deviceName: string | null;
+  station: string | null;
+  plant: string;
+};
+export type CameraSessionRef = {
+  sessionId: string;
+  leaseToken: string;
+  deviceId: number;
+  plant: string;
+};
 export type CameraSessionIssue = { code: string; message: string; updatedAt: number };
 
 type UseCaptureCameraSessionArgs = {
+  plant: string;
+  enabled: boolean;
   setError: Dispatch<SetStateAction<string | null>>;
   setStatus: Dispatch<SetStateAction<string | null>>;
   // Gates the preview poll loop only. Session, heartbeat, and device-status
@@ -55,6 +71,8 @@ function releaseSessionKeepalive(session: CameraSessionRef) {
 }
 
 export function useCaptureCameraSession({
+  plant,
+  enabled,
   setError,
   setStatus,
   previewEnabled,
@@ -69,10 +87,78 @@ export function useCaptureCameraSession({
   const [waitingForCamera, setWaitingForCamera] = useState(false);
   const [sessionIssue, setSessionIssue] = useState<CameraSessionIssue | null>(null);
 
+  const [captureDevice, setCaptureDevice] = useState<CaptureDevice | null>(null);
+  const targetRef = useRef<CaptureDevice | null>(null);
+  const plantRef = useRef(plant);
+  plantRef.current = plant;
   const startAttemptRef = useRef(0);
   const sessionRef = useRef<CameraSessionRef | null>(null);
   const cameraBusyRef = useRef(false);
   const startCameraRef = useRef<() => Promise<void>>(async () => {});
+  const releasePendingRef = useRef<Promise<unknown>>(Promise.resolve());
+  const invalidateStart = useCallback(() => {
+    startAttemptRef.current++;
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    startAttemptRef.current++;
+    const oldSession = sessionRef.current;
+    sessionRef.current = null;
+    targetRef.current = null;
+    setCaptureDevice(null);
+    setSessionId(null);
+    setLeaseToken(null);
+    setSessionStarting(false);
+    setWaitingForCamera(false);
+    setSessionIssue(null);
+    setDeviceStatus(null);
+    setDeviceStatusLoaded(false);
+    setError(null);
+    setStatus(null);
+    setCameraFrame((previous) => {
+      if (previous) URL.revokeObjectURL(previous);
+      return null;
+    });
+    async function connect() {
+      // Finish releasing the original target before acquiring the next lease.
+      if (oldSession) releasePendingRef.current = releaseSessionKeepalive(oldSession);
+      await releasePendingRef.current;
+      await Promise.resolve();
+      if (cancelled || !enabled) return;
+      try {
+        const result = await resolveCaptureDevice({ data: { plant } });
+        if (cancelled) return;
+        if (!result.ok) {
+          setError(result.message);
+          setSessionIssue({ code: result.code, message: result.message, updatedAt: Date.now() });
+          setDeviceStatusLoaded(true);
+          return;
+        }
+        targetRef.current = result;
+        setCaptureDevice(result);
+        saveSelectedEdgeDevice(result.deviceCode);
+        await startCameraRef.current();
+      } catch (cause) {
+        if (cancelled) return;
+        const message = getErrorMessage(
+          cause,
+          "Gagal membaca penempatan kamera. Muat ulang halaman untuk mencoba lagi.",
+        );
+        setError(message);
+        setSessionIssue({ code: "DEVICE_LOOKUP_FAILED", message, updatedAt: Date.now() });
+        setDeviceStatusLoaded(true);
+      }
+    }
+    void connect();
+    return () => {
+      cancelled = true;
+      invalidateStart();
+      const session = sessionRef.current;
+      sessionRef.current = null;
+      if (session) releasePendingRef.current = releaseSessionKeepalive(session);
+    };
+  }, [plant, enabled, setError, setStatus, invalidateStart]);
 
   useEffect(() => {
     function releaseOnExit() {
@@ -102,7 +188,9 @@ export function useCaptureCameraSession({
       return;
     }
 
-    const session = { sessionId, leaseToken };
+    const storedSession = sessionRef.current;
+    if (!storedSession || storedSession.plant !== plant || !enabled) return;
+    const session: CameraSessionRef = storedSession;
     const liveOpsReady = isCameraReadyForLiveOps(deviceStatus);
     let cancelled = false;
     let loopRunning = false;
@@ -174,9 +262,11 @@ export function useCaptureCameraSession({
       cancelled = true;
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, [deviceStatus, leaseToken, previewEnabled, sessionId, setStatus]);
+  }, [deviceStatus, leaseToken, previewEnabled, sessionId, setStatus, plant, enabled]);
 
   useEffect(() => {
+    if (!captureDevice || captureDevice.plant !== plant || !enabled) return;
+    const target = captureDevice;
     let cancelled = false;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
     let lastStatus: DeviceStatus | null = null;
@@ -190,7 +280,9 @@ export function useCaptureCameraSession({
 
     async function poll() {
       try {
-        const status = await getDeviceStatus();
+        const status = await getDeviceStatus({
+          data: { deviceId: target.deviceId, plant: target.plant },
+        });
         lastStatus = status;
         if (!cancelled) {
           setDeviceStatus(status);
@@ -210,10 +302,13 @@ export function useCaptureCameraSession({
       cancelled = true;
       if (timeoutId) clearTimeout(timeoutId);
     };
-  }, []);
+  }, [captureDevice, plant, enabled]);
 
   useEffect(() => {
     if (!sessionId || !leaseToken) return;
+    const storedSession = sessionRef.current;
+    if (!storedSession || storedSession.plant !== plant || !enabled) return;
+    const session: CameraSessionRef = storedSession;
 
     const sid = sessionId;
     const tok = leaseToken;
@@ -235,7 +330,7 @@ export function useCaptureCameraSession({
       }
 
       const result = await renewSession({
-        data: { sessionId: sid, leaseToken: tok, leaseSeconds: 120 },
+        data: { ...session, sessionId: sid, leaseToken: tok, leaseSeconds: 120 },
       });
       if (cancelled) return;
 
@@ -270,9 +365,11 @@ export function useCaptureCameraSession({
       if (timeoutId) clearTimeout(timeoutId);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [deviceStatus, leaseToken, sessionId, setStatus]);
+  }, [deviceStatus, leaseToken, sessionId, setStatus, plant, enabled]);
 
   async function startCameraImpl() {
+    const target = targetRef.current;
+    if (!target || target.plant !== plantRef.current || !enabled || sessionRef.current) return;
     const attempt = ++startAttemptRef.current;
     setError(null);
     setSessionStarting(true);
@@ -286,8 +383,11 @@ export function useCaptureCameraSession({
         let result;
         try {
           const ownerId = `web-${Math.random().toString(36).slice(2, 10)}`;
-          result = await createSession({ data: { ownerId, leaseSeconds: 120 } });
+          result = await createSession({
+            data: { ownerId, leaseSeconds: 120, deviceId: target.deviceId, plant: target.plant },
+          });
         } catch (error: unknown) {
+          if (startAttemptRef.current !== attempt) return;
           if (isIgnorableSessionFetchError(error)) {
             return;
           }
@@ -301,9 +401,19 @@ export function useCaptureCameraSession({
           return;
         }
 
-        if (startAttemptRef.current !== attempt) return;
+        if (startAttemptRef.current !== attempt) {
+          if (result.ok)
+            await releaseSessionKeepalive({
+              ...result.session,
+              deviceId: target.deviceId,
+              plant: target.plant,
+            });
+          return;
+        }
         if (result.ok) {
           const session = {
+            deviceId: target.deviceId,
+            plant: target.plant,
             sessionId: result.session.sessionId,
             leaseToken: result.session.leaseToken,
           };
@@ -363,6 +473,9 @@ export function useCaptureCameraSession({
   }, [setError, setStatus]);
 
   const stopCamera = useCallback(async () => {
+    startAttemptRef.current++;
+    setSessionStarting(false);
+    setWaitingForCamera(false);
     const session = sessionRef.current;
     sessionRef.current = null;
     setSessionId(null);
@@ -384,17 +497,19 @@ export function useCaptureCameraSession({
   // costs one USB round trip instead of one every ~1.2s indefinitely.
   const fetchPreviewOnce = useCallback(async () => {
     const session = sessionRef.current;
-    if (!session || cameraBusyRef.current) return;
+    if (!session || session.plant !== plantRef.current || cameraBusyRef.current) return;
 
     setPreviewFetching(true);
     try {
       const res = await getPreviewFrame({ data: session });
       const blob = await res.blob();
+      if (sessionRef.current !== session || session.plant !== plantRef.current) return;
       setCameraFrame((prev) => {
         if (prev) URL.revokeObjectURL(prev);
         return URL.createObjectURL(blob);
       });
     } catch (error) {
+      if (sessionRef.current !== session || session.plant !== plantRef.current) return;
       if (isIgnorableSessionFetchError(error)) return;
       // Unlike the loop, this was an explicit click -- say something rather
       // than swallowing it, otherwise the button looks dead.
@@ -413,21 +528,22 @@ export function useCaptureCameraSession({
     deviceStatus.camera?.connected &&
     deviceStatus.connectionState === "ready"
   );
-  const sessionActive = !!sessionId;
+  const sessionActive = !!sessionId && captureDevice?.plant === plant && enabled;
   const cameraUsable = sessionActive && (deviceStatus === null || cameraOnline);
   const cameraAsleep = sessionActive && deviceStatus !== null && !cameraOnline;
 
   return {
+    captureDevice: captureDevice?.plant === plant && enabled ? captureDevice : null,
     cameraAsleep,
     cameraBusyRef,
-    cameraFrame,
+    cameraFrame: captureDevice?.plant === plant && enabled ? cameraFrame : null,
     cameraUsable,
-    deviceStatus,
-    deviceStatusLoaded,
+    deviceStatus: captureDevice?.plant === plant && enabled ? deviceStatus : null,
+    deviceStatusLoaded: captureDevice?.plant === plant ? deviceStatusLoaded : !!sessionIssue,
     fetchPreviewOnce,
-    leaseToken,
+    leaseToken: sessionActive ? leaseToken : null,
     previewFetching,
-    sessionId,
+    sessionId: sessionActive ? sessionId : null,
     sessionStarting,
     sessionIssue,
     startCamera,

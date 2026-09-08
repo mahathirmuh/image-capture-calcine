@@ -377,3 +377,19 @@ Finish the operator settings surface and align runtime configuration behavior wi
 - Follow-up: the assistant's first-run Gradle download held the distribution lock and a concurrent user build timed out after 120 seconds. Stopped only the identified assistant Gradle wrapper process and verified exclusive access to the lock file succeeded. APK assembly remains unverified; no build remains running from this verification session.
 
 - SDK follow-up: the 55-minute user build failed with SDK location not found (daemon-104648.out.log). Created ignored mobile/android/local.properties pointing to the installed Android SDK under the current user's AppData/Local/Android/Sdk; Android API 35 and build tools are installed. Offline assembleDebug passed SDK discovery and reached checkDebugAarMetadata, then failed because AndroidX/Cordova artifacts are not cached. A normal online build is still required; no build was left running. No backend or OpenAPI change.
+
+- Final verification (2026-09-08): root npm run dev:capacitor completed successfully on Windows (exit 0): TypeScript/Vite build, Capacitor Android sync including @capacitor/preferences 7.0.4, and Gradle assembleDebug. Gradle reported BUILD SUCCESSFUL in 1m 35s, 112 actionable tasks (108 executed, 4 up-to-date). Verified the generated mobile/android/app/build/outputs/apk/debug/app-debug.apk exists and passes Android SDK apksigner verify --verbose. Installation and on-device runtime were not tested. This supersedes the pending assembly notes above; no backend/OpenAPI change.
+
+## Post-M5 Maintenance — Web Dev Import Boundary (2026-09-08)
+
+- Moved the shared capture deletion implementation into `src/lib/server/capture-record-delete.ts`. REST imports it directly; the web RPC dynamically imports it inside `createServerFn().handler()`, keeping server file operations out of the browser module graph.
+- Fixed the missing SQL runtime argument in the web deletion record lookup.
+- Reviewed `docs/openapi.yaml` capture deletion contract: no endpoint, authorization, or response shape changes. Mobile phase status remains completed through M5.
+- Verification: production `npm run build` passed; capture-records and share-file suites passed (28 tests). Local Vite on port 8089 returned HTTP 200 for the capture-records client module and dashboard/gallery split components without denied server imports. Actual capture deletion against MSSQL/share was not executed.
+
+## Post-M5 Maintenance — Web Dev RPC Restart (2026-09-08)
+
+- Reproduced `Invalid server function ID` for `createCaptureMediaUrl` by calling its RPC on a fresh Vite server before requesting the client module. The installed Start compiler lazy lookup ingests source without registering the function in this cold path.
+- Added SSR warmup for the existing RPC modules in `vite.config.ts`; documented local dev startup and maintaining the warmup list in `README.md`. Import protection and server-function validation remain enabled.
+- Verification: two fresh Vite starts on port 8089, with no preceding page/client-module requests, both returned HTTP 200 for media URL RPC (expected UNAUTHENTICATED without cookies) and empty thumbnail batch RPC (success). Test servers were stopped afterward. `npm run build` and `git diff --check` passed. An initial check encountered a concurrently edited, temporarily invalid UTF-8 gallery file; repeated checks passed after that file was valid again.
+- OpenAPI applicability reviewed: development compiler configuration only; no API contract or mobile phase change. Authenticated image retrieval was not tested.

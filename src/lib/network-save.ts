@@ -52,6 +52,7 @@ export const saveMediaToNetwork = createServerFn({ method: "POST" })
   .validator(
     z.object({
       deviceId: z.number().int().positive().optional(),
+      plant: z.string().trim().min(1).optional(),
       assetId: z.string().min(1),
       relativePath: z.string().min(1),
       // Dipakai saat flush untuk mencocokkan record capture di registry.
@@ -82,7 +83,7 @@ export const saveMediaToNetwork = createServerFn({ method: "POST" })
     const requestedName = segments[segments.length - 1];
 
     const { resolveEdgeTarget } = await import("./server/edge-target");
-    const target = await resolveEdgeTarget(data.deviceId);
+    const target = await resolveEdgeTarget(data.deviceId, undefined, undefined, data.plant);
     if (!target.ok) return target;
 
     // Cermin dari `edgeHeaders()` di camera-api.ts. Sengaja tidak diimpor dari

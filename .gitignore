@@ -44,3 +44,8 @@ dist-ssr
 # di bawah ini skrip itu tidak pernah dipanggil, jadi clone orang lain
 # tidak tiba-tiba auto-push.
 .claude/settings.local.json
+
+# Isolated local verification artifacts.
+.capture-verification/
+.capture-vite-cache/
+.capture-verify.config.ts

@@ -47,6 +47,11 @@ npm install
 npm run build
 ```
 
+For local web development, run `npm run dev` and open `http://localhost:8080`.
+The Vite config warms the server-function modules so cached browser tabs can
+call RPCs after a dev restart without `Invalid server function ID`. When adding
+a new RPC module under `src/lib/`, include it in `server.warmup.ssrFiles`.
+
 Mobile:
 
 ```bash
