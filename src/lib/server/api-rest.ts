@@ -21,6 +21,8 @@
 // di dalam masing-masing handler -- penjagaan yang tersebar akan terlewat pada
 // endpoint berikutnya yang ditambahkan orang.
 import sql from "mssql";
+import { canViewGalleryPlant } from "../gallery-access";
+import { CAPTURE_PLANT_SQL, requireGalleryUserAccess } from "./gallery-access";
 
 // Spesifikasinya diimpor sebagai teks, bukan dibaca dari disk saat runtime:
 // dengan begini isinya ikut masuk ke bundel server, jadi tidak ada berkas yang
@@ -404,7 +406,7 @@ const CAPTURE_COLUMNS = `
  * belum memuat plant tetap ikut tersaring.
  */
 const CAPTURE_FILTERS = `
-  WHERE (@plant IS NULL OR COALESCE(JSON_VALUE(cr.metadata_json, '$.plant'), l.plant) = @plant)
+  WHERE (@plant IS NULL OR ${CAPTURE_PLANT_SQL} = @plant)
     AND (@session IS NULL OR JSON_VALUE(cr.metadata_json, '$.captureSession') = @session)
     AND (@status IS NULL OR cr.status = @status)
     AND (@from IS NULL OR cr.captured_at >= @from)
@@ -921,7 +923,7 @@ async function handleCaptureThumb(rawId: string): Promise<Response> {
  * di mana -- dan di sini bedanya nyata: sesi 02.00 WITA jatuh di hari
  * sebelumnya kalau dihitung UTC.
  */
-async function handleSummary(): Promise<Response> {
+async function handleSummary(galleryPlant: string | null): Promise<Response> {
   const schema = `[${getCardDbSchema()}]`;
   const pool = await getCardDbPool();
 
@@ -931,7 +933,7 @@ async function handleSummary(): Promise<Response> {
     new Date(dayStart.getTime() - daysAgo * 24 * 60 * 60 * 1000).toISOString();
 
   const aggregate = await pool
-    .request()
+    .request().input("galleryPlant", sql.NVarChar(100), galleryPlant)
     .input("dayStart", sql.NVarChar(40), dayStart.toISOString())
     .input("weekStart", sql.NVarChar(40), startOf(6))
     .input("monthStart", sql.NVarChar(40), startOf(29)).query(`
@@ -944,18 +946,21 @@ async function handleSummary(): Promise<Response> {
         SUM(CASE WHEN captured_at >= @monthStart THEN 1 ELSE 0 END) AS month_count,
         SUM(CASE WHEN status = N'saved' THEN 1 ELSE 0 END) AS saved_count,
         SUM(CASE WHEN status = N'downloaded' THEN 1 ELSE 0 END) AS downloaded_count
-      FROM ${schema}.capture_records;
+      FROM ${schema}.capture_records cr
+      LEFT JOIN ${schema}.locations l ON l.id = cr.location_id
+      WHERE (@galleryPlant IS NULL OR ${CAPTURE_PLANT_SQL} = @galleryPlant);
     `);
 
-  const byPlant = await pool.request().query(`
+  const byPlant = await pool.request().input("galleryPlant", sql.NVarChar(100), galleryPlant).query(`
     SELECT
-      COALESCE(JSON_VALUE(cr.metadata_json, '$.plant'), l.plant) AS plant,
+      ${CAPTURE_PLANT_SQL} AS plant,
       COUNT(*) AS captures,
       SUM(COALESCE(cr.file_size_bytes, 0)) AS bytes,
       MAX(cr.captured_at) AS last_captured_at
     FROM ${schema}.capture_records cr
     LEFT JOIN ${schema}.locations l ON l.id = cr.location_id
-    GROUP BY COALESCE(JSON_VALUE(cr.metadata_json, '$.plant'), l.plant)
+    WHERE (@galleryPlant IS NULL OR ${CAPTURE_PLANT_SQL} = @galleryPlant)
+    GROUP BY ${CAPTURE_PLANT_SQL}
     ORDER BY COUNT(*) DESC;
   `);
 
@@ -1768,12 +1773,13 @@ async function handleSessions(url: URL): Promise<Response> {
   const pool = await getCardDbPool();
   const result = await pool
     .request()
+    .input("plant", sql.NVarChar(100), requestedPlant)
     .input("from", sql.DateTime2, windowStart)
     .input("to", sql.DateTime2, windowEnd).query(`
       SELECT ${CAPTURE_COLUMNS}
       FROM ${schema}.capture_records cr
       LEFT JOIN ${schema}.locations l ON l.id = cr.location_id
-      WHERE cr.captured_at >= @from AND cr.captured_at < @to
+      WHERE (@plant IS NULL OR ${CAPTURE_PLANT_SQL} = @plant) AND cr.captured_at >= @from AND cr.captured_at < @to
       ORDER BY cr.captured_at ASC, cr.id ASC;`);
 
   const records = result.recordset.map((row: unknown) =>
@@ -1792,6 +1798,7 @@ type RouteContext = {
   request: Request;
   /** Null hanya pada jalur publik (/docs, /openapi.yaml). */
   principal: ApiPrincipal | null;
+  galleryPlant: string | null;
 };
 
 type Route = {
@@ -1860,7 +1867,7 @@ const ROUTES: Route[] = [
     handle: (c) => handleCaptureThumb(c.params[0]),
   },
   { method: "GET", pattern: /^\/sessions$/, handle: (c) => handleSessions(c.url) },
-  { method: "GET", pattern: /^\/summary$/, handle: () => handleSummary() },
+  { method: "GET", pattern: /^\/summary$/, handle: (c) => handleSummary(c.galleryPlant) },
   { method: "GET", pattern: /^\/devices$/, handle: () => handleDevices() },
   {
     method: "GET",
@@ -2013,7 +2020,39 @@ export async function handleApiRequest(request: Request): Promise<Response> {
 
   try {
     const params = matched.pattern.exec(path)?.slice(1) ?? [];
-    return respond((await matched.handle({ url, params, request, principal })) as Response);
+    let galleryPlant: string | null = null;
+    if (
+      lookupMethod === "GET" &&
+      /^\/(captures(?:\/|$)|sessions$|summary$)/.test(path) &&
+      principal?.kind === "user"
+    ) {
+      const access = await requireGalleryUserAccess(principal.claims.userId);
+      if (!access.ok)
+        return respond(
+          apiError(access.code === "UNAUTHENTICATED" ? 401 : 403, access.code, access.message),
+        );
+      galleryPlant = access.scope.plant;
+      if (galleryPlant) {
+        const requested = url.searchParams.get("plant");
+        if (requested && requested !== galleryPlant)
+          return respond(apiError(403, "FORBIDDEN", "Plant di luar akses akun Anda."));
+        url.searchParams.set("plant", galleryPlant);
+      }
+      if (path.startsWith("/captures/") && params[0]) {
+        const id = Number(params[0]);
+        if (!Number.isInteger(id) || id < 1)
+          return respond(apiError(400, "INVALID_PARAM", "Id capture tidak sah."));
+        const { findRecordPlants } = await import("./media-record");
+        const plants = await findRecordPlants([id]);
+        if (!plants.has(id)) return respond(apiError(404, "NOT_FOUND", "Capture tidak ditemukan."));
+        if (!canViewGalleryPlant(access.scope, plants.get(id))) {
+          return respond(apiError(403, "FORBIDDEN", "Capture di luar akses plant Anda."));
+        }
+      }
+    }
+    return respond(
+      (await matched.handle({ url, params, request, principal, galleryPlant })) as Response,
+    );
   } catch (error: unknown) {
     // Pesan aslinya dicatat di log server, bukan dikirim ke klien: pesan error
     // MSSQL memuat nama server, database, dan kadang potongan query.

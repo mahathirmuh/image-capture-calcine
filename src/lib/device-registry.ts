@@ -37,13 +37,16 @@ const registryConfigSchema = z.object({
   cameraSettings: cameraSettingsSchema.optional(),
 });
 
-const upsertRegisteredDeviceInputSchema = z.object({
-  deviceCode: z.string().trim().min(1, "Device code wajib diisi"),
-  deviceName: z.string().trim().min(1, "Nama device wajib diisi"),
-  plant: z.string().trim().min(1, "Plant wajib diisi"),
-  bin: z.string().trim().min(1, "Bin wajib diisi"),
-  station: z.string().trim().min(1, "Station wajib diisi"),
-  description: z.string().default(""),
+export const upsertRegisteredDeviceInputSchema = z.object({
+  deviceId: z.number().int().positive().optional(),
+  deviceCode: z.string().trim().min(1, "Device code wajib diisi").max(50),
+  deviceName: z.string().trim().min(1, "Nama device wajib diisi").max(150),
+  plant: z
+    .string()
+    .refine((plant) => PLANTS.some((allowed) => allowed === plant), "Plant tidak dikenal"),
+  bin: z.string().trim().min(1, "Bin wajib diisi").max(100),
+  station: z.string().trim().min(1, "Station wajib diisi").max(100),
+  description: z.string().max(500).default(""),
   templateId: z.string().default(DEFAULT_DEVICE_TEMPLATE_ID),
   schedule: z.string().default(DEVICE_SCHEDULES[1]),
   timezone: z.string().default(DEVICE_TIMEZONES[0]),
@@ -164,6 +167,7 @@ export function buildDeviceProfileFromRegisteredDevice(
   device: RegisteredDevice,
   existingProfile?: DeviceProfile | null,
 ) {
+  if (existingProfile?.deviceCode !== device.deviceCode) existingProfile = null;
   return createProfileFromInput({
     deviceCode: device.deviceCode,
     deviceName: device.deviceName,
@@ -246,6 +250,9 @@ async function loadRegisteredDevicesFromDb(
 }
 
 export const listRegisteredDevices = createServerFn({ method: "GET" }).handler(async () => {
+  const { requireDeviceRegistryAccess } = await import("./server/device-registry-access");
+  const gate = await requireDeviceRegistryAccess();
+  if (!gate.ok) return gate;
   const [{ getCardDbPool, getCardDbSchema, isCardDbConfigured }] = await Promise.all([
     import("./carddb"),
   ]);
@@ -261,13 +268,91 @@ export const listRegisteredDevices = createServerFn({ method: "GET" }).handler(a
   const pool = await getCardDbPool();
   return {
     ok: true as const,
-    devices: await loadRegisteredDevicesFromDb(pool, schema),
+    devices: (await loadRegisteredDevicesFromDb(pool, schema)).filter(
+      (device) =>
+        gate.user.role === "admin" || gate.user.plant === "ALL" || device.plant === gate.user.plant,
+    ),
   };
 });
+
+export const getRegisteredDevice = createServerFn({ method: "GET" })
+  .validator(z.object({ deviceId: z.number().int().positive() }))
+  .handler(async ({ data }) => {
+    const result = await listRegisteredDevices();
+    if (!result.ok) return result;
+    const device = result.devices.find((item) => item.id === data.deviceId);
+    return device
+      ? { ok: true as const, device }
+      : { ok: false as const, message: "Device tidak ditemukan atau tidak dapat diakses." };
+  });
+
+export const changeRegisteredDeviceState = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      deviceId: z.number().int().positive(),
+      action: z.enum(["activate", "deactivate", "delete"]),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { requireDeviceRegistryAccess } = await import("./server/device-registry-access");
+    const gate = await requireDeviceRegistryAccess(true);
+    if (!gate.ok) return gate;
+    const [{ getCardDbPool, getCardDbSchema }, sql] = await Promise.all([
+      import("./carddb"),
+      import("mssql").then((m) => m.default),
+    ]);
+    const pool = await getCardDbPool();
+    const schema = `[${getCardDbSchema()}]`;
+    const transaction = new sql.Transaction(pool);
+    try {
+      await transaction.begin();
+      const found = await new sql.Request(transaction)
+        .input("id", sql.BigInt, data.deviceId)
+        .query(
+          `SELECT id, is_active FROM ${schema}.devices WITH (UPDLOCK, HOLDLOCK) WHERE id = @id AND is_deleted = 0;`,
+        );
+      const device = found.recordset[0];
+      if (!device) throw new Error("Device tidak ditemukan atau sudah dihapus.");
+      if (data.action === "delete" && device.is_active)
+        throw new Error("Nonaktifkan device sebelum menghapusnya.");
+      await new sql.Request(transaction)
+        .input("id", sql.BigInt, data.deviceId)
+        .input("active", sql.Bit, data.action === "activate" ? 1 : 0)
+        .input("deleted", sql.Bit, data.action === "delete" ? 1 : 0)
+        .query(
+          `UPDATE ${schema}.devices SET is_active = @active, is_deleted = @deleted, updated_at = SYSUTCDATETIME() WHERE id = @id;`,
+        );
+      if (data.action === "delete") {
+        await new sql.Request(transaction)
+          .input("id", sql.BigInt, data.deviceId)
+          .query(
+            `UPDATE ${schema}.device_assignments SET is_current = 0, assigned_to = SYSUTCDATETIME() WHERE device_id = @id AND is_current = 1;`,
+          );
+      }
+      await transaction.commit();
+    } catch (error) {
+      await transaction.rollback().catch(() => undefined);
+      return {
+        ok: false as const,
+        message: error instanceof Error ? error.message : "Perubahan device gagal disimpan.",
+      };
+    }
+    const { recordActivity } = await import("./server/activity");
+    await recordActivity({
+      action: "device.updated",
+      actorId: gate.user.id,
+      actorUsername: gate.user.username,
+      detail: `Registry device #${data.deviceId}: ${data.action}. Riwayat capture dipertahankan.`,
+    });
+    return { ok: true as const };
+  });
 
 export const upsertRegisteredDeviceProfile = createServerFn({ method: "POST" })
   .validator(upsertRegisteredDeviceInputSchema)
   .handler(async ({ data }) => {
+    const { requireDeviceRegistryAccess } = await import("./server/device-registry-access");
+    const gate = await requireDeviceRegistryAccess(true);
+    if (!gate.ok) return gate;
     const [{ getCardDbPool, getCardDbSchema, isCardDbConfigured }, sql] = await Promise.all([
       import("./carddb"),
       // `.default`, bukan namespace-nya. mssql itu CJS: `await import("mssql")`
@@ -297,7 +382,32 @@ export const upsertRegisteredDeviceProfile = createServerFn({ method: "POST" })
     });
 
     try {
-      await transaction.begin();
+      await transaction.begin(sql.ISOLATION_LEVEL.SERIALIZABLE);
+      const identity = await new sql.Request(transaction)
+        .input("id", sql.BigInt, data.deviceId ?? null)
+        .input("code", sql.NVarChar(50), data.deviceCode).query(`
+          SELECT id, code, is_deleted FROM ${schema}.devices WITH (UPDLOCK, HOLDLOCK)
+          WHERE id = @id OR code = @code;
+        `);
+      const rows = identity.recordset;
+      const restore =
+        data.deviceId === undefined
+          ? rows.find((row: { is_deleted: boolean }) => row.is_deleted)
+          : undefined;
+      const targetId = data.deviceId ?? (restore ? Number(restore.id) : undefined);
+      if (
+        data.deviceId === undefined &&
+        rows.some((row: { is_deleted: boolean }) => !row.is_deleted)
+      ) {
+        throw new Error("Kode device masih terdaftar. Gunakan Edit pada daftar device.");
+      }
+      if (data.deviceId !== undefined) {
+        const current = rows.find((row: { id: number }) => Number(row.id) === data.deviceId);
+        if (!current || current.is_deleted)
+          throw new Error("Device tidak ditemukan atau sudah dihapus. Muat ulang daftar.");
+        if (current.code !== data.deviceCode)
+          throw new Error("Kode device tidak dapat diubah. Edit nama atau metadata device.");
+      }
 
       const locationRequest = new sql.Request(transaction);
       locationRequest.input("plant", sql.NVarChar(100), data.plant);
@@ -342,16 +452,9 @@ export const upsertRegisteredDeviceProfile = createServerFn({ method: "POST" })
       deviceRequest.input("edgeApiUrl", sql.NVarChar(300), data.edgeApiUrl || null);
       deviceRequest.input("setEdgeApiUrl", sql.Bit, data.edgeApiUrl === undefined ? 0 : 1);
 
-      const deviceLookup = await deviceRequest.query(`
-        SELECT TOP 1 id
-        FROM ${schema}.devices
-        WHERE code = @code
-          AND is_deleted = 0;
-      `);
-
       let deviceId: number;
-      if (deviceLookup.recordset.length > 0) {
-        deviceId = Number(deviceLookup.recordset[0].id);
+      if (targetId !== undefined) {
+        deviceId = targetId;
         await new sql.Request(transaction)
           .input("deviceId", sql.BigInt, deviceId)
           .input("name", sql.NVarChar(150), data.deviceName)
@@ -362,7 +465,6 @@ export const upsertRegisteredDeviceProfile = createServerFn({ method: "POST" })
             SET name = @name,
                 notes = @notes,
                 edge_api_url = CASE WHEN @setEdgeApiUrl = 1 THEN @edgeApiUrl ELSE edge_api_url END,
-                is_active = 1,
                 updated_at = SYSUTCDATETIME()
             WHERE id = @deviceId;
           `);
@@ -373,6 +475,12 @@ export const upsertRegisteredDeviceProfile = createServerFn({ method: "POST" })
           VALUES (@code, @name, @notes, @edgeApiUrl, 1, 0);
         `);
         deviceId = Number(deviceInsert.recordset[0].id);
+      }
+
+      if (restore) {
+        await new sql.Request(transaction).input("deviceId", sql.BigInt, deviceId).query(`
+          UPDATE ${schema}.devices SET is_deleted = 0, is_active = 1, updated_at = SYSUTCDATETIME() WHERE id = @deviceId;
+        `);
       }
 
       const assignmentLookup = await new sql.Request(transaction).input(
@@ -457,7 +565,7 @@ export const upsertRegisteredDeviceProfile = createServerFn({ method: "POST" })
       await new sql.Request(transaction)
         .input("deviceId", sql.BigInt, deviceId)
         .input("profileId", sql.BigInt, profileId)
-        .input("changedBy", sql.NVarChar(100), "web-app")
+        .input("changedBy", sql.NVarChar(100), gate.user.username)
         .input("changeSource", sql.NVarChar(50), "devices-ui")
         .input(
           "beforeJson",
@@ -488,7 +596,7 @@ export const upsertRegisteredDeviceProfile = createServerFn({ method: "POST" })
 
       await transaction.commit();
     } catch (error) {
-      await transaction.rollback();
+      await transaction.rollback().catch(() => undefined);
       return {
         ok: false as const,
         message: error instanceof Error ? error.message : "Gagal menyimpan registry device ke DB.",

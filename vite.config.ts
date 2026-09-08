@@ -68,6 +68,8 @@ export default defineConfig(async ({ command, mode }) => {
 
   const config: UserConfig = {
     define: envDefine,
+    // Keep app dependencies separate from standalone UI previews sharing node_modules.
+    cacheDir: "node_modules/.vite-app",
     // Client-scoped so React DevTools gets the dev react-dom; a global
     // NODE_ENV flip would emit jsxDEV, which the react-server SSR runtime
     // can't resolve.
@@ -106,6 +108,8 @@ export default defineConfig(async ({ command, mode }) => {
     // into the client bundle and crash hydration.
     optimizeDeps: {
       include: [
+        "react-day-picker",
+        "@radix-ui/react-popover",
         "react",
         "react-dom",
         "react-dom/client",

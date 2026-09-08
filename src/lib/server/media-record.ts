@@ -33,8 +33,8 @@ export async function findCaptureRecordForMedia(id: number): Promise<MediaRecord
       cr.file_name,
       cr.file_path,
       cr.status,
-      JSON_VALUE(cr.metadata_json, '$.plant') AS meta_plant,
-      JSON_VALUE(cr.metadata_json, '$.saveMethod') AS save_method,
+      JSON_VALUE(CASE WHEN ISJSON(cr.metadata_json) = 1 THEN cr.metadata_json ELSE N'{}' END, '$.plant') AS meta_plant,
+      JSON_VALUE(CASE WHEN ISJSON(cr.metadata_json) = 1 THEN cr.metadata_json ELSE N'{}' END, '$.saveMethod') AS save_method,
       l.plant AS location_plant
     FROM ${schema}.capture_records cr
     LEFT JOIN ${schema}.locations l ON l.id = cr.location_id
@@ -92,7 +92,7 @@ export async function findRecordPlants(
   const rows = await request.query(`
     SELECT
       cr.id,
-      JSON_VALUE(cr.metadata_json, '$.plant') AS meta_plant,
+      JSON_VALUE(CASE WHEN ISJSON(cr.metadata_json) = 1 THEN cr.metadata_json ELSE N'{}' END, '$.plant') AS meta_plant,
       l.plant AS location_plant
     FROM ${schema}.capture_records cr
     LEFT JOIN ${schema}.locations l ON l.id = cr.location_id

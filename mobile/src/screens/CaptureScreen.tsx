@@ -23,6 +23,7 @@ import {
   type CaptureHistoryItem,
 } from "../lib/captures";
 import type { TodaySessionItem } from "../lib/sessionCoverage";
+import { resolveAutomaticCaptureSession } from "../lib/automaticCaptureSession";
 
 type CaptureScreenProps = {
   session: AuthSession;
@@ -97,7 +98,12 @@ function captureProcessLabel(status: CameraJob["status"] | null, busyAction: Bus
 
 function errorMessageOf(error: unknown) {
   if (error instanceof MobileAuthError) return error.message;
-  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
+  if (
+    error &&
+    typeof error === "object" &&
+    "message" in error &&
+    typeof error.message === "string"
+  ) {
     return error.message;
   }
   return "Unable to complete the camera action.";
@@ -151,9 +157,52 @@ async function waitForJobCompletion(
 }
 
 export function CaptureScreen(props: CaptureScreenProps) {
+  return <CaptureContext key={`${props.session.user.id}:${props.session.user.plant}`} {...props} />;
+}
+
+function CaptureContext(props: CaptureScreenProps) {
+  const captureBusyRef = useRef(false);
+  const [automaticSession, setAutomaticSession] = useState(() =>
+    resolveAutomaticCaptureSession(props.session.user.plant),
+  );
+  const refreshContext = useCallback(() => {
+    if (captureBusyRef.current) return;
+    const next = resolveAutomaticCaptureSession(props.session.user.plant);
+    setAutomaticSession((previous) => (previous?.key === next?.key ? previous : next));
+  }, [props.session.user.plant]);
+  const onCaptureBusyChange = useCallback(
+    (busy: boolean) => {
+      captureBusyRef.current = busy;
+      if (!busy) refreshContext();
+    },
+    [refreshContext],
+  );
+  useEffect(() => {
+    if (props.selectedSession) return;
+    let timer: number;
+    const tick = () => {
+      refreshContext();
+      timer = window.setTimeout(tick, 1000);
+    };
+    tick();
+    document.addEventListener("visibilitychange", refreshContext);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", refreshContext);
+    };
+  }, [props.selectedSession, refreshContext]);
+  const context = props.selectedSession ?? automaticSession;
   // A new account or scheduled context must never inherit another camera lease.
-  const key = `${props.session.user.id}:${props.session.user.plant}:${props.selectedSession?.key}:${props.selectedSession?.plant}`;
-  return <CaptureWorkflow key={key} {...props} />;
+  const key = `${context?.key}:${context?.plant}`;
+  return (
+    <CaptureWorkflow
+      key={key}
+      {...props}
+      selectedSession={context}
+      automatic={!props.selectedSession}
+      onCaptureBusyChange={onCaptureBusyChange}
+    />
+  );
 }
 
 function CaptureWorkflow({
@@ -163,17 +212,22 @@ function CaptureWorkflow({
   onSessionUpdate,
   onOpenSessions,
   onOpenLatestCapture,
-}: CaptureScreenProps) {
+  automatic,
+  onCaptureBusyChange,
+}: CaptureScreenProps & { automatic: boolean; onCaptureBusyChange: (busy: boolean) => void }) {
   const [lease, setLease] = useState<CameraLease | null>(null);
   const [job, setJob] = useState<CameraJob | null>(null);
   const [latestCapture, setLatestCapture] = useState<CaptureHistoryItem | null>(null);
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
   const [error, setError] = useState<string | null>(null);
   const [captureNotice, setCaptureNotice] = useState<{
-    tone: "info" | "success";
+    tone: "info" | "success" | "warning";
     title: string;
     body: string;
   } | null>(null);
+  const [sessionConflict, setSessionConflict] = useState(false);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const sessionButtonRef = useRef<HTMLButtonElement>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewBusy, setPreviewBusy] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -187,14 +241,18 @@ function CaptureWorkflow({
   const historyRequestRef = useRef(0);
 
   const hasSelectedSession = !!selectedSession;
+  const blockedMessage =
+    automatic && session.user.plant && session.user.plant !== "ALL"
+      ? "Session not available, please take sample at defined sessions."
+      : "Select a session from Today Sessions to define plant context first.";
   const currentPlant = selectedSession?.plant ?? session.user.plant ?? "";
   const currentSlotLabel = hasSelectedSession ? slotLabel(currentPlant, activeSlot) : null;
   const contextTitle = hasSelectedSession
-    ? currentSlotLabel ?? selectedSession.location
-    : "Select a session from Today Sessions";
+    ? (currentSlotLabel ?? selectedSession.location)
+    : "Session not available";
   const contextMeta = hasSelectedSession
-    ? `${selectedSession.plant} • ${selectedSession.displayTime} • ${currentSlotLabel}`
-    : "Choose a scheduled slot first so capture actions run in the right operator context.";
+    ? `${selectedSession.plant} • ${automatic ? "Auto session " : ""}${selectedSession.displayTime} • ${currentSlotLabel}`
+    : blockedMessage;
   const headerTitle = hasSelectedSession
     ? `${selectedSession.plant} | ${selectedSession.displayTime}`
     : "Capture Workflow";
@@ -205,6 +263,25 @@ function CaptureWorkflow({
   const cameraReady = sessionReady && !!previewUrl && !previewError;
   const captureBusy = busyAction === "capture";
   const captureProcess = captureProcessLabel(job?.status ?? null, busyAction);
+
+  useEffect(() => {
+    if (!sessionConflict) return;
+    const previous = document.activeElement as HTMLElement | null;
+    const returnFocus =
+      previous && previous !== document.body ? previous : sessionButtonRef.current;
+    const dialog = dialogRef.current;
+    dialog?.showModal();
+    return () => {
+      dialog?.close();
+      returnFocus?.focus();
+    };
+  }, [sessionConflict]);
+
+  function withinAutomaticWindow() {
+    return (
+      !automatic || resolveAutomaticCaptureSession(session.user.plant)?.key === selectedSession?.key
+    );
+  }
 
   useEffect(() => {
     sessionRef.current = session;
@@ -377,39 +454,43 @@ function CaptureWorkflow({
     };
   }, [lease, onSessionUpdate]);
 
-  const refreshLatestCapture = useCallback(async (currentSession: AuthSession, slot = activeSlot) => {
-    if (!selectedSession) {
-      setLatestCapture(null);
-      return currentSession;
-    }
+  const refreshLatestCapture = useCallback(
+    async (currentSession: AuthSession, slot = activeSlot) => {
+      if (!selectedSession) {
+        setLatestCapture(null);
+        return currentSession;
+      }
 
-    const requestId = ++historyRequestRef.current;
-    const expectedBin = slotLabelUpper(selectedSession.plant, slot).trim().toLowerCase();
+      const requestId = ++historyRequestRef.current;
+      const expectedBin = slotLabelUpper(selectedSession.plant, slot).trim().toLowerCase();
 
-    const response = await listCaptures(currentSession, {
-      plant: selectedSession.plant,
-      session: selectedSession.session,
-      limit: 10,
-      offset: 0,
-    });
-    if (!mountedRef.current || requestId !== historyRequestRef.current) return response.session;
-    onSessionUpdate(response.session);
-    const matchedRecord =
-      response.data.items.find(
-        (item) => item.captureBin?.trim().toLowerCase() === expectedBin,
-      ) ?? null;
+      const response = await listCaptures(currentSession, {
+        plant: selectedSession.plant,
+        session: selectedSession.session,
+        limit: 10,
+        offset: 0,
+      });
+      if (!mountedRef.current || requestId !== historyRequestRef.current) return response.session;
+      onSessionUpdate(response.session);
+      const matchedRecord =
+        response.data.items.find((item) => item.captureBin?.trim().toLowerCase() === expectedBin) ??
+        null;
 
-    setLatestCapture(matchedRecord ? mapCaptureRecordToHistoryItem(matchedRecord) : null);
-    return response.session;
-  }, [activeSlot, onSessionUpdate, selectedSession]);
+      setLatestCapture(matchedRecord ? mapCaptureRecordToHistoryItem(matchedRecord) : null);
+      return response.session;
+    },
+    [activeSlot, onSessionUpdate, selectedSession],
+  );
 
   useEffect(() => {
     void refreshLatestCapture(sessionRef.current).catch(() => undefined);
-    return () => { historyRequestRef.current += 1; };
+    return () => {
+      historyRequestRef.current += 1;
+    };
   }, [refreshLatestCapture]);
 
   async function handleStartSession() {
-    if (!selectedSession) return;
+    if (!selectedSession || !withinAutomaticWindow()) return;
     if (!contextValid) {
       setError("Select a scheduled session in a plant your account can access.");
       return;
@@ -419,6 +500,7 @@ function CaptureWorkflow({
     setBusyAction("session");
     setError(null);
     setCaptureNotice(null);
+    setSessionConflict(false);
     const task = queueCameraSessionOperation(async () => {
       if (!isCurrent()) return;
       const oldLease = leaseRef.current;
@@ -427,7 +509,11 @@ function CaptureWorkflow({
         leaseRef.current = null;
       }
       if (!isCurrent()) return;
-      const response = await ensureCameraSession(sessionRef.current, leaseRef.current, currentPlant);
+      const response = await ensureCameraSession(
+        sessionRef.current,
+        leaseRef.current,
+        currentPlant,
+      );
       if (!isCurrent()) {
         await releaseCameraSession(response.session, response.data).catch(() => undefined);
         return;
@@ -441,7 +527,16 @@ function CaptureWorkflow({
     try {
       await task;
     } catch (actionError) {
-      if (isCurrent()) setError(errorMessageOf(actionError));
+      if (isCurrent()) {
+        if (actionError instanceof MobileAuthError && actionError.code === "SESSION_CONFLICT") {
+          setSessionConflict(true);
+          setCaptureNotice({
+            tone: "warning",
+            title: "Camera already in use",
+            body: "Camera is currently in use on another device. Wait until that session is released, then try again.",
+          });
+        } else setError(errorMessageOf(actionError));
+      }
     } finally {
       if (isCurrent()) setBusyAction(null);
     }
@@ -455,7 +550,9 @@ function CaptureWorkflow({
     setCaptureNotice(null);
 
     try {
-      const response = await queueCameraSessionOperation(() => releaseCameraSession(sessionRef.current, lease));
+      const response = await queueCameraSessionOperation(() =>
+        releaseCameraSession(sessionRef.current, lease),
+      );
       if (!mountedRef.current || generation !== generationRef.current) return;
       leaseRef.current = null;
       onSessionUpdate(response.session);
@@ -463,15 +560,19 @@ function CaptureWorkflow({
       setJob(null);
       setPreviewError(null);
     } catch (actionError) {
-      if (mountedRef.current && generation === generationRef.current) setError(errorMessageOf(actionError));
+      if (mountedRef.current && generation === generationRef.current)
+        setError(errorMessageOf(actionError));
     } finally {
       if (mountedRef.current && generation === generationRef.current) setBusyAction(null);
     }
   }
 
   async function runJob(kind: "capture") {
-    if (!selectedSession || !cameraReady || !lease || actionRef.current) return;
+    if (!selectedSession || !cameraReady || !lease || actionRef.current || !withinAutomaticWindow())
+      return;
     actionRef.current = true;
+    onCaptureBusyChange(true);
+    const capturedAt = Date.now();
     const generation = generationRef.current;
     const isCurrent = () => mountedRef.current && generationRef.current === generation;
     const activeLease = lease;
@@ -484,10 +585,7 @@ function CaptureWorkflow({
     });
 
     try {
-      const actionResponse = await triggerCapture(
-        sessionRef.current,
-        activeLease,
-      );
+      const actionResponse = await triggerCapture(sessionRef.current, activeLease);
 
       if (!isCurrent()) return;
       onSessionUpdate(actionResponse.session);
@@ -513,7 +611,7 @@ function CaptureWorkflow({
 
         const finalized = await finalizeCaptureResult(latestSession, {
           assetId,
-          capturedAt: Date.now(),
+          capturedAt,
           plant: selectedSession.plant,
           captureSession: selectedSession.session,
           slot: activeSlot,
@@ -549,6 +647,7 @@ function CaptureWorkflow({
     } finally {
       actionRef.current = false;
       if (isCurrent()) setBusyAction(null);
+      onCaptureBusyChange(false);
     }
   }
 
@@ -606,7 +705,13 @@ function CaptureWorkflow({
       <section className="capture-session-bar">
         <div className="capture-session-bar__status">
           <span className="capture-session-bar__pulse" aria-hidden="true"></span>
-          <span>{cameraReady ? `Camera ready • ${lease?.deviceCode}` : sessionReady ? "Session active • waiting for camera preview" : sessionStatusCopy(selectedSession?.status ?? null)}</span>
+          <span>
+            {cameraReady
+              ? `Camera ready • ${lease?.deviceCode}`
+              : sessionReady
+                ? "Session active • waiting for camera preview"
+                : sessionStatusCopy(selectedSession?.status ?? null)}
+          </span>
         </div>
 
         <div className="capture-session-bar__actions">
@@ -630,8 +735,11 @@ function CaptureWorkflow({
 
           <button
             className="capture-session-bar__button"
+            ref={sessionButtonRef}
             type="button"
-            onClick={sessionReady ? () => void handleStopSession() : () => void handleStartSession()}
+            onClick={
+              sessionReady ? () => void handleStopSession() : () => void handleStartSession()
+            }
             disabled={busyAction === "session" || captureBusy || !contextValid}
           >
             {busyAction === "session"
@@ -698,6 +806,41 @@ function CaptureWorkflow({
           <strong>{captureNotice.title}</strong>
           <span>{captureNotice.body}</span>
         </section>
+      ) : null}
+
+      {!selectedSession ? (
+        <section className="capture-notice capture-notice--warning" role="status">
+          <strong>Session not available</strong>
+          <span>{blockedMessage}</span>
+        </section>
+      ) : null}
+
+      {sessionConflict ? (
+        <dialog
+          ref={dialogRef}
+          className="capture-dialog"
+          aria-labelledby="capture-dialog-title"
+          aria-describedby="capture-dialog-body"
+          onCancel={() => setSessionConflict(false)}
+        >
+          <div className="capture-dialog__icon" aria-hidden="true">
+            <span className="material-symbols-outlined">warning</span>
+          </div>
+          <div className="capture-dialog__content">
+            <strong id="capture-dialog-title">Camera already in use</strong>
+            <p id="capture-dialog-body">
+              Camera is currently in use on another device. Wait until that session is released,
+              then try again.
+            </p>
+          </div>
+          <button
+            className="capture-dialog__button"
+            type="button"
+            onClick={() => setSessionConflict(false)}
+          >
+            OK
+          </button>
+        </dialog>
       ) : null}
 
       <section className="result-preview-card-stack">
@@ -767,10 +910,7 @@ function CaptureWorkflow({
             aria-valuemax={100}
             aria-valuenow={progress}
           >
-            <span
-              className="job-progress-card__bar-fill"
-              style={{ width: `${progress}%` }}
-            ></span>
+            <span className="job-progress-card__bar-fill" style={{ width: `${progress}%` }}></span>
           </div>
           <p className="job-progress-card__helper">
             {captureProcess ??

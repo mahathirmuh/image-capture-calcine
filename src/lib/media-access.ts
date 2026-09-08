@@ -7,39 +7,19 @@
 // src/lib/server/media-token.ts.
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { canViewGalleryPlant } from "./gallery-access";
 
 const mediaUrlSchema = z.object({ recordId: z.number().int().positive() });
 
 export type MediaUrlResult =
-  | { ok: true; url: string; expiresAt: number }
-  | { ok: false; code: string; message: string };
+  { ok: true; url: string; expiresAt: number } | { ok: false; code: string; message: string };
 
 export const createCaptureMediaUrl = createServerFn({ method: "POST" })
   .validator(mediaUrlSchema)
   .handler(async ({ data }): Promise<MediaUrlResult> => {
-    const [{ isCardDbConfigured }, { getAppSession, isSessionConfigured }] = await Promise.all([
-      import("./carddb"),
-      import("./server/session"),
-    ]);
-
-    if (!isCardDbConfigured()) {
-      return { ok: false, code: "CARDDB_NOT_CONFIGURED", message: "Registry MSSQL belum siap." };
-    }
-    if (!isSessionConfigured()) {
-      return { ok: false, code: "SESSION_NOT_CONFIGURED", message: "Sesi login belum aktif." };
-    }
-
-    // Harus ada yang login. Ini satu-satunya penjaga pintu -- setelah URL
-    // terbit, yang melayani berkas hanya memeriksa tanda tangannya.
-    let sessionUserId: number | undefined;
-    try {
-      sessionUserId = (await getAppSession()).data.user?.id;
-    } catch {
-      sessionUserId = undefined;
-    }
-    if (sessionUserId === undefined) {
-      return { ok: false, code: "UNAUTHENTICATED", message: "Sesi login tidak terbaca." };
-    }
+    const { requireGalleryAccess } = await import("./server/gallery-access");
+    const access = await requireGalleryAccess();
+    if (!access.ok) return access;
 
     const { findCaptureRecordForMedia } = await import("./server/media-record");
     const record = await findCaptureRecordForMedia(data.recordId);
@@ -47,13 +27,8 @@ export const createCaptureMediaUrl = createServerFn({ method: "POST" })
       return { ok: false, code: "NOT_FOUND", message: "Record capture tidak ditemukan." };
     }
 
-    // Operator yang terikat satu plant tidak boleh menarik gambar plant lain.
-    // Plant dibaca ulang dari database lewat jalur yang sama dengan halaman
-    // Capture, jadi operator yang baru dipindah langsung ikut aturan barunya.
-    const { getOperatorPlant } = await import("./operator-plant");
-    const operator = await getOperatorPlant();
-    if (operator.locked && operator.plant && record.plant && record.plant !== operator.plant) {
-      return { ok: false, code: "FORBIDDEN", message: "Gambar ini milik plant lain." };
+    if (!canViewGalleryPlant(access.scope, record.plant)) {
+      return { ok: false, code: "FORBIDDEN", message: "Gambar ini di luar akses plant Anda." };
     }
 
     // Hanya berkas yang benar-benar ada di folder jaringan yang bisa dilayani.
@@ -84,25 +59,22 @@ export type SaveThumbResult = { ok: true } | { ok: false; code: string; message:
 /**
  * Titipkan thumbnail yang dibuat browser operator.
  *
- * Tidak ada pemeriksaan plant di sini, dan itu disengaja: yang mengirim adalah
- * orang yang BARU SAJA melakukan capture itu, dan record-nya baru dibuat atas
- * namanya beberapa milidetik sebelumnya. Yang dijaga justru ukurannya -- lihat
- * MAX_THUMBNAIL_BYTES -- supaya endpoint ini tidak bisa dipakai menitipkan
- * berkas besar ke disk app server.
+ * Pengirim harus tetap aktif dan berhak melihat record tujuan.
+ * Batas ukuran JPEG tetap ditegakkan oleh penyimpanan thumbnail.
  */
 export const saveCaptureThumbnail = createServerFn({ method: "POST" })
   .validator(saveThumbSchema)
   .handler(async ({ data }): Promise<SaveThumbResult> => {
-    const { getAppSession, isSessionConfigured } = await import("./server/session");
-    if (!isSessionConfigured()) {
-      return { ok: false, code: "SESSION_NOT_CONFIGURED", message: "Sesi login belum aktif." };
-    }
-    try {
-      if ((await getAppSession()).data.user?.id === undefined) {
-        return { ok: false, code: "UNAUTHENTICATED", message: "Sesi login tidak terbaca." };
-      }
-    } catch {
-      return { ok: false, code: "UNAUTHENTICATED", message: "Sesi login tidak terbaca." };
+    const { requireGalleryAccess } = await import("./server/gallery-access");
+    const access = await requireGalleryAccess();
+    if (!access.ok) return access;
+    const { findRecordPlants } = await import("./server/media-record");
+    const plants = await findRecordPlants([data.recordId]);
+    if (
+      !plants.has(data.recordId) ||
+      !canViewGalleryPlant(access.scope, plants.get(data.recordId))
+    ) {
+      return { ok: false, code: "FORBIDDEN", message: "Thumbnail di luar akses plant Anda." };
     }
 
     const { saveThumbnail } = await import("./server/thumb-store");
@@ -116,8 +88,7 @@ const thumbUrlsSchema = z.object({
 });
 
 export type ThumbUrlsResult =
-  | { ok: true; urls: Record<number, string> }
-  | { ok: false; code: string; message: string };
+  { ok: true; urls: Record<number, string> } | { ok: false; code: string; message: string };
 
 /**
  * URL bertanda tangan untuk sekumpulan thumbnail, satu kali jalan.
@@ -134,25 +105,11 @@ export const createCaptureThumbUrls = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<ThumbUrlsResult> => {
     if (data.recordIds.length === 0) return { ok: true, urls: {} };
 
-    const { getAppSession, isSessionConfigured } = await import("./server/session");
-    if (!isSessionConfigured()) {
-      return { ok: false, code: "SESSION_NOT_CONFIGURED", message: "Sesi login belum aktif." };
-    }
-    try {
-      if ((await getAppSession()).data.user?.id === undefined) {
-        return { ok: false, code: "UNAUTHENTICATED", message: "Sesi login tidak terbaca." };
-      }
-    } catch {
-      return { ok: false, code: "UNAUTHENTICATED", message: "Sesi login tidak terbaca." };
-    }
+    const { requireGalleryAccess } = await import("./server/gallery-access");
+    const access = await requireGalleryAccess();
+    if (!access.ok) return access;
 
-    const [
-      { getOperatorPlant },
-      { findRecordPlants },
-      thumbs,
-      { buildThumbPath, createMediaToken },
-    ] = await Promise.all([
-      import("./operator-plant"),
+    const [{ findRecordPlants }, thumbs, { buildThumbPath, createMediaToken }] = await Promise.all([
       import("./server/media-record"),
       import("./server/thumb-store"),
       import("./server/media-token"),
@@ -160,7 +117,6 @@ export const createCaptureThumbUrls = createServerFn({ method: "POST" })
 
     if (!thumbs.isThumbStoreConfigured()) return { ok: true, urls: {} };
 
-    const operator = await getOperatorPlant();
     const plants = await findRecordPlants(data.recordIds);
 
     const urls: Record<number, string> = {};
@@ -168,7 +124,7 @@ export const createCaptureThumbUrls = createServerFn({ method: "POST" })
       const plant = plants.get(recordId);
       // Record yang tidak dikenal registry tidak diberi URL sama sekali.
       if (plant === undefined) continue;
-      if (operator.locked && operator.plant && plant && plant !== operator.plant) continue;
+      if (!canViewGalleryPlant(access.scope, plant)) continue;
       if (!(await thumbs.thumbnailExists(recordId))) continue;
       urls[recordId] = buildThumbPath(recordId, await createMediaToken(recordId));
     }

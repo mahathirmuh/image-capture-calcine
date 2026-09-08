@@ -10,6 +10,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { toEdgeProfileSettings, type DeviceProfile } from "./device-config";
+import { deviceTelemetrySchema, type DeviceTelemetry } from "./device-telemetry";
 import { getServerEnv } from "./env";
 
 /**
@@ -519,7 +520,10 @@ export const getDeviceStatus = createServerFn({ method: "GET" })
     }
 
     try {
-      const res = await fetch(`${target.baseUrl}/v1/device`, { headers: edgeHeaders() });
+      const res = await fetch(`${target.baseUrl}/v1/device`, {
+        headers: edgeHeaders(),
+        signal: AbortSignal.timeout(15000),
+      });
       if (!res.ok) {
         const edgeTarget = getEdgeTargetLabel(target.baseUrl);
         // The edge puts the real cause in the body -- for CAMERA_COMMAND_FAILED
@@ -588,14 +592,94 @@ export const getDeviceStatus = createServerFn({ method: "GET" })
     }
   });
 
-export const listCameraConfigs = createServerFn({ method: "GET" }).handler(
-  async (): Promise<ApiSuccess<{ items: CameraConfig[] }> | ApiFailure> => {
-    const target = await resolveTarget();
+export const getDeviceTelemetry = createServerFn({ method: "GET" })
+  .validator(deviceRefSchema)
+  .handler(async ({ data }): Promise<ApiSuccess<{ telemetry: DeviceTelemetry }> | ApiFailure> => {
+    const target = await resolveTarget(data.deviceId, undefined, data.plant);
+    if (!target.ok) return target;
+    try {
+      const response = await fetch(`${target.baseUrl}/v1/device/telemetry`, {
+        headers: edgeHeaders(),
+        signal: AbortSignal.timeout(10000),
+      });
+      if (response.status === 404)
+        return {
+          ok: false,
+          code: "TELEMETRY_UNSUPPORTED",
+          message:
+            "Versi Camera API ini belum mendukung telemetri. Perbarui Camera API pada Mini PC.",
+        };
+      if (!response.ok)
+        return readFailure(response, "TELEMETRY_UNAVAILABLE", "Telemetri gagal dimuat");
+      const parsed = deviceTelemetrySchema.safeParse(await response.json());
+      if (!parsed.success)
+        return {
+          ok: false,
+          code: "TELEMETRY_INVALID",
+          message: "Format telemetri tidak sesuai kontrak API.",
+        };
+      return { ok: true, telemetry: parsed.data };
+    } catch {
+      return {
+        ok: false,
+        code: "TELEMETRY_UNAVAILABLE",
+        message: "Telemetri tidak merespons. Coba refresh kembali.",
+      };
+    }
+  });
+
+export type CameraDetails = {
+  connectionState: string;
+  batteryLevel: number | string | null;
+  lensName: string | null;
+  availableShots: number | null;
+  storage: Array<{ id: string; description: string; totalBytes: number; freeBytes: number }>;
+  settings: CameraConfig[];
+};
+
+export const getCameraDetails = createServerFn({ method: "GET" })
+  .validator(deviceRefSchema)
+  .handler(async ({ data }): Promise<ApiSuccess<{ details: CameraDetails }> | ApiFailure> => {
+    const target = await resolveTarget(data.deviceId, undefined, data.plant);
+    if (!target.ok) return target;
+    try {
+      const res = await fetch(`${target.baseUrl}/v1/camera/status`, {
+        headers: edgeHeaders(),
+        signal: AbortSignal.timeout(20000),
+      });
+      if (!res.ok) return readFailure(res, "DETAILS_UNAVAILABLE", "Detail kamera gagal dimuat");
+      const body = (await res.json()) as CameraDetails;
+      if (body.connectionState === "error")
+        return {
+          ok: false,
+          code: "DETAILS_UNAVAILABLE",
+          message: "Edge API gagal membaca detail kamera. Coba lagi.",
+        };
+      return {
+        ok: true,
+        details: { ...body, storage: body.storage ?? [], settings: body.settings ?? [] },
+      };
+    } catch {
+      return {
+        ok: false,
+        code: "DETAILS_UNAVAILABLE",
+        message: "Detail kamera tidak merespons. Coba lagi.",
+      };
+    }
+  });
+
+export const listCameraConfigs = createServerFn({ method: "GET" })
+  .validator(deviceRefSchema.optional())
+  .handler(async ({ data }): Promise<ApiSuccess<{ items: CameraConfig[] }> | ApiFailure> => {
+    const target = await resolveTarget(data?.deviceId, undefined, data?.plant);
     if (!target.ok) return target;
 
     let res: Response;
     try {
-      res = await fetch(`${target.baseUrl}/v1/camera/configs`, { headers: edgeHeaders() });
+      res = await fetch(`${target.baseUrl}/v1/camera/configs`, {
+        headers: edgeHeaders(),
+        signal: AbortSignal.timeout(20000),
+      });
     } catch {
       return { ok: false, code: "UNREACHABLE", message: "Tidak bisa menjangkau service kamera" };
     }
@@ -611,8 +695,7 @@ export const listCameraConfigs = createServerFn({ method: "GET" }).handler(
     }
     const body = (await res.json()) as { items?: CameraConfig[] };
     return { ok: true, items: body.items ?? [] };
-  },
-);
+  });
 
 const applyEdgePresetProfileSchema = z.object({
   deviceCode: z.string(),
@@ -755,7 +838,9 @@ export const upsertAndApplyEdgePreset = createServerFn({ method: "POST" })
       const target = await resolveTarget(data.deviceId, undefined, data.plant);
       if (!target.ok) return target;
 
-      const device = await getDeviceStatus();
+      const device = await getDeviceStatus({
+        data: { deviceId: data.deviceId, plant: data.plant },
+      });
       if (!device.online) {
         return { ok: false, code: "UNREACHABLE", message: "Tidak bisa menjangkau service kamera" };
       }
@@ -774,7 +859,9 @@ export const upsertAndApplyEdgePreset = createServerFn({ method: "POST" })
         };
       }
 
-      const configs = await listCameraConfigs();
+      const configs = await listCameraConfigs({
+        data: { deviceId: data.deviceId, plant: data.plant },
+      });
       if (!configs.ok) return configs;
 
       const supportedWritableKeys = new Set(

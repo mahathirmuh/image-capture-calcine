@@ -40,7 +40,12 @@ function AuthBootstrapScreen() {
 }
 
 function messageOf(error: unknown): string {
-  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
+  if (
+    error &&
+    typeof error === "object" &&
+    "message" in error &&
+    typeof error.message === "string"
+  ) {
     return error.message;
   }
   return "Unable to complete the request.";
@@ -101,11 +106,13 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    document.body.dataset.mobileTheme = preferences.lightMode ? "light" : "dark";
     document.body.dataset.mobileContrast = preferences.highContrastMode ? "high" : "default";
     return () => {
+      delete document.body.dataset.mobileTheme;
       delete document.body.dataset.mobileContrast;
     };
-  }, [preferences.highContrastMode]);
+  }, [preferences.highContrastMode, preferences.lightMode]);
 
   useEffect(() => {
     if (!session) return;
@@ -171,13 +178,10 @@ export default function App() {
     };
   }, [preferences.historyWarmupEnabled, session]);
 
-  const handlePreferencesChange = useCallback(
-    async (patch: Partial<MobilePreferences>) => {
-      const next = await updateMobilePreferences(patch);
-      setPreferences(next);
-    },
-    [],
-  );
+  const handlePreferencesChange = useCallback(async (patch: Partial<MobilePreferences>) => {
+    const next = await updateMobilePreferences(patch);
+    setPreferences(next);
+  }, []);
 
   async function handleLogin(credentials: { identifier: string; password: string }) {
     setLoginPending(true);
@@ -201,11 +205,7 @@ export default function App() {
 
   if (!session) {
     return (
-      <LoginScreen
-        onSignIn={handleLogin}
-        submitting={loginPending}
-        errorMessage={loginError}
-      />
+      <LoginScreen onSignIn={handleLogin} submitting={loginPending} errorMessage={loginError} />
     );
   }
 

@@ -224,6 +224,8 @@ Connect the operator capture screen to live camera session, autofocus, capture, 
 - [x] Implement capture action via `POST /camera/capture`
 - [x] Implement capture auto-save/finalize via `POST /captures/finalize`
 - [x] Implement job polling via `GET /jobs/{jobId}`
+- [x] Allow direct capture from the `Capture` tab by auto-detecting the active two-hour session window when no checklist session is preselected
+- [x] Block direct capture outside defined session windows with an explicit operator notice
 - [x] Show live status transitions for queued, running, succeeded, and failed
 - [x] Connect latest result preview to live capture results
 - [x] Simplify capture UX to one live-preview surface plus explicit capture progress/success feedback
@@ -242,11 +244,16 @@ Connect the operator capture screen to live camera session, autofocus, capture, 
 - Implemented mobile live preview frame polling via `GET /camera/preview`, plus lease renewal/release via `POST /camera/session/renew` and `DELETE /camera/session/{sessionId}`
 - Implemented explicit `Stop Session` action and in-screen slot switching on the mobile capture screen
 - Implemented live capture job triggering, job polling, and automatic finalize/save in `mobile/src/screens/CaptureScreen.tsx`
+- Implemented device-clock-based session detection in `Capture` so operators can work directly from that tab during the active two-hour session windows without first opening `Today Sessions`
+- Implemented an out-of-window guard in `Capture` that disables and greys out `Start Session` and `Capture` and surfaces `Session not available, please take sample at defined sessions`
+- Implemented explicit `SESSION_CONFLICT` handling in `Capture` so operators receive a blocking popup and warning notice when the camera is already being used from another device
 - Implemented latest-result preview lookup tied to the selected plant/session/slot so the capture preview does not open the wrong record
 - Simplified the capture screen UX so operators see one live preview, a top-level capture action beside session control, and explicit progress/success messaging during slow capture processing
 - Replaced the text-only capture CTA with a camera-icon primary button while preserving loading lock states and accessibility labels
 - Implemented operator-visible failure states for session conflict, edge unavailability, and polling timeout through shared API error handling
 - Ran `npm run build` in `mobile/` successfully on 2026-08-30 after M3 capture workflow wiring changes
+- Ran `npm run build` in `mobile/` successfully on 2026-08-31 after adding automatic session-window detection and out-of-window direct-capture blocking
+- Verified in browser on 2026-08-31 that opening `Capture` without a preselected checklist session shows `Session not available, please take sample at defined sessions`, greys out both `Start Session` and `Capture`, and keeps them disabled when the current device time is outside the defined two-hour session windows
 - Verified in browser on 2026-08-30 that the refreshed mobile capture UX at `http://127.0.0.1:5173` shows `Capture` beside `Start/Stop Session`, removes autofocus, locks actions during `Capturing...`, shows process messaging, and surfaces `Capture complete` after the job finishes
 - Verified in browser on 2026-08-30 that the capture action is now rendered as a camera-icon button beside `Start Session`, while slot selection still shows `Train 1` and `Train 2`
 - Ran `npm run build` in root app successfully on 2026-08-30 after exposing mobile preview/session lifecycle endpoints in the REST API
@@ -258,6 +265,7 @@ Connect the operator capture screen to live camera session, autofocus, capture, 
 - Evidence screenshot captured during mobile live-preview verification:
   - `/var/folders/s4/_h6390qs7rscy8lyhg58xd300000gn/T/trae/screenshots/page-2026-08-30T10-01-39-190Z.png`
   - `/var/folders/s4/_h6390qs7rscy8lyhg58xd300000gn/T/trae/screenshots/mobile-capture-camera-icon-2026-08-30.png`
+  - `/var/folders/s4/_h6390qs7rscy8lyhg58xd300000gn/T/trae/screenshots/mobile-capture-session-window-unavailable-2026-08-31.png`
 
 ## Phase M4 - My Device Live Status
 
@@ -354,13 +362,16 @@ Finish the operator settings surface and align runtime configuration behavior wi
 
 - Reviewed current mobile runtime base-URL/API-key resolution in `mobile/src/lib/auth.ts` and Vite compile-time defines in `mobile/vite.config.ts`
 - Added persisted mobile preferences for `High-Contrast Mode` and `History Warm-Up` through Capacitor Preferences
-- Wired app bootstrap to hydrate preferences before render, apply high-contrast mode, and conditionally run thumbnail warm-up after login/session restore
+- Added persisted mobile preference for `Light Mode` through Capacitor Preferences in internal app storage
+- Wired app bootstrap to hydrate preferences before render, apply light/dark theme plus high-contrast mode, and conditionally run thumbnail warm-up after login/session restore
 - Replaced settings placeholders with real operator preferences and live runtime snapshot values (app version, API path, access expiry, refresh expiry), while intentionally hiding the API host from operator-facing settings
 - Switched mobile branding to the shared app logo asset so the login hero, top app bar, and favicon match the main frontend resources
 - Replaced the default Capacitor Android launcher icons and splash assets with resized variants of the shared app logo so native Android branding matches the mobile UI
 - Confirmed existing sign-out flow still clears mobile session state through the shared auth/logout path
 - Ran `npm run build` in `mobile/` successfully on 2026-08-30 after M5 settings/runtime cleanup changes
+- Ran `npm run build` in `mobile/` successfully on 2026-08-31 after adding persisted `Light Mode`
 - Verified in browser on 2026-08-30 that the settings screen renders the two persisted preferences, hides the API host, and exposes runtime snapshot values from the active build/session without reverting to mock data
+- Verified in browser on 2026-08-31 that enabling `Light Mode` updates the app shell to the brighter theme and remains enabled after page reload through persisted internal app storage
 - Verified in browser on 2026-08-30 that the shared app logo is rendered in the mobile top app bar after the branding update
 - Verified on 2026-08-30 that Android launcher and splash resources under `mobile/android/app/src/main/res` no longer use the default Capacitor art and now resolve to generated logo variants across all densities
 - Evidence screenshot captured during settings verification:
@@ -428,3 +439,29 @@ Evidence and verification limitations are recorded in [plant-camera-alignment-au
 - My Device follows that same selected plant and offers navigation to Today Sessions when selection is missing.
 - Updated functional specification, technical plan and resolved decisions. Reviewed `docs/openapi.yaml`: existing expected-plant parameters and backend account-scope checks already support this; no new backend contract change.
 - Verification: 39 tests passed across targeted mobile, lifecycle, REST and resolver suites; mobile npm build passed. Code lint passed with the existing formatter rule excluded. Includes idle/no-selection, ALL Acid-to-Chloride release-before-start, single-plant denial and My Device selection tests. Physical APK/camera verification remains pending.
+
+
+## Post-M5 Maintenance — Remote Integration With Direct Capture (2026-09-08)
+
+Baseline: fast-forwarded main from da72c6b to origin/main f6f34aa. Preserved pre-integration local changes in Git stash (`backup local mobile changes before remote integration`) and `/private/tmp/calcine-local-backup-20260908-200034/changes.patch`.
+
+Sources: mobile functional specification, technical plan, product principles, open questions, plant-camera alignment audit, and root OpenAPI. Scope remains operator-only; M0–M5 completion is unchanged.
+
+- [x] Preserve remote plant/device binding, preview readiness, serialized lease changes and stale-response cleanup.
+- [x] Reapply direct capture for single-plant accounts through the same keyed lifecycle; ALL requires explicit session selection.
+- [x] Handle the 23:00–00:59 window, daily context identity, out-of-window rejection and release on idle expiry.
+- [x] Keep an in-flight capture pinned until saving finishes, using command-start time for finalization.
+- [x] Retain Light Mode, local-date Today Sessions requests and the camera-conflict popup with modal keyboard/focus behavior.
+- [x] Synchronize functional/technical docs, open questions and design context; review OpenAPI applicability.
+- [x] Verify integration source and resolve the CaptureScreen merge conflict.
+
+Verification on the integrated source:
+- `npm test`: 33 suites, 306 tests passed. Added eight direct-capture/window tests covering window boundaries, midnight, missing/ALL context, per-date keys, direct connection, out-of-window blocking, lease release and in-flight save at expiry. Existing plant-switch, device targeting, StrictMode and late-response tests pass.
+- `npm run build`: web/backend production build passed. Existing Vite future-config and bundle warnings remain non-blocking.
+- `npm run build --prefix mobile`: TypeScript and Vite passed; repeated after the final focus-restoration adjustment (51 modules).
+- ESLint and Prettier checks passed for the changed TypeScript/TSX files; Prettier also passed for the changed stylesheet. `git diff --check HEAD` passed.
+- Browser fixture (no operational backend or physical camera requests): direct capture reached Capture complete; Stop Session cleared preview and disabled capture; failed preview blocked capture; outside-window buttons disabled; conflict modal opened in Light Mode; Escape returned focus to Start Session. A 390px mobile viewport was inspected for the Light Mode modal. Theme styling and fixture success/empty/error states were inspected.
+- Static UI audit: the same 13 existing web findings remain, none in mobile files. This is not a claim that the entire application passes a full accessibility audit.
+- `docs/openapi.yaml` reviewed: no additional endpoint/payload/auth changes needed beyond the remote baseline. Existing expected-plant, device targeting and finalize contract retained. No database changes.
+
+Limits: installed APK, physical camera capture and production network-share persistence were not tested. Operator-device/backend timezone alignment remains a deployment check. Edge-02 runtime reports are historical; this integration does not recreate deleted registry records.

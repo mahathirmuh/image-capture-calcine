@@ -40,7 +40,7 @@ import {
 } from "@/lib/media-access";
 import { blobToBase64, createThumbnailBlob } from "@/lib/thumbnail";
 import { toBinLabel, toBinSlot, type BinSlot } from "@/lib/locations";
-import { getOperatorPlant, type OperatorPlant } from "@/lib/operator-plant";
+import { filterGalleryCache, type GalleryScope } from "@/lib/gallery-access";
 import {
   CAPTURE_RECORDS_MAX_LIMIT,
   deleteCaptureRecord,
@@ -71,7 +71,7 @@ import { getImageDimensions, computeHistogram, type Histogram } from "@/lib/imag
 import { AppDatePicker } from "@/components/app-date-picker";
 import { AppSelect } from "@/components/app-select";
 import { PageTitle } from "@/components/page-shell";
-import { useIsAdmin } from "@/lib/use-session-user";
+import { useIsAdmin, useSessionUser } from "@/lib/use-session-user";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -382,6 +382,11 @@ function OverviewCard({
 }
 
 function GalleryPage() {
+  const user = useSessionUser();
+  return <GalleryContent key={`${user?.id ?? "anonymous"}:${user?.role ?? ""}`} />;
+}
+
+function GalleryContent() {
   const isAdmin = useIsAdmin();
   const [gallery, setGallery] = useState<GalleryItem[]>([]);
   const [hydrated, setHydrated] = useState(false);
@@ -393,14 +398,18 @@ function GalleryPage() {
   } = edgeSelection;
   const [captureRecords, setCaptureRecords] = useState<CaptureRecordView[]>([]);
   const [captureRecordsError, setCaptureRecordsError] = useState<string | null>(null);
-  const [operatorPlant, setOperatorPlant] = useState<OperatorPlant | null>(null);
+  const [galleryScope, setGalleryScope] = useState<GalleryScope | null>(null);
+  const visibleGallery = useMemo(
+    () => filterGalleryCache(gallery, galleryScope, captureRecords),
+    [gallery, galleryScope, captureRecords],
+  );
   const [recordPage, setRecordPage] = useState(1);
 
   // Istilah slot mengikuti plant si PENONTON, bukan plant tiap record. Satu
   // galeri bisa memuat record dari beberapa plant sekaligus; menamai filternya
   // per record akan menghasilkan dua tombol yang menyaring hal yang sama.
   // Super Admin (tidak terkunci) jatuh ke istilah default.
-  const viewerPlant = operatorPlant?.locked ? (operatorPlant.plant ?? "") : "";
+  const viewerPlant = galleryScope?.plant ?? "";
   const binLabel = (slot: BinSlot) => toBinLabel(viewerPlant, slot);
 
   const [detailItem, setDetailItem] = useState<GalleryCard | null>(null);
@@ -478,7 +487,7 @@ function GalleryPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterDate, setFilterDate] = useState("");
   const [filterLocation, setFilterLocation] = useState("");
-  const [filterBin, setFilterBin] = useState("");
+  const [filterBin, setFilterBin] = useState<GalleryViewState["filterBin"]>("");
   const [savedViewPreference, setSavedViewPreference] =
     useState<GallerySavedViewPreference>("all-images");
   const [galleryViewLoaded, setGalleryViewLoaded] = useState(false);
@@ -493,20 +502,15 @@ function GalleryPage() {
   const [compareOpen, setCompareOpen] = useState(false);
 
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(24);
+  const [pageSize, setPageSize] = useState<GalleryViewState["pageSize"]>(
+    DEFAULT_GALLERY_VIEW_STATE.pageSize,
+  );
 
   const refreshDeviceStatus = () => edgeSelection.refresh(edgeSelection.selectedCode);
 
   useEffect(() => {
     let cancelled = false;
     setHydrated(true);
-    // Plant penonton menentukan istilah slot di filter dan preset. Gagal
-    // diam-diam: hasilnya istilah default, bukan halaman yang macet.
-    void getOperatorPlant()
-      .then((plant) => {
-        if (!cancelled) setOperatorPlant(plant);
-      })
-      .catch(() => {});
     const savedViewState = loadGalleryViewState();
     const savedView = loadGallerySavedViewPreference();
     setSortOption(savedViewState.sortOption);
@@ -519,9 +523,14 @@ function GalleryPage() {
     setSavedViewPreference(savedView);
     setImageQuality(loadGalleryImageQuality());
     setGalleryViewLoaded(true);
-    loadGallery().then((items) => {
-      if (!cancelled) setGallery(items);
-    });
+    loadGallery()
+      .then((items) => {
+        if (!cancelled) setGallery(items);
+      })
+      .catch(() => {
+        if (!cancelled)
+          toast.error("Cache browser tidak bisa dibaca. Galeri tetap memakai registry server.");
+      });
     // 200 hanya menutup sekitar tiga hari (8 sesi x 2 slot x 4 plant = 64
     // capture/hari). Sekarang galeri DAN tabel sama-sama bersumber dari sini,
     // jadi batasnya menentukan seberapa jauh ke belakang keduanya bisa dilihat.
@@ -536,6 +545,8 @@ function GalleryPage() {
           return;
         }
         setCaptureRecordsError(null);
+        setGalleryScope(result.scope);
+        if (!result.scope.allPlants) setFilterLocation("");
         setCaptureRecords(result.records);
       })
       // Kegagalan yang DILEMPAR -- validator menolak, jaringan putus, serverFn
@@ -909,29 +920,23 @@ function GalleryPage() {
   }
 
   function downloadSelected() {
-    for (const item of gallery) {
+    for (const item of visibleGallery) {
       if (selectedIds.has(item.id)) downloadItem(item);
     }
   }
 
   function exportCSV() {
-    if (gallery.length === 0) return;
+    if (filteredGallery.length === 0) return;
     const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
     const rows = [
       ["filename", "extension", "file_size_bytes", "captured_at", "location"],
-      ...gallery.map((item) => {
-        const storage = item.fileHandle
-          ? `saved/${item.folder}`.replace(/\/+$/, "")
-          : `(downloaded)/${item.folder}`.replace(/\/+$/, "");
-        const extension = item.name.includes(".") ? (item.name.split(".").pop() ?? "") : "";
-        return [
-          item.name,
-          extension,
-          String(item.blob.size),
-          new Date(item.createdAt).toISOString(),
-          storage,
-        ];
-      }),
+      ...filteredGallery.map((item) => [
+        item.name,
+        item.name.includes(".") ? (item.name.split(".").pop() ?? "") : "",
+        String(item.fileSizeBytes ?? item.local?.blob.size ?? 0),
+        new Date(item.createdAt).toISOString(),
+        item.folder,
+      ]),
     ];
     const csv = rows.map((r) => r.map(esc).join(",")).join("\r\n");
     const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
@@ -980,7 +985,7 @@ function GalleryPage() {
   const uniqueLocations = Array.from(
     new Set(
       [
-        ...gallery.map((item) => item.folder),
+        ...visibleGallery.map((item) => item.folder),
         ...captureRecords.map((item) => item.plant ?? ""),
       ].filter(Boolean),
     ),
@@ -1004,7 +1009,7 @@ function GalleryPage() {
   const galleryCards = useMemo<GalleryCard[]>(() => {
     const unmatched = new Map<string, GalleryItem>();
     const localByRecordId = new Map<number, GalleryItem>();
-    for (const item of gallery) {
+    for (const item of visibleGallery) {
       unmatched.set(item.id, item);
       if (item.captureRecordId != null) localByRecordId.set(item.captureRecordId, item);
     }
@@ -1034,26 +1039,24 @@ function GalleryPage() {
     // browser ini tidak lenyap hanya karena registry tidak mengenalinya.
     const orphans = [...unmatched.values()]
       .filter((item) => !isLocalOnlySave(item.saveMethod))
-      .map(
-        (item): GalleryCard => ({
-          id: item.id,
-          name: item.name,
-          folder: item.folder,
-          bin: item.bin,
-          createdAt: item.createdAt,
-          captureRecordId: item.captureRecordId ?? null,
-          persistedPath: item.persistedPath ?? null,
-          saveMethod: item.saveMethod ?? null,
-          capturedBy: item.capturedBy ?? null,
-          // Yatim: tidak ada record, jadi satu-satunya ukuran yang diketahui
-          // memang blob di browser ini.
-          fileSizeBytes: item.blob.size,
-          local: item,
-        }),
-      );
+      .map((item): GalleryCard => ({
+        id: item.id,
+        name: item.name,
+        folder: item.folder,
+        bin: item.bin,
+        createdAt: item.createdAt,
+        captureRecordId: item.captureRecordId ?? null,
+        persistedPath: item.persistedPath ?? null,
+        saveMethod: item.saveMethod ?? null,
+        capturedBy: item.capturedBy ?? null,
+        // Yatim: tidak ada record, jadi satu-satunya ukuran yang diketahui
+        // memang blob di browser ini.
+        fileSizeBytes: item.blob.size,
+        local: item,
+      }));
 
     return [...fromRecords, ...orphans];
-  }, [captureRecords, gallery]);
+  }, [captureRecords, visibleGallery]);
 
   // Dihitung dari registry, bukan dari IndexedDB: jumlah foto yang tidak sampai
   // ke folder jaringan sama untuk semua orang, dan justru perlu terlihat dari
@@ -1388,7 +1391,7 @@ function GalleryPage() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [detailIndex, showDetailAt]);
-  const selectedItems = gallery.filter((item) => selectedIds.has(item.id));
+  const selectedItems = visibleGallery.filter((item) => selectedIds.has(item.id));
   // Hanya menjumlahkan kartu yang blob-nya ada di browser ini. Ukuran foto
   // yang tersimpan di share tidak diketahui tanpa menariknya, dan menariknya
   // hanya demi angka ini jelas tidak sepadan.
@@ -1509,7 +1512,15 @@ function GalleryPage() {
           <div>
             <PageTitle
               title="Gallery"
-              description="Telusuri, review, dan kelola hasil capture yang tersimpan."
+              description={
+                galleryScope?.allPlants
+                  ? "Hasil capture dari semua plant."
+                  : galleryScope?.plant
+                    ? `Hasil capture ${galleryScope.plant}.`
+                    : captureRecordsError
+                      ? "Galeri belum dapat dimuat."
+                      : "Memeriksa akses galeri…"
+              }
             />
           </div>
           <div className="flex items-center gap-2">
@@ -1534,7 +1545,7 @@ function GalleryPage() {
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={exportCSV} disabled={gallery.length === 0}>
+                <DropdownMenuItem onClick={exportCSV} disabled={filteredGallery.length === 0}>
                   Ekspor CSV
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -1892,7 +1903,7 @@ ${storage.path ?? "—"}`}
             <AppSelect
               value={filterBin}
               onValueChange={(value) => {
-                setFilterBin(value);
+                setFilterBin(value as GalleryViewState["filterBin"]);
                 setPage(1);
               }}
               options={[
@@ -2147,7 +2158,26 @@ ${storage.path ?? "—"}`}
           </div>
         )}
 
-        {galleryCards.length === 0 ? (
+        {!galleryScope ? (
+          <div
+            role={captureRecordsError ? "alert" : "status"}
+            className="rounded-md border border-dashed py-10 text-center text-sm text-muted-foreground"
+          >
+            <p>
+              {captureRecordsError
+                ? "Galeri belum dapat dimuat. Periksa koneksi atau sesi login Anda."
+                : "Memeriksa akses dan memuat galeri…"}
+            </p>
+            {captureRecordsError && (
+              <button
+                className="mt-3 rounded-md border px-3 py-2"
+                onClick={() => window.location.reload()}
+              >
+                Coba lagi
+              </button>
+            )}
+          </div>
+        ) : galleryCards.length === 0 ? (
           <div className="rounded-md border border-dashed py-10 text-center text-sm text-muted-foreground">
             <p>Hasil capture tersimpan akan muncul di sini.</p>
             <div className="mt-3 flex flex-wrap justify-center gap-2">

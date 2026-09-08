@@ -20,6 +20,9 @@ import {
   Wifi,
 } from "lucide-react";
 import { toast } from "sonner";
+import { DeviceTelemetryPanel } from "@/components/device-telemetry-panel";
+import { useDeviceTelemetry } from "@/hooks/use-device-telemetry";
+import { deviceEndpointHost } from "@/lib/device-diagnostics";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -39,6 +42,8 @@ import {
 } from "@/components/preset-ui";
 import {
   getDeviceStatus,
+  getCameraDetails,
+  type CameraDetails,
   listCameraConfigs,
   upsertAndApplyEdgePreset,
   type CameraConfig,
@@ -71,6 +76,7 @@ import {
   loadDeviceProfile,
   loadPresetFilterPreference,
   saveDeviceProfile,
+  clearDeviceProfile,
   saveApplyHistorySavedViewPreference,
   saveDeviceEventSavedViews,
   savePresetFilterPreference,
@@ -86,6 +92,7 @@ import {
 import {
   buildDeviceProfileFromRegisteredDevice,
   listRegisteredDevices,
+  changeRegisteredDeviceState,
   toUpsertRegisteredDeviceInput,
   upsertRegisteredDeviceProfile,
   type RegisteredDevice,
@@ -125,11 +132,7 @@ export const Route = createFileRoute("/devices/")({
   }),
 });
 
-// This app only ever talks to one edge device (CAMERA_API_URL) -- there is
-// no device registry, so the "fleet" grid below always shows exactly one
-// real card. Fields with no real data source (CPU/RAM/disk, temperature,
-// uptime, camera QC scoring, activity logs, restart/sync actions) show an
-// honest "Belum tersedia" instead of invented numbers.
+// Runtime data is fetched for the selected registry ID. Host telemetry and QC are not supplied by the edge API.
 
 const TABS = [
   { id: "overview", label: "Ringkasan" },
@@ -330,11 +333,7 @@ type DeviceEventFilter = "all" | "info" | "warning" | "error";
 type DeviceEventTypeFilter = "all" | "capture" | "autofocus" | "fallback" | "other";
 type DeviceEventTimeRange = "all" | "today" | "7d" | "30d" | "custom";
 type DeviceEventPresetId =
-  | "error-latest"
-  | "audit-failures"
-  | "fallback-events"
-  | "capture-failures"
-  | "autofocus-failures";
+  "error-latest" | "audit-failures" | "fallback-events" | "capture-failures" | "autofocus-failures";
 
 const DEVICE_EVENT_FILTERS: Array<{ id: DeviceEventFilter; label: string }> = [
   { id: "all", label: "Semua" },
@@ -686,7 +685,7 @@ function NotAvailable() {
 }
 
 function DevicesPage() {
-  const [status, setStatus] = useState<DeviceStatus | null>(null);
+  const [rawStatus, setStatus] = useState<DeviceStatus | null>(null);
   const [profile, setProfile] = useState<DeviceProfile | null>(null);
   const [registeredDevices, setRegisteredDevices] = useState<RegisteredDevice[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<number | null>(null);
@@ -743,6 +742,71 @@ function DevicesPage() {
     registeredDevices[0] ??
     null;
 
+  const status = rawStatus?.target?.deviceId === selectedDevice?.id ? rawStatus : null;
+  const {
+    telemetry,
+    error: telemetryError,
+    loading: telemetryLoading,
+    refresh: refreshTelemetry,
+  } = useDeviceTelemetry(
+    selectedDevice?.id,
+    !!selectedDevice?.isActive,
+    selectedDevice?.edgeApiUrl,
+  );
+  const [cameraDetails, setCameraDetails] = useState<CameraDetails | null>(null);
+  const [detailsError, setDetailsError] = useState<string | null>(null);
+  const missingCameraDetail = loading
+    ? "Memuat..."
+    : detailsError
+      ? "Gagal dimuat"
+      : !status?.online
+        ? "Device tidak terhubung"
+        : !status.camera?.connected
+          ? "Kamera tidak terhubung"
+          : "Tidak dilaporkan kamera";
+  const [stateBusy, setStateBusy] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [cameraOperationBusy, setCameraOperationBusy] = useState(false);
+  const [pendingStateAction, setPendingStateAction] = useState<
+    "activate" | "deactivate" | "delete" | null
+  >(null);
+  const runtimeRequest = useRef(0);
+  const refreshRuntime = useCallback(async () => {
+    const request = ++runtimeRequest.current;
+    setStatus(null);
+    setCameraDetails(null);
+    setDetailsError(null);
+    setLastSync(null);
+    if (!selectedDevice?.isActive) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    const data = { deviceId: selectedDevice.id };
+    try {
+      const result = await getDeviceStatus({ data });
+      if (request !== runtimeRequest.current) return;
+      setStatus(result);
+      setLastSync(new Date());
+      if (result.online && result.camera?.connected) {
+        const detail = await getCameraDetails({ data });
+        if (request !== runtimeRequest.current) return;
+        if (detail.ok) setCameraDetails(detail.details);
+        else setDetailsError(detail.message);
+      }
+    } catch (error) {
+      if (request === runtimeRequest.current)
+        setDetailsError(error instanceof Error ? error.message : "Status gagal dimuat.");
+    }
+    if (request === runtimeRequest.current) setLoading(false);
+  }, [selectedDevice?.id, selectedDevice?.isActive]);
+  useEffect(() => {
+    void refreshRuntime();
+    return () => {
+      runtimeRequest.current += 1;
+    };
+  }, [refreshRuntime, selectedDevice?.edgeApiUrl]);
+
   const syncProfileFromRegistryDevice = useCallback(
     (device: RegisteredDevice, existingProfile?: DeviceProfile | null) => {
       const nextProfile = buildDeviceProfileFromRegisteredDevice(device, existingProfile);
@@ -756,13 +820,23 @@ function DevicesPage() {
   const loadRegistry = useCallback(
     async (existingProfile?: DeviceProfile | null, preferredDeviceId?: number | null) => {
       setRegistryLoading(true);
-      const result = await listRegisteredDevices();
+      let result;
+      try {
+        result = await listRegisteredDevices();
+      } catch (error) {
+        setRegistryError(error instanceof Error ? error.message : "Registry gagal dimuat.");
+        setRegistryLoading(false);
+        return;
+      }
       setRegistryLoading(false);
 
       if (!result.ok) {
         setRegistryError(result.message);
         setRegisteredDevices([]);
         setSelectedDeviceId(null);
+        setProfile(null);
+        setStatus(null);
+        setCameraDetails(null);
         return;
       }
 
@@ -771,6 +845,8 @@ function DevicesPage() {
 
       if (result.devices.length === 0) {
         setSelectedDeviceId(null);
+        setProfile(null);
+        clearDeviceProfile();
         return;
       }
 
@@ -790,16 +866,30 @@ function DevicesPage() {
   );
 
   async function refresh() {
-    setLoading(true);
+    await Promise.all([
+      refreshRuntime(),
+      refreshTelemetry(),
+      loadRegistry(profile, selectedDeviceId),
+    ]);
+  }
+
+  async function confirmStateChange() {
+    if (!selectedDevice || !pendingStateAction || stateBusy) return;
+    setStateBusy(true);
     try {
-      const [result] = await Promise.all([
-        getDeviceStatus(),
-        loadRegistry(profile, selectedDeviceId),
-      ]);
-      setStatus(result);
-      setLastSync(new Date());
+      const result = await changeRegisteredDeviceState({
+        data: { deviceId: selectedDevice.id, action: pendingStateAction },
+      });
+      if (!result.ok) throw new Error(result.message);
+      toast.success("Status registry device diperbarui");
+      setPendingStateAction(null);
+      await loadRegistry(null, selectedDevice.id);
+    } catch (error) {
+      toast.error("Perubahan gagal", {
+        description: error instanceof Error ? error.message : "Coba lagi.",
+      });
     } finally {
-      setLoading(false);
+      setStateBusy(false);
     }
   }
 
@@ -1024,16 +1114,6 @@ function DevicesPage() {
     const storedProfile = loadDeviceProfile();
 
     setProfile(storedProfile);
-    setLoading(true);
-    getDeviceStatus()
-      .then((result) => {
-        if (cancelled) return;
-        setStatus(result);
-        setLastSync(new Date());
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
 
     loadGallery().then((items) => {
       if (cancelled) return;
@@ -1079,21 +1159,31 @@ function DevicesPage() {
       "Model tidak diketahui"
     : "Belum terdeteksi";
   const profileTemplate = profile ? getTemplateById(profile.templateId) : null;
-  const readinessLabel = !status?.online
-    ? "Perlu perhatian"
-    : cameraConnected
-      ? "Siap"
-      : "Edge siap, kamera perlu dicek";
+  const runtimePaused = !selectedDevice?.isActive;
+  const readinessLabel = runtimePaused
+    ? "Device nonaktif / belum dipilih"
+    : !status?.online
+      ? "Perlu perhatian"
+      : cameraConnected
+        ? "Siap"
+        : "Edge siap, kamera perlu dicek";
   const deviceAttentionItems = [
-    !status?.online
+    runtimePaused
       ? {
-          title: "Edge device sedang offline",
-          detail:
-            "Status Mini PC belum reachable. Refresh koneksi lalu cek tab Ringkasan untuk detail koneksi edge.",
+          title: "Pemeriksaan runtime tidak dijalankan",
+          detail: "Pilih device aktif atau aktifkan device ini untuk memeriksa koneksi.",
           actionLabel: "Buka Ringkasan",
           action: () => setActiveTab("overview"),
         }
-      : null,
+      : !status?.online
+        ? {
+            title: "Edge device sedang offline",
+            detail:
+              "Status Mini PC belum reachable. Refresh koneksi lalu cek tab Ringkasan untuk detail koneksi edge.",
+            actionLabel: "Buka Ringkasan",
+            action: () => setActiveTab("overview"),
+          }
+        : null,
     status?.online && !cameraConnected
       ? {
           title: "Camera belum terhubung",
@@ -1120,13 +1210,18 @@ function DevicesPage() {
   const readinessCards = [
     {
       title: "Edge API",
-      status: status?.online ? "Terhubung" : "Offline",
-      detail: status?.online
-        ? `Terakhir sinkron ${lastSync ? formatRelativeTime(lastSync.getTime()) : "baru saja"}.`
-        : (status?.statusMessage ?? "App belum bisa menjangkau edge API pada refresh terakhir."),
-      hint: status?.online
-        ? `Status koneksi: ${status.connectionState ?? "unknown"}.`
-        : (status?.statusMessage ?? "Periksa jaringan LAN, service edge API, atau status Mini PC."),
+      status: runtimePaused ? "Tidak diperiksa" : status?.online ? "Terhubung" : "Offline",
+      detail: runtimePaused
+        ? "Device nonaktif atau belum dipilih."
+        : status?.online
+          ? `Terakhir sinkron ${lastSync ? formatRelativeTime(lastSync.getTime()) : "baru saja"}.`
+          : (status?.statusMessage ?? "App belum bisa menjangkau edge API pada refresh terakhir."),
+      hint: runtimePaused
+        ? "Aktifkan device untuk memeriksa koneksi."
+        : status?.online
+          ? `Status koneksi: ${status.connectionState ?? "unknown"}.`
+          : (status?.statusMessage ??
+            "Periksa jaringan LAN, service edge API, atau status Mini PC."),
       icon: Wifi,
       tone: status?.online ? ("success" as const) : ("warning" as const),
       actionLabel: "Buka Ringkasan",
@@ -1134,11 +1229,17 @@ function DevicesPage() {
     },
     {
       title: "Koneksi Kamera",
-      status: cameraConnected ? "USB terhubung" : "Terputus",
-      detail: cameraConnected
-        ? "Kamera siap dipakai untuk capture dan apply preset."
-        : "Koneksi kamera belum siap untuk operasi config write.",
-      hint: cameraConnected ? cameraLabel : "Cek kabel USB, power kamera, atau sesi edge device.",
+      status: runtimePaused ? "Tidak diperiksa" : cameraConnected ? "USB terhubung" : "Terputus",
+      detail: runtimePaused
+        ? "Device nonaktif atau belum dipilih."
+        : cameraConnected
+          ? "Kamera siap dipakai untuk capture dan apply preset."
+          : "Koneksi kamera belum siap untuk operasi config write.",
+      hint: runtimePaused
+        ? "Aktifkan device untuk membaca kamera."
+        : cameraConnected
+          ? cameraLabel
+          : "Cek kabel USB, power kamera, atau sesi edge device.",
       icon: Camera,
       tone: cameraConnected ? ("success" as const) : ("warning" as const),
       actionLabel: "Buka Pengaturan Kamera",
@@ -1270,26 +1371,29 @@ function DevicesPage() {
       (event) => event.severity === "error" && matchesDeviceEventTimeRange(event, "7d", nowMs),
     ).length;
   const deviceEventSavedViewLocalCounts = Object.fromEntries(
-    deviceEventSavedViews.map((view) => [
-      view.id,
-      view.state
-        ? deviceEvents.filter(
-            (event) =>
-              (view.state?.severity === "all" ? true : event.severity === view.state.severity) &&
-              (view.state?.eventType === "all"
-                ? true
-                : getDeviceEventTypeGroup(event.eventType) === view.state.eventType) &&
-              matchesDeviceEventTimeRange(
-                event,
-                view.state.timeRange,
-                nowMs,
-                parseDateTimeLocalValue(view.state.customStart),
-                parseDateTimeLocalValue(view.state.customEnd),
-              ) &&
-              matchesDeviceEventSearch(event, view.state.searchQuery),
-          ).length
-        : 0,
-    ]),
+    deviceEventSavedViews.map((view) => {
+      const state = view.state;
+      return [
+        view.id,
+        state
+          ? deviceEvents.filter(
+              (event) =>
+                (state?.severity === "all" ? true : event.severity === state.severity) &&
+                (state?.eventType === "all"
+                  ? true
+                  : getDeviceEventTypeGroup(event.eventType) === state.eventType) &&
+                matchesDeviceEventTimeRange(
+                  event,
+                  state.timeRange,
+                  nowMs,
+                  parseDateTimeLocalValue(state.customStart),
+                  parseDateTimeLocalValue(state.customEnd),
+                ) &&
+                matchesDeviceEventSearch(event, state.searchQuery),
+            ).length
+          : 0,
+      ];
+    }),
   ) as Record<DeviceEventSavedViewId, number>;
   const deviceEventSavedViewCounts =
     deviceEventSavedViewServerCounts ?? deviceEventSavedViewLocalCounts;
@@ -1363,25 +1467,28 @@ function DevicesPage() {
       .includes(query);
   });
 
-  async function persistProfileToRegistry(nextProfile: DeviceProfile) {
-    const result = await upsertRegisteredDeviceProfile({
-      data: toUpsertRegisteredDeviceInput(nextProfile),
-    });
-
-    if (!result.ok) {
-      toast.error("Profil device tersimpan lokal, tetapi gagal sinkron ke database", {
-        description: result.message,
+  async function handleProfileSave(nextProfile: DeviceProfile): Promise<boolean> {
+    if (!selectedDevice || profileSaving) return false;
+    setProfileSaving(true);
+    try {
+      const result = await upsertRegisteredDeviceProfile({
+        data: { ...toUpsertRegisteredDeviceInput(nextProfile), deviceId: selectedDevice.id },
       });
-      return;
+      if (!result.ok) throw new Error(result.message);
+      const savedProfile = buildDeviceProfileFromRegisteredDevice(result.device, nextProfile);
+      saveDeviceProfile(savedProfile);
+      setProfile(savedProfile);
+      await loadRegistry(savedProfile, result.device.id);
+      toast.success("Profil tersimpan di database");
+      return true;
+    } catch (error) {
+      toast.error("Profil belum tersimpan", {
+        description: error instanceof Error ? error.message : "Coba lagi.",
+      });
+      return false;
+    } finally {
+      setProfileSaving(false);
     }
-
-    await loadRegistry(result.profile, result.device.id);
-  }
-
-  function handleProfileSave(nextProfile: DeviceProfile) {
-    saveDeviceProfile(nextProfile);
-    setProfile(nextProfile);
-    void persistProfileToRegistry(nextProfile);
   }
 
   function applyDeviceEventPreset(preset: (typeof DEVICE_EVENT_PRESETS)[number]) {
@@ -1552,6 +1659,106 @@ function DevicesPage() {
           : "Panel log akan kembali mengikuti filter, device, dan query terbaru.",
       });
       return nextValue;
+    });
+  }
+
+  function buildDeviceEventExportBaseFileName(timestamp: string) {
+    const filterSuffix = deviceEventFilter === "all" ? "all" : deviceEventFilter;
+    const eventTypeSuffix = deviceEventTypeFilter === "all" ? "all-types" : deviceEventTypeFilter;
+    const timeRangeSuffix =
+      deviceEventTimeRange === "all"
+        ? "all-time"
+        : deviceEventTimeRange === "custom"
+          ? `custom-${toAuditFileSlug(customRangeLabel)}`
+          : deviceEventTimeRange;
+    const savedViewSuffix = activeDeviceSavedView
+      ? `-${toAuditFileSlug(activeDeviceSavedView.label)}`
+      : "";
+    const presetSuffix = activeDeviceEventPreset
+      ? `-${toAuditFileSlug(activeDeviceEventPreset.label)}`
+      : "";
+    const searchSuffix = hasDeviceEventSearch ? "-search" : "";
+    return `device-events${savedViewSuffix}${presetSuffix}-${filterSuffix}-${eventTypeSuffix}-${timeRangeSuffix}${searchSuffix}-${timestamp}`;
+  }
+
+  function buildDeviceEventExportFile(format: "json" | "csv", timestamp: string) {
+    const baseFileName = buildDeviceEventExportBaseFileName(timestamp);
+
+    if (format === "json") {
+      return {
+        blob: new Blob(
+          [
+            JSON.stringify(
+              visibleDeviceEvents.map((event) => ({
+                ...event,
+                eventLabel: formatDeviceEventLabel(event.eventType),
+              })),
+              null,
+              2,
+            ),
+          ],
+          {
+            type: "application/json;charset=utf-8;",
+          },
+        ),
+        fileName: `${baseFileName}.json`,
+      };
+    }
+
+    const rows = [
+      [
+        "id",
+        "created_at",
+        "severity",
+        "event_type",
+        "event_label",
+        "device_code",
+        "device_name",
+        "message",
+        "payload_json",
+      ],
+      ...visibleDeviceEvents.map((event) => [
+        String(event.id),
+        event.createdAt,
+        event.severity,
+        event.eventType,
+        formatDeviceEventLabel(event.eventType),
+        event.deviceCode,
+        event.deviceName ?? "",
+        event.message,
+        event.payload ? JSON.stringify(event.payload) : "",
+      ]),
+    ];
+    const csv = rows.map((row) => row.map(escapeCsvValue).join(",")).join("\r\n");
+    return {
+      blob: new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" }),
+      fileName: `${baseFileName}.csv`,
+    };
+  }
+
+  function exportDeviceEvents(format: "json" | "csv") {
+    if (visibleDeviceEvents.length === 0) return;
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const { blob, fileName } = buildDeviceEventExportFile(format, timestamp);
+    downloadBlobFile(blob, fileName);
+
+    toast.success(`Log device diekspor ke ${format.toUpperCase()}`, {
+      description: `Mengekspor ${visibleDeviceEvents.length} log sesuai filter aktif.`,
+    });
+  }
+
+  function exportDeviceEventBundle() {
+    if (visibleDeviceEvents.length === 0) return;
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const jsonFile = buildDeviceEventExportFile("json", timestamp);
+    const csvFile = buildDeviceEventExportFile("csv", timestamp);
+    downloadBlobFile(jsonFile.blob, jsonFile.fileName);
+    downloadBlobFile(csvFile.blob, csvFile.fileName);
+
+    toast.success("Paket log device diekspor", {
+      description: `JSON dan CSV untuk ${visibleDeviceEvents.length} log berhasil diunduh.`,
     });
   }
 
@@ -1737,12 +1944,14 @@ function DevicesPage() {
         >
           {visibleDevices.map((device) => {
             const isSelected = selectedDevice?.id === device.id;
-            const isActiveRuntime = profile?.deviceCode === device.deviceCode;
-            const cardStatus = isActiveRuntime
-              ? status?.online
-                ? "Terhubung"
-                : "Offline"
-              : "Terdaftar";
+            const isActiveRuntime = status?.target?.deviceId === device.id;
+            const cardStatus = !device.isActive
+              ? "Nonaktif"
+              : isActiveRuntime
+                ? status?.online
+                  ? "Terhubung"
+                  : "Offline"
+                : "Terdaftar";
             const cardTone = isActiveRuntime
               ? status?.online
                 ? "bg-emerald-500/10 text-emerald-600"
@@ -1753,7 +1962,11 @@ function DevicesPage() {
               <button
                 key={device.id}
                 type="button"
+                disabled={profileSaving || stateBusy || cameraOperationBusy}
                 onClick={() => {
+                  setStatus(null);
+                  setCameraDetails(null);
+                  setDetailsError(null);
                   setSelectedDeviceId(device.id);
                   syncProfileFromRegistryDevice(device, profile);
                 }}
@@ -1848,7 +2061,95 @@ function DevicesPage() {
           <span
             className={`ml-1 h-2 w-2 rounded-full ${status?.online ? "bg-emerald-500" : "bg-muted-foreground/40"}`}
           />
+          {selectedDevice && (
+            <div className="ml-auto flex flex-wrap gap-2 text-xs">
+              <Link
+                to="/devices/register"
+                search={{ deviceId: selectedDevice.id }}
+                onClick={(event) => {
+                  if (cameraOperationBusy || profileSaving) event.preventDefault();
+                }}
+                className="rounded-md border px-3 py-2"
+              >
+                Edit device
+              </Link>
+              <button
+                type="button"
+                disabled={stateBusy || profileSaving || cameraOperationBusy}
+                onClick={() =>
+                  setPendingStateAction(selectedDevice.isActive ? "deactivate" : "activate")
+                }
+                className="rounded-md border px-3 py-2 disabled:opacity-50"
+              >
+                {selectedDevice.isActive ? "Nonaktifkan" : "Aktifkan"}
+              </button>
+              <button
+                type="button"
+                disabled={
+                  stateBusy || profileSaving || cameraOperationBusy || selectedDevice.isActive
+                }
+                title={
+                  selectedDevice.isActive
+                    ? "Nonaktifkan device terlebih dahulu"
+                    : "Hapus dari registry aktif"
+                }
+                onClick={() => setPendingStateAction("delete")}
+                className="rounded-md border px-3 py-2 text-destructive disabled:opacity-50"
+              >
+                Hapus device
+              </button>
+            </div>
+          )}
         </div>
+
+        <AlertDialog
+          open={pendingStateAction !== null}
+          onOpenChange={(open) => {
+            if (!open && !stateBusy) setPendingStateAction(null);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {pendingStateAction === "delete"
+                  ? "Hapus device dari registry?"
+                  : pendingStateAction === "activate"
+                    ? "Aktifkan device?"
+                    : "Nonaktifkan device?"}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {selectedDevice?.deviceName} ({selectedDevice?.deviceCode}).{" "}
+                {pendingStateAction === "delete"
+                  ? "Device disembunyikan dari daftar dan assignment ditutup. Riwayat capture tetap tersimpan."
+                  : pendingStateAction === "activate"
+                    ? "Device dapat digunakan kembali oleh operator pada plant ini. Pastikan tidak ada assignment kamera aktif yang ambigu."
+                    : "Device tidak dapat digunakan untuk capture. Pastikan seluruh sesi capture pada device ini sudah selesai."}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={stateBusy || profileSaving || cameraOperationBusy}>
+                Batal
+              </AlertDialogCancel>
+              <button
+                type="button"
+                disabled={stateBusy || profileSaving || cameraOperationBusy}
+                onClick={() => void confirmStateChange()}
+                className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground disabled:opacity-50"
+              >
+                {stateBusy ? "Menyimpan..." : "Konfirmasi"}
+              </button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+        {(detailsError || status?.statusMessage || !selectedDevice?.isActive) && (
+          <p className="px-4 pt-3 text-xs text-muted-foreground" role="status">
+            {!selectedDevice
+              ? "Pilih atau daftarkan device."
+              : !selectedDevice.isActive
+                ? "Device nonaktif; pemeriksaan kamera tidak dijalankan."
+                : (detailsError ?? status?.statusMessage)}
+          </p>
+        )}
 
         <div className="flex flex-wrap gap-1 border-b px-4 pt-2">
           {TABS.map((tab) => (
@@ -1881,7 +2182,7 @@ function DevicesPage() {
                     <dd className="text-right font-medium">
                       {selectedDevice?.deviceCode ?? profile?.deviceCode ?? "—"}
                     </dd>
-                    <dt className="text-muted-foreground">Hostname</dt>
+                    <dt className="text-muted-foreground">ID dari Edge API</dt>
                     <dd className="text-right font-medium">{status?.deviceId ?? "—"}</dd>
                     <dt className="text-muted-foreground">Agent Version</dt>
                     <dd className="text-right font-medium">{status?.agentVersion ?? "—"}</dd>
@@ -1891,13 +2192,30 @@ function DevicesPage() {
                     <dd className="text-right font-medium">{profile?.bin ?? "—"}</dd>
                     <dt className="text-muted-foreground">Jadwal</dt>
                     <dd className="text-right font-medium">{profile?.schedule ?? "—"}</dd>
-                    <dt className="text-muted-foreground">IP Address</dt>
+                    <dt className="text-muted-foreground">Alamat endpoint (host/IP)</dt>
                     <dd className="text-right font-medium">
-                      {selectedDevice?.ipAddress ?? <NotAvailable />}
+                      {status?.target?.host ??
+                        deviceEndpointHost(selectedDevice?.edgeApiUrl, selectedDevice?.ipAddress)}
                     </dd>
-                    <dt className="text-muted-foreground">OS</dt>
+                    <dt className="text-muted-foreground">
+                      OS ({telemetry?.identity.scope === "host" ? "host" : "runtime"})
+                    </dt>
                     <dd className="text-right font-medium">
-                      <NotAvailable />
+                      {telemetry?.identity.osName ?? "Tidak tersedia"}
+                    </dd>
+                    <dt className="text-muted-foreground">
+                      Hostname ({telemetry?.identity.scope === "host" ? "host" : "runtime"})
+                    </dt>
+                    <dd className="text-right font-medium">
+                      {telemetry?.identity.hostname ?? "Tidak tersedia"}
+                    </dd>
+                    <dt className="text-muted-foreground">
+                      Alamat jaringan ({telemetry?.network.scope === "host" ? "host" : "runtime"})
+                    </dt>
+                    <dd className="break-all text-right font-medium">
+                      {telemetry?.network.addresses
+                        .map((item) => `${item.interface}: ${item.address}`)
+                        .join("; ") || "Tidak tersedia"}
                     </dd>
                   </dl>
                 </div>
@@ -1921,7 +2239,24 @@ function DevicesPage() {
                     </dd>
                     <dt className="text-muted-foreground">Baterai / Daya</dt>
                     <dd className="text-right font-medium">
-                      <NotAvailable />
+                      {cameraDetails?.batteryLevel != null
+                        ? `${cameraDetails.batteryLevel}${typeof cameraDetails.batteryLevel === "number" ? "%" : ""}`
+                        : missingCameraDetail}
+                    </dd>
+                    <dt className="text-muted-foreground">Lensa</dt>
+                    <dd className="text-right font-medium">
+                      {cameraDetails?.lensName ?? missingCameraDetail}
+                    </dd>
+                    <dt className="text-muted-foreground">Penyimpanan kamera</dt>
+                    <dd className="text-right font-medium">
+                      {cameraDetails?.storage.length
+                        ? cameraDetails.storage
+                            .map(
+                              (store) =>
+                                `${store.description}: ${(store.freeBytes / 1e9).toFixed(2)} / ${(store.totalBytes / 1e9).toFixed(2)} GB kosong`,
+                            )
+                            .join("; ")
+                        : missingCameraDetail}
                     </dd>
                     <dt className="text-muted-foreground">Koneksi USB</dt>
                     <dd className="text-right font-medium">
@@ -1987,9 +2322,12 @@ function DevicesPage() {
 
             {activeTab === "camera-settings" && (
               <CameraSettingsTab
+                key={selectedDevice?.id ?? "none"}
+                deviceId={selectedDevice?.id}
                 profile={profile}
                 deviceStatus={status}
                 onSaveProfile={handleProfileSave}
+                onOperationBusy={setCameraOperationBusy}
               />
             )}
 
@@ -1998,28 +2336,11 @@ function DevicesPage() {
                 <h3 className="mb-3 flex items-center gap-1.5 text-sm font-semibold">
                   <Activity className="h-3.5 w-3.5" /> Kesehatan Device
                 </h3>
-                <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
-                  <dt className="text-muted-foreground">Penggunaan CPU</dt>
-                  <dd className="text-right">
-                    <NotAvailable />
-                  </dd>
-                  <dt className="text-muted-foreground">Penggunaan RAM</dt>
-                  <dd className="text-right">
-                    <NotAvailable />
-                  </dd>
-                  <dt className="text-muted-foreground">Penggunaan Disk</dt>
-                  <dd className="text-right">
-                    <NotAvailable />
-                  </dd>
-                  <dt className="text-muted-foreground">Suhu</dt>
-                  <dd className="text-right">
-                    <NotAvailable />
-                  </dd>
-                </dl>
-                <p className="mt-3 text-[11px] text-muted-foreground">
-                  Telemetri sistem memerlukan agent yang berjalan di Mini PC, dan komponen itu belum
-                  tersedia di aplikasi ini.
-                </p>
+                <DeviceTelemetryPanel
+                  telemetry={telemetry}
+                  loading={telemetryLoading}
+                  error={telemetryError}
+                />
               </div>
             )}
 
@@ -2602,7 +2923,9 @@ function DevicesPage() {
               </div>
             )}
 
-            {activeTab === "configuration" && <ConfigurationTab profile={profile} />}
+            {activeTab === "configuration" && (
+              <ConfigurationTab profile={profile} deviceId={selectedDevice?.id} />
+            )}
 
             {activeTab === "fallback" && (
               <div className="rounded-md border p-4">
@@ -2621,35 +2944,43 @@ function DevicesPage() {
             )}
           </div>
 
-          {/* Right column: only ever honest placeholders -- there's no
-              telemetry agent or QC scoring pipeline behind these yet. */}
+          {/* Live telemetry and camera settings remain separate from image QC. */}
           <div className="space-y-4">
             <div className="rounded-md border p-3">
               <h3 className="mb-2 text-xs font-semibold text-muted-foreground">Kesehatan Device</h3>
-              <div className="space-y-1.5 text-xs">
-                {["CPU", "RAM", "Disk", "Suhu"].map((label) => (
-                  <div key={label} className="flex justify-between">
-                    <span className="text-muted-foreground">{label}</span>
-                    <NotAvailable />
-                  </div>
-                ))}
-              </div>
+              <DeviceTelemetryPanel
+                telemetry={telemetry}
+                loading={telemetryLoading}
+                error={telemetryError}
+              />
             </div>
 
             <div className="rounded-md border p-3">
               <h3 className="mb-2 text-xs font-semibold text-muted-foreground">
-                Kesehatan Kamera (QC)
+                Setelan Kamera Aktual
               </h3>
               <div className="space-y-1.5 text-xs">
-                {["Kondisi Lensa", "Pencahayaan", "Exposure", "Fokus", "Kualitas Gambar"].map(
-                  (label) => (
-                    <div key={label} className="flex justify-between">
-                      <span className="text-muted-foreground">{label}</span>
-                      <NotAvailable />
-                    </div>
-                  ),
-                )}
+                {[
+                  ["ISO", "iso"],
+                  ["Shutter", "shutterSpeed"],
+                  ["Aperture", "aperture"],
+                  ["White balance", "whiteBalance"],
+                  ["Mode fokus", "focusMode"],
+                ].map(([label, key]) => (
+                  <div key={label} className="flex justify-between">
+                    <span className="text-muted-foreground">{label}</span>
+                    <span className="ml-2 text-right">
+                      {cameraDetails?.settings
+                        .find((setting) => setting.key === key)
+                        ?.value?.toString() ?? missingCameraDetail}
+                    </span>
+                  </div>
+                ))}
               </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Nilai konfigurasi dari kamera. Penilaian kondisi lensa dan kualitas gambar (QC)
+                belum tersedia.
+              </p>
             </div>
 
             <div className="rounded-md border p-3">
@@ -2687,10 +3018,14 @@ function CameraSettingsTab({
   profile,
   deviceStatus,
   onSaveProfile,
+  onOperationBusy,
+  deviceId,
 }: {
+  deviceId?: number;
   profile: DeviceProfile | null;
   deviceStatus: DeviceStatus | null;
-  onSaveProfile: (profile: DeviceProfile) => void;
+  onSaveProfile: (profile: DeviceProfile) => Promise<boolean>;
+  onOperationBusy: (busy: boolean) => void;
 }) {
   const [templateId, setTemplateId] = useState(profile?.templateId ?? DEVICE_TEMPLATES[0].id);
   const [templateFilter, setTemplateFilter] = useState<PresetFilter>(PRESET_FILTERS[0]);
@@ -2701,7 +3036,7 @@ function CameraSettingsTab({
   );
   const [schedule, setSchedule] = useState(profile?.schedule ?? DEVICE_SCHEDULES[1]);
   const [draft, setDraft] = useState<CameraSettings | null>(profile?.cameraSettings ?? null);
-  const [saveState, setSaveState] = useState<"idle" | "saved">("idle");
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
   const [edgeConfigs, setEdgeConfigs] = useState<CameraConfig[]>([]);
   const [edgeConfigsLoading, setEdgeConfigsLoading] = useState(false);
   const [edgeConfigsError, setEdgeConfigsError] = useState<string | null>(null);
@@ -2767,9 +3102,15 @@ function CameraSettingsTab({
     let cancelled = false;
 
     async function loadEdgeConfigs() {
+      if (!deviceId || !deviceStatus?.online) {
+        setEdgeConfigs([]);
+        setEdgeConfigsLoading(false);
+        setEdgeConfigsError("Pilih device aktif yang terhubung untuk membaca konfigurasi kamera.");
+        return;
+      }
       setEdgeConfigsLoading(true);
       setEdgeConfigsError(null);
-      const result = await listCameraConfigs();
+      const result = await listCameraConfigs({ data: { deviceId } });
       if (cancelled) return;
       if (!result.ok) {
         setEdgeConfigs([]);
@@ -2780,11 +3121,16 @@ function CameraSettingsTab({
       setEdgeConfigsLoading(false);
     }
 
-    void loadEdgeConfigs();
+    void loadEdgeConfigs().catch((error) => {
+      if (!cancelled) {
+        setEdgeConfigsError(error instanceof Error ? error.message : "Config gagal dimuat.");
+        setEdgeConfigsLoading(false);
+      }
+    });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [deviceId, deviceStatus?.online]);
 
   if (!profile || !draft) {
     return (
@@ -2801,6 +3147,7 @@ function CameraSettingsTab({
   }
 
   function buildNextProfile() {
+    if (!profile || !draft) return null;
     return createProfileFromInput({
       ...profile,
       templateId,
@@ -2813,23 +3160,23 @@ function CameraSettingsTab({
     });
   }
 
-  function saveCameraProfile() {
-    const nextProfile = buildNextProfile();
-    onSaveProfile(nextProfile);
-    setSaveState("saved");
-    return nextProfile;
+  async function saveCameraProfile() {
+    const next = buildNextProfile();
+    return next ? saveSpecificCameraProfile(next) : null;
   }
 
-  function saveSpecificCameraProfile(nextProfile: DeviceProfile) {
-    onSaveProfile(nextProfile);
-    setSaveState("saved");
-    return nextProfile;
+  async function saveSpecificCameraProfile(nextProfile: DeviceProfile) {
+    if (saveState === "saving") return null;
+    setSaveState("saving");
+    const saved = await onSaveProfile(nextProfile);
+    setSaveState(saved ? "saved" : "idle");
+    return saved ? nextProfile : null;
   }
 
   async function refreshEdgeConfigs() {
     setEdgeConfigsLoading(true);
     setEdgeConfigsError(null);
-    const result = await listCameraConfigs();
+    const result = await listCameraConfigs({ data: { deviceId } });
     if (!result.ok) {
       setEdgeConfigs([]);
       setEdgeConfigsError(result.message);
@@ -2840,6 +3187,19 @@ function CameraSettingsTab({
   }
 
   async function applyProfileToCamera(nextProfile: DeviceProfile) {
+    onOperationBusy(true);
+    try {
+      await performProfileApply(nextProfile);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Gagal menerapkan preset.";
+      setApplyState({ status: "failed", message });
+      toast.error(message);
+    } finally {
+      onOperationBusy(false);
+    }
+  }
+
+  async function performProfileApply(nextProfile: DeviceProfile) {
     setApplyState({
       status: "applying",
       message: "Creating/updating edge profile and applying preset to the camera...",
@@ -2848,7 +3208,7 @@ function CameraSettingsTab({
       description: "Edge profile sedang dibuat atau diperbarui.",
     });
 
-    const result = await upsertAndApplyEdgePreset({ data: nextProfile });
+    const result = await upsertAndApplyEdgePreset({ data: { ...nextProfile, deviceId } });
     if (!result.ok) {
       setApplyState({
         status: "failed",
@@ -2881,7 +3241,15 @@ function CameraSettingsTab({
       updatedAt: Date.now(),
       registeredAt: nextProfile.registeredAt,
     });
-    onSaveProfile(syncedProfile);
+    const registrySaved = await onSaveProfile(syncedProfile);
+    if (!registrySaved) {
+      setApplyState({
+        status: "failed",
+        message:
+          "Preset diterapkan ke kamera, tetapi sinkronisasi registry gagal. Simpan ulang profil.",
+      });
+      return;
+    }
     setApplyState({
       status: "applied",
       message: `Preset applied to camera via edge profile "${result.edgeProfileName}".`,
@@ -2908,12 +3276,14 @@ function CameraSettingsTab({
   }
 
   async function applyPresetToCamera() {
-    const nextProfile = saveCameraProfile();
+    const nextProfile = await saveCameraProfile();
+    if (!nextProfile) return;
     await applyProfileToCamera(nextProfile);
   }
 
   const configWriteSupported = !!deviceStatus?.capabilities.includes("configWrite");
   const canApplyPreset =
+    saveState !== "saving" &&
     !!deviceStatus?.online &&
     !!deviceStatus.camera?.connected &&
     configWriteSupported &&
@@ -3125,106 +3495,6 @@ function CameraSettingsTab({
     });
   }
 
-  function buildDeviceEventExportBaseFileName(timestamp: string) {
-    const filterSuffix = deviceEventFilter === "all" ? "all" : deviceEventFilter;
-    const eventTypeSuffix = deviceEventTypeFilter === "all" ? "all-types" : deviceEventTypeFilter;
-    const timeRangeSuffix =
-      deviceEventTimeRange === "all"
-        ? "all-time"
-        : deviceEventTimeRange === "custom"
-          ? `custom-${toAuditFileSlug(customRangeLabel)}`
-          : deviceEventTimeRange;
-    const savedViewSuffix = activeDeviceSavedView
-      ? `-${toAuditFileSlug(activeDeviceSavedView.label)}`
-      : "";
-    const presetSuffix = activeDeviceEventPreset
-      ? `-${toAuditFileSlug(activeDeviceEventPreset.label)}`
-      : "";
-    const searchSuffix = hasDeviceEventSearch ? "-search" : "";
-    return `device-events${savedViewSuffix}${presetSuffix}-${filterSuffix}-${eventTypeSuffix}-${timeRangeSuffix}${searchSuffix}-${timestamp}`;
-  }
-
-  function buildDeviceEventExportFile(format: "json" | "csv", timestamp: string) {
-    const baseFileName = buildDeviceEventExportBaseFileName(timestamp);
-
-    if (format === "json") {
-      return {
-        blob: new Blob(
-          [
-            JSON.stringify(
-              visibleDeviceEvents.map((event) => ({
-                ...event,
-                eventLabel: formatDeviceEventLabel(event.eventType),
-              })),
-              null,
-              2,
-            ),
-          ],
-          {
-            type: "application/json;charset=utf-8;",
-          },
-        ),
-        fileName: `${baseFileName}.json`,
-      };
-    }
-
-    const rows = [
-      [
-        "id",
-        "created_at",
-        "severity",
-        "event_type",
-        "event_label",
-        "device_code",
-        "device_name",
-        "message",
-        "payload_json",
-      ],
-      ...visibleDeviceEvents.map((event) => [
-        String(event.id),
-        event.createdAt,
-        event.severity,
-        event.eventType,
-        formatDeviceEventLabel(event.eventType),
-        event.deviceCode,
-        event.deviceName ?? "",
-        event.message,
-        event.payload ? JSON.stringify(event.payload) : "",
-      ]),
-    ];
-    const csv = rows.map((row) => row.map(escapeCsvValue).join(",")).join("\r\n");
-    return {
-      blob: new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" }),
-      fileName: `${baseFileName}.csv`,
-    };
-  }
-
-  function exportDeviceEvents(format: "json" | "csv") {
-    if (visibleDeviceEvents.length === 0) return;
-
-    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const { blob, fileName } = buildDeviceEventExportFile(format, timestamp);
-    downloadBlobFile(blob, fileName);
-
-    toast.success(`Log device diekspor ke ${format.toUpperCase()}`, {
-      description: `Mengekspor ${visibleDeviceEvents.length} log sesuai filter aktif.`,
-    });
-  }
-
-  function exportDeviceEventBundle() {
-    if (visibleDeviceEvents.length === 0) return;
-
-    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const jsonFile = buildDeviceEventExportFile("json", timestamp);
-    const csvFile = buildDeviceEventExportFile("csv", timestamp);
-    downloadBlobFile(jsonFile.blob, jsonFile.fileName);
-    downloadBlobFile(csvFile.blob, csvFile.fileName);
-
-    toast.success("Paket log device diekspor", {
-      description: `JSON dan CSV untuk ${visibleDeviceEvents.length} log berhasil diunduh.`,
-    });
-  }
-
   function exportApplyHistory(format: "json" | "csv", scope: "filtered" | "all" = "filtered") {
     const entries = scope === "all" ? applyHistory : visibleApplyHistory;
     if (entries.length === 0) return;
@@ -3286,6 +3556,7 @@ function CameraSettingsTab({
   }
 
   async function applyTemplateImmediately(nextTemplateId: string) {
+    if (!profile || !canApplyPreset) return;
     const nextDraft = getTemplateCameraSettings(nextTemplateId);
     const nextProfile = createProfileFromInput({
       ...profile,
@@ -3299,8 +3570,7 @@ function CameraSettingsTab({
     });
     setTemplateId(nextTemplateId);
     setDraft(nextDraft);
-    saveSpecificCameraProfile(nextProfile);
-    await applyProfileToCamera(nextProfile);
+    if (await saveSpecificCameraProfile(nextProfile)) await applyProfileToCamera(nextProfile);
   }
 
   return (
@@ -3318,7 +3588,8 @@ function CameraSettingsTab({
         <div className="flex max-w-md flex-col items-stretch gap-2">
           <div className="flex flex-wrap gap-2">
             <button
-              onClick={saveCameraProfile}
+              onClick={() => void saveCameraProfile()}
+              disabled={saveState === "saving"}
               className="rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent"
             >
               Simpan Pengaturan Device
@@ -3975,6 +4246,7 @@ function CameraSettingsTab({
         </div>
         <Link
           to="/devices/register"
+          search={{ deviceId }}
           className="rounded-md border border-input bg-background px-3 py-1.5 font-medium hover:bg-accent"
         >
           Edit data registrasi
@@ -3984,7 +4256,13 @@ function CameraSettingsTab({
   );
 }
 
-function ConfigurationTab({ profile }: { profile: DeviceProfile | null }) {
+function ConfigurationTab({
+  profile,
+  deviceId,
+}: {
+  profile: DeviceProfile | null;
+  deviceId?: number;
+}) {
   const [prefs, setPrefs] = useState<ReturnType<typeof loadPrefs> | null>(null);
 
   useEffect(() => {
@@ -4027,6 +4305,7 @@ function ConfigurationTab({ profile }: { profile: DeviceProfile | null }) {
       <div className="mt-3 flex flex-wrap gap-2">
         <Link
           to="/devices/register"
+          search={{ deviceId }}
           className="inline-block rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent"
         >
           Edit profil device

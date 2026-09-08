@@ -1,0 +1,125 @@
+{
+  "testedAt": "2026-09-08T12:11:48.287Z",
+  "base": "http://10.60.20.96:3000",
+  "results": [
+    {
+      "path": "/v1/health",
+      "status": 200,
+      "elapsedMs": 387,
+      "data": {
+        "status": "ok",
+        "agentVersion": "0.1.0",
+        "time": "2026-09-08T12:11:48.328Z"
+      }
+    },
+    {
+      "path": "/v1/device",
+      "status": 200,
+      "elapsedMs": 64,
+      "data": {
+        "deviceId": "edge-camera-02",
+        "agentVersion": "0.1.0",
+        "connectionState": "disconnected",
+        "capabilities": [],
+        "camera": {
+          "connected": false,
+          "manufacturer": null,
+          "model": null,
+          "serialNumber": null,
+          "firmwareVersion": null
+        }
+      }
+    },
+    {
+      "path": "/v1/camera/status",
+      "status": 200,
+      "elapsedMs": 53,
+      "data": {
+        "connectionState": "disconnected",
+        "batteryLevel": null,
+        "lensName": null,
+        "availableShots": null,
+        "storage": [],
+        "settings": []
+      }
+    },
+    {
+      "name": "create-session",
+      "path": "/v1/sessions",
+      "status": 201,
+      "elapsedMs": 139,
+      "data": {
+        "sessionId": "246d2437-50cb-469b-8424-0f8f1c2004d1",
+        "leaseToken": "[redacted]",
+        "ownerType": "automation",
+        "ownerId": "authorized-edge02-api-test-20260908",
+        "status": "active",
+        "createdAt": "2026-09-08T12:12:11.112Z",
+        "expiresAt": "2026-09-08T12:14:11.112Z"
+      }
+    },
+    {
+      "name": "renew-session",
+      "path": "/v1/sessions/246d2437-50cb-469b-8424-0f8f1c2004d1/renew",
+      "status": 200,
+      "elapsedMs": 27,
+      "data": {
+        "sessionId": "246d2437-50cb-469b-8424-0f8f1c2004d1",
+        "leaseToken": "[redacted]",
+        "ownerType": "automation",
+        "ownerId": "authorized-edge02-api-test-20260908",
+        "status": "active",
+        "createdAt": "2026-09-08T12:12:11.112Z",
+        "expiresAt": "2026-09-08T12:14:11.140Z"
+      }
+    },
+    {
+      "name": "device-after-session",
+      "path": "/v1/device",
+      "status": 200,
+      "elapsedMs": 65,
+      "data": {
+        "deviceId": "edge-camera-02",
+        "agentVersion": "0.1.0",
+        "connectionState": "disconnected",
+        "capabilities": [],
+        "camera": {
+          "connected": false,
+          "manufacturer": null,
+          "model": null,
+          "serialNumber": null,
+          "firmwareVersion": null
+        }
+      }
+    },
+    {
+      "name": "preview",
+      "path": "/v1/camera/preview",
+      "status": 502,
+      "elapsedMs": 60,
+      "data": {
+        "code": "CAMERA_COMMAND_FAILED",
+        "message": "*** Error (-52: 'Could not find the requested device on the USB port') ***",
+        "details": {
+          "args": [
+            "--force-overwrite",
+            "--capture-preview",
+            "--filename",
+            "data/media/preview-01419c0e-7d1a-4622-aabe-b9b1fc561bd1.jpg"
+          ]
+        }
+      }
+    },
+    {
+      "name": "release-session",
+      "path": "/v1/sessions/246d2437-50cb-469b-8424-0f8f1c2004d1",
+      "status": 204,
+      "elapsedMs": 82,
+      "data": ""
+    }
+  ],
+  "captureReadiness": false,
+  "captureOutcome": "blocked: camera disconnected and preview returned CAMERA_COMMAND_FAILED (USB device not found); no capture/autofocus command sent",
+  "completedAt": "2026-09-08T12:12:11.181Z",
+  "scope": "Direct edge API from current workspace host; no registry/database changes, no service restart, no camera configuration writes."
+}

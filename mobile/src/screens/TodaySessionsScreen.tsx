@@ -3,7 +3,12 @@ import { useEffect, useMemo, useState } from "react";
 import { AppLogo } from "../components/AppLogo";
 import type { AuthSession } from "../lib/auth";
 import { MobileAuthError } from "../lib/auth";
-import { getSessionCoverage, mapSessionCoverageToView, type TodaySessionItem } from "../lib/sessionCoverage";
+import {
+  getSessionCoverage,
+  localDateKey,
+  mapSessionCoverageToView,
+  type TodaySessionItem,
+} from "../lib/sessionCoverage";
 
 type TodaySessionsScreenProps = {
   session: AuthSession;
@@ -34,7 +39,12 @@ function statusMeta(status: TodaySessionItem["status"]) {
 
 function errorMessageOf(error: unknown) {
   if (error instanceof MobileAuthError) return error.message;
-  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
+  if (
+    error &&
+    typeof error === "object" &&
+    "message" in error &&
+    typeof error.message === "string"
+  ) {
     return error.message;
   }
   return "Unable to load today sessions.";
@@ -58,8 +68,12 @@ export function TodaySessionsScreen({
       setError(null);
 
       try {
-        const plant = session.user.plant && session.user.plant !== "ALL" ? session.user.plant : null;
-        const response = await getSessionCoverage(session, { plant });
+        const plant =
+          session.user.plant && session.user.plant !== "ALL" ? session.user.plant : null;
+        const response = await getSessionCoverage(session, {
+          date: localDateKey(new Date()),
+          plant,
+        });
         if (cancelled) return;
         onSessionUpdate(response.session);
         setView(mapSessionCoverageToView(response.data));
@@ -176,7 +190,9 @@ export function TodaySessionsScreen({
                         <span className="session-card__time">{item.displayTime}</span>
                         <div className="session-card__content">
                           <h2 className="session-card__title">{item.location}</h2>
-                          <span className={`session-card__status session-card__status--${meta.tone}`}>
+                          <span
+                            className={`session-card__status session-card__status--${meta.tone}`}
+                          >
                             {meta.label}
                           </span>
                         </div>
@@ -186,7 +202,10 @@ export function TodaySessionsScreen({
                         {item.trailing ? (
                           <span className="session-card__trailing">{item.trailing}</span>
                         ) : null}
-                        <span className="material-symbols-outlined session-card__icon" aria-hidden="true">
+                        <span
+                          className="material-symbols-outlined session-card__icon"
+                          aria-hidden="true"
+                        >
                           {meta.icon}
                         </span>
                       </div>

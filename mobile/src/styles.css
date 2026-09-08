@@ -44,6 +44,27 @@ body {
   font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
 }
 
+body[data-mobile-theme="light"] {
+  --bg: #eef4f5;
+  --surface: #ffffff;
+  --border: rgba(86, 111, 118, 0.2);
+  --border-strong: rgba(86, 111, 118, 0.34);
+  --text: #152427;
+  --text-muted: #476167;
+  --text-soft: #6b8388;
+  --primary: #0fa9bc;
+  --primary-strong: #078ea0;
+  --primary-ink: #f5feff;
+  --accent: #cc8c12;
+  --shadow-lg: 0 24px 60px rgba(18, 36, 41, 0.12);
+  --shadow-md: 0 14px 32px rgba(18, 36, 41, 0.1);
+  background:
+    radial-gradient(circle at top, rgba(7, 142, 160, 0.12), transparent 34%),
+    radial-gradient(circle at bottom right, rgba(204, 140, 18, 0.08), transparent 28%),
+    linear-gradient(180deg, #f8fbfc 0%, var(--bg) 42%, #e6eff1 100%);
+  color-scheme: light;
+}
+
 body[data-mobile-contrast="high"] {
   --bg: #050708;
   --surface: #101718;
@@ -60,6 +81,102 @@ body[data-mobile-contrast="high"] {
     radial-gradient(circle at top, rgba(52, 216, 234, 0.16), transparent 34%),
     radial-gradient(circle at bottom right, rgba(255, 211, 103, 0.12), transparent 30%),
     linear-gradient(180deg, #020506 0%, var(--bg) 38%, #070b0c 100%);
+}
+
+body[data-mobile-theme="light"][data-mobile-contrast="high"] {
+  --bg: #f9fcfd;
+  --surface: #ffffff;
+  --border: rgba(37, 59, 64, 0.28);
+  --border-strong: rgba(37, 59, 64, 0.46);
+  --text: #091215;
+  --text-muted: #284046;
+  --text-soft: #456068;
+  --primary: #007f90;
+  --primary-strong: #006d7d;
+  --primary-ink: #f7ffff;
+  --accent: #a66d00;
+  background:
+    radial-gradient(circle at top, rgba(0, 127, 144, 0.14), transparent 34%),
+    radial-gradient(circle at bottom right, rgba(166, 109, 0, 0.1), transparent 30%),
+    linear-gradient(180deg, #ffffff 0%, var(--bg) 44%, #eef5f7 100%);
+}
+
+body[data-mobile-theme="light"]::before {
+  background-image:
+    linear-gradient(rgba(21, 36, 39, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(21, 36, 39, 0.04) 1px, transparent 1px);
+}
+
+body[data-mobile-theme="light"] .top-app-bar,
+body[data-mobile-theme="light"] .bottom-nav,
+body[data-mobile-theme="light"] .status-chip,
+body[data-mobile-theme="light"] .card,
+body[data-mobile-theme="light"] .page-card,
+body[data-mobile-theme="light"] .session-card,
+body[data-mobile-theme="light"] .history-card,
+body[data-mobile-theme="light"] .capture-context-card,
+body[data-mobile-theme="light"] .capture-session-bar,
+body[data-mobile-theme="light"] .camera-feed-card,
+body[data-mobile-theme="light"] .result-preview-card,
+body[data-mobile-theme="light"] .job-progress-card,
+body[data-mobile-theme="light"] .capture-notice,
+body[data-mobile-theme="light"] .capture-detail-badge,
+body[data-mobile-theme="light"] .capture-detail-image-card,
+body[data-mobile-theme="light"] .capture-detail-meta-card,
+body[data-mobile-theme="light"] .device-card,
+body[data-mobile-theme="light"] .device-operator-card,
+body[data-mobile-theme="light"] .device-diagnostics-card,
+body[data-mobile-theme="light"] .settings-info-card,
+body[data-mobile-theme="light"] .settings-list-card,
+body[data-mobile-theme="light"] .settings-diagnostic-card,
+body[data-mobile-theme="light"] .settings-runtime-card {
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: var(--shadow-md);
+}
+
+body[data-mobile-theme="light"] .device-card__header,
+body[data-mobile-theme="light"] .summary-chip,
+body[data-mobile-theme="light"] .icon-button:hover,
+body[data-mobile-theme="light"] .icon-button:focus-visible {
+  background: rgba(239, 246, 247, 0.96);
+}
+
+body[data-mobile-theme="light"] .capture-slot-selector__button,
+body[data-mobile-theme="light"]
+  .capture-session-bar__button:not(.capture-session-bar__button--primary),
+body[data-mobile-theme="light"] .bottom-nav__item {
+  background: rgba(247, 251, 252, 0.9);
+}
+
+body[data-mobile-theme="light"] .history-card__thumb {
+  background:
+    linear-gradient(rgba(7, 142, 160, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(7, 142, 160, 0.04) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(225, 238, 240, 0.96), rgba(205, 220, 223, 1));
+  border-color: rgba(86, 111, 118, 0.18);
+}
+
+body[data-mobile-theme="light"] .capture-session-bar__button--primary {
+  background: linear-gradient(180deg, #0c7f90, #076674);
+  color: #f7ffff;
+  box-shadow: 0 10px 24px rgba(12, 127, 144, 0.18);
+}
+
+body[data-mobile-theme="light"] .capture-session-bar__button--primary:hover,
+body[data-mobile-theme="light"] .capture-session-bar__button--primary:focus-visible {
+  background: linear-gradient(180deg, #1397aa, #0c7f90);
+  color: #f7ffff;
+}
+
+body[data-mobile-theme="light"] .bottom-nav__item {
+  background: transparent;
+  color: #4b666c;
+}
+
+body[data-mobile-theme="light"] .bottom-nav__item.is-active {
+  background: linear-gradient(180deg, #0c7f90, #076674);
+  color: #f7ffff;
+  box-shadow: 0 10px 20px rgba(12, 127, 144, 0.2);
 }
 
 body::before {
@@ -340,7 +457,9 @@ input {
   background: rgba(16, 25, 27, 0.9);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  transition: border-color 180ms ease, box-shadow 180ms ease;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease;
 }
 
 .input-shell:focus-within {
@@ -359,7 +478,9 @@ input {
   outline: none;
   background: transparent;
   color: var(--text);
-  font: 500 14px/1.4 "IBM Plex Mono", monospace;
+  font:
+    500 14px/1.4 "IBM Plex Mono",
+    monospace;
 }
 
 .input-shell input::placeholder {
@@ -414,7 +535,10 @@ input {
   font-weight: 700;
   letter-spacing: 0.01em;
   cursor: pointer;
-  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease;
 }
 
 .btn:active {
@@ -515,7 +639,9 @@ input {
 
 .meta-value {
   color: var(--text-muted);
-  font: 500 12px/1.4 "IBM Plex Mono", monospace;
+  font:
+    500 12px/1.4 "IBM Plex Mono",
+    monospace;
 }
 
 .top-app-bar {
@@ -601,7 +727,9 @@ input {
   gap: 8px;
   margin-top: 10px;
   color: var(--text-muted);
-  font: 500 14px/1.4 "IBM Plex Mono", monospace;
+  font:
+    500 14px/1.4 "IBM Plex Mono",
+    monospace;
 }
 
 .page-meta__divider {
@@ -686,7 +814,9 @@ input {
   width: 52px;
   flex: 0 0 52px;
   color: var(--text-muted);
-  font: 500 14px/1.4 "IBM Plex Mono", monospace;
+  font:
+    500 14px/1.4 "IBM Plex Mono",
+    monospace;
 }
 
 .session-card__content {
@@ -731,7 +861,9 @@ input {
 
 .session-card__trailing {
   color: var(--text-muted);
-  font: 500 14px/1.4 "IBM Plex Mono", monospace;
+  font:
+    500 14px/1.4 "IBM Plex Mono",
+    monospace;
 }
 
 .session-card__icon {
@@ -835,7 +967,9 @@ input {
   align-items: center;
   gap: 10px;
   color: var(--primary);
-  font: 700 14px/1.3 "IBM Plex Mono", monospace;
+  font:
+    700 14px/1.3 "IBM Plex Mono",
+    monospace;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -903,6 +1037,19 @@ input {
   color: var(--primary);
 }
 
+.capture-session-bar__button:disabled,
+.capture-session-bar__button--primary:disabled,
+.capture-session-bar__button--primary:disabled:hover,
+.capture-session-bar__button--primary:disabled:focus-visible,
+.capture-session-bar__button:disabled:hover,
+.capture-session-bar__button:disabled:focus-visible {
+  cursor: not-allowed;
+  border-color: rgba(158, 170, 176, 0.18);
+  background: linear-gradient(180deg, rgba(88, 96, 102, 0.88), rgba(61, 68, 74, 0.92));
+  color: rgba(226, 232, 235, 0.74);
+  box-shadow: none;
+}
+
 .camera-feed-card,
 .result-preview-card,
 .job-progress-card {
@@ -950,7 +1097,9 @@ input {
   border: 1px solid rgba(124, 233, 244, 0.24);
   background: rgba(124, 233, 244, 0.1);
   color: var(--primary);
-  font: 700 11px/1 "IBM Plex Mono", monospace;
+  font:
+    700 11px/1 "IBM Plex Mono",
+    monospace;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -966,7 +1115,11 @@ input {
     linear-gradient(90deg, rgba(124, 233, 244, 0.06) 1px, transparent 1px),
     radial-gradient(circle at 55% 48%, rgba(255, 255, 255, 0.16), transparent 24%),
     linear-gradient(180deg, rgba(50, 70, 72, 0.9), rgba(11, 19, 20, 1));
-  background-size: 20px 20px, 20px 20px, auto, auto;
+  background-size:
+    20px 20px,
+    20px 20px,
+    auto,
+    auto;
 }
 
 .camera-feed-card__frame {
@@ -1019,7 +1172,13 @@ input {
   inset: 0;
   background:
     radial-gradient(circle at center, rgba(255, 255, 255, 0.05), transparent 46%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 24%, transparent 76%, rgba(255, 255, 255, 0.04));
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.03),
+      transparent 24%,
+      transparent 76%,
+      rgba(255, 255, 255, 0.04)
+    );
 }
 
 .camera-feed-card__crosshair {
@@ -1081,6 +1240,91 @@ input {
 .capture-notice--success {
   border-color: rgba(124, 233, 244, 0.26);
   background: rgba(17, 39, 42, 0.76);
+}
+
+.capture-notice--warning {
+  border-color: rgba(255, 193, 84, 0.28);
+  background: rgba(54, 39, 10, 0.5);
+}
+
+.capture-dialog::backdrop {
+  background: rgba(8, 14, 15, 0.56);
+  backdrop-filter: blur(6px);
+}
+
+.capture-dialog {
+  width: min(calc(100% - 40px), 360px);
+  max-height: calc(100dvh - 40px);
+  overflow: auto;
+  margin: auto;
+  gap: 16px;
+  padding: 20px;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 193, 84, 0.24);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+}
+
+.capture-dialog[open] {
+  display: grid;
+}
+
+body[data-mobile-theme="light"] .capture-session-bar__button:disabled {
+  background: #dbe4e6;
+  color: #53656a;
+  border-color: var(--border);
+  box-shadow: none;
+}
+
+.capture-dialog__icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 18px;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 193, 84, 0.14);
+  color: #ffd26c;
+}
+
+.capture-dialog__icon .material-symbols-outlined {
+  font-size: 28px;
+}
+
+.capture-dialog__content {
+  display: grid;
+  gap: 8px;
+}
+
+.capture-dialog__content strong {
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.capture-dialog__content p {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.capture-dialog__button {
+  min-height: 44px;
+  border: 1px solid rgba(255, 193, 84, 0.24);
+  border-radius: 14px;
+  background: linear-gradient(180deg, #0c7f90, #076674);
+  color: #f7ffff;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.capture-dialog__button:hover,
+.capture-dialog__button:focus-visible {
+  background: linear-gradient(180deg, #1397aa, #0c7f90);
 }
 
 .result-preview-card-stack {
@@ -1162,7 +1406,9 @@ input {
   border: 1px solid rgba(124, 233, 244, 0.24);
   background: rgba(13, 19, 20, 0.88);
   color: var(--primary);
-  font: 700 10px/1 "IBM Plex Mono", monospace;
+  font:
+    700 10px/1 "IBM Plex Mono",
+    monospace;
   letter-spacing: 0.08em;
 }
 
@@ -1188,12 +1434,16 @@ input {
   align-items: center;
   gap: 8px;
   color: var(--text);
-  font: 500 13px/1.4 "IBM Plex Mono", monospace;
+  font:
+    500 13px/1.4 "IBM Plex Mono",
+    monospace;
 }
 
 .job-progress-card__status {
   color: var(--accent);
-  font: 700 13px/1.4 "IBM Plex Mono", monospace;
+  font:
+    700 13px/1.4 "IBM Plex Mono",
+    monospace;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -1268,7 +1518,10 @@ input {
     linear-gradient(rgba(124, 233, 244, 0.04) 1px, transparent 1px),
     linear-gradient(90deg, rgba(124, 233, 244, 0.04) 1px, transparent 1px),
     linear-gradient(180deg, rgba(61, 82, 84, 0.9), rgba(13, 22, 23, 1));
-  background-size: 16px 16px, 16px 16px, auto;
+  background-size:
+    16px 16px,
+    16px 16px,
+    auto;
   border: 1px solid rgba(124, 233, 244, 0.16);
 }
 
@@ -1341,7 +1594,9 @@ input {
 .history-card__submeta {
   margin: 6px 0 0;
   color: var(--text-muted);
-  font: 500 13px/1.4 "IBM Plex Mono", monospace;
+  font:
+    500 13px/1.4 "IBM Plex Mono",
+    monospace;
 }
 
 .history-card__submeta {
@@ -1426,7 +1681,11 @@ input {
     linear-gradient(rgba(124, 233, 244, 0.04) 1px, transparent 1px),
     linear-gradient(90deg, rgba(124, 233, 244, 0.04) 1px, transparent 1px),
     linear-gradient(180deg, rgba(61, 82, 84, 0.9), rgba(13, 22, 23, 1));
-  background-size: auto, 20px 20px, 20px 20px, auto;
+  background-size:
+    auto,
+    20px 20px,
+    20px 20px,
+    auto;
 }
 
 .capture-detail-image__img {
@@ -1456,7 +1715,9 @@ input {
   justify-content: space-between;
   gap: 12px;
   color: var(--text);
-  font: 500 12px/1.4 "IBM Plex Mono", monospace;
+  font:
+    500 12px/1.4 "IBM Plex Mono",
+    monospace;
 }
 
 .capture-detail-meta-card__title {
@@ -1491,7 +1752,9 @@ input {
 .capture-detail-meta-row dt,
 .capture-detail-meta-row dd {
   margin: 0;
-  font: 500 13px/1.4 "IBM Plex Mono", monospace;
+  font:
+    500 13px/1.4 "IBM Plex Mono",
+    monospace;
 }
 
 .capture-detail-meta-row dt {
@@ -1572,7 +1835,9 @@ input {
 
 .device-card__header span,
 .device-card__metric strong {
-  font: 500 13px/1.4 "IBM Plex Mono", monospace;
+  font:
+    500 13px/1.4 "IBM Plex Mono",
+    monospace;
 }
 
 .device-card__header span {
@@ -1687,7 +1952,9 @@ input {
   border: 1px solid rgba(124, 233, 244, 0.2);
   background: rgba(124, 233, 244, 0.08);
   color: var(--primary);
-  font: 700 11px/1.2 "IBM Plex Mono", monospace;
+  font:
+    700 11px/1.2 "IBM Plex Mono",
+    monospace;
 }
 
 .device-diagnostics-card__body {
@@ -1734,7 +2001,9 @@ input {
 .device-operator-card__identity p {
   margin: 4px 0 0;
   color: var(--text-soft);
-  font: 500 11px/1.4 "IBM Plex Mono", monospace;
+  font:
+    500 11px/1.4 "IBM Plex Mono",
+    monospace;
   text-transform: uppercase;
 }
 
@@ -1824,7 +2093,9 @@ input {
 
 .settings-info-card__foot strong {
   color: var(--primary);
-  font: 500 13px/1.4 "IBM Plex Mono", monospace;
+  font:
+    500 13px/1.4 "IBM Plex Mono",
+    monospace;
 }
 
 .settings-section {
@@ -1968,7 +2239,9 @@ input {
 
 .settings-runtime-card strong {
   color: var(--text);
-  font: 500 14px/1.4 "IBM Plex Mono", monospace;
+  font:
+    500 14px/1.4 "IBM Plex Mono",
+    monospace;
   word-break: break-word;
 }
 
@@ -1985,7 +2258,9 @@ input {
 
 .settings-diagnostic-card strong {
   color: var(--text);
-  font: 500 14px/1.4 "IBM Plex Mono", monospace;
+  font:
+    500 14px/1.4 "IBM Plex Mono",
+    monospace;
 }
 
 .settings-logout-button {

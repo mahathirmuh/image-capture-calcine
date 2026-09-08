@@ -32,6 +32,7 @@
 
 - `Login`: wired to live auth API
 - `Today Sessions`: wired to live `GET /sessions`, including operator-plant scoping, summary chips, loading/error/empty states, and tap-to-capture handoff
+- `Today Sessions` sends the device-local `date` query explicitly so operator coverage does not drift when the app server timezone differs from the plant/operator timezone
 - `Capture`: uses live camera session, live preview polling, capture, job polling, automatic save/finalize APIs, latest-result preview lookup for the selected slot, and explicit in-screen progress/success feedback for operators
 - `Recent Captures`: wired to live `GET /captures` with plant scoping, latest-20 loading, and loading/error/empty states
 - `Capture Detail`: wired to live `GET /captures/{id}` and attempts preview loading from `GET /captures/{id}/image`
@@ -44,7 +45,7 @@
 - status derivation currently supports `completed`, `missing`, and `upcoming`
 - `/sessions` does not expose a contract-level `retake` state, so that state remains deferred until backend contract support exists
 - `mobile/src/App.tsx` stores the selected session and passes it into `Capture`
-- `mobile/src/screens/CaptureScreen.tsx` shows selected session context before live camera APIs are integrated
+- `mobile/src/screens/CaptureScreen.tsx` runs the selected or automatic session through the shared camera lifecycle
 
 ## M2 Implementation Notes
 
@@ -64,7 +65,10 @@
 - the mobile client supplies the scheduled plant when creating a session, validates it against the operator account, and pins all subsequent preview, command, job, renewal, release and finalize calls to the returned device identity
 - while the capture screen is open, the mobile client now polls `GET /camera/preview` for JPEG frames and refreshes the lease with `POST /camera/session/renew`
 - the capture screen releases the lease through `DELETE /camera/session/{sessionId}` when the operator leaves the screen so the camera becomes available faster for the next client
+- when no checklist session has been selected from `Today Sessions`, the capture screen now derives the active session from the device clock using the fixed session schedule and only enables direct capture during the defined two-hour windows (`HH:00` to `HH+1:59`)
 - the capture screen now exposes a slot selector (`Train 1/Train 2` on Acid, `Bin 1/Bin 2` on Chloride) and auto-finalizes every successful camera job through `POST /captures/finalize`
+- outside the defined session windows, the capture screen blocks `Start Session` and `Capture`, greys out those buttons, and shows `Session not available, please take sample at defined sessions`
+- when the backend returns `SESSION_CONFLICT` while starting a camera session, the capture screen now shows a blocking operator popup plus a warning notice instead of leaving the failure only in the lower error card
 - latest-result preview now queries recent captures for the selected plant/session and matches by `captureBin` to avoid opening the wrong slot
 - the capture screen now uses a single primary live-preview surface, moves `Capture` beside the session control, removes operator-facing autofocus, and shows capture-in-progress plus capture-complete feedback so the workflow feels deterministic on slower cameras
 - browser verification on 2026-08-30 confirmed `Start Session` on mobile now switches the screen into `Live preview active` and renders real camera frames
@@ -78,9 +82,9 @@
 
 ## M5 Implementation Notes
 
-- `mobile/src/lib/preferences.ts` persists lightweight mobile operator preferences through Capacitor Preferences
-- `mobile/src/App.tsx` now hydrates preferences during boot, applies high-contrast mode to the app shell, and gates thumbnail warm-up based on the saved setting
-- `mobile/src/screens/SettingsScreen.tsx` exposes only real preferences (`High-Contrast Mode`, `History Warm-Up`), shows active runtime snapshot values, and reuses the existing sign-out/session cleanup flow
+- `mobile/src/lib/preferences.ts` persists lightweight mobile operator preferences through Capacitor Preferences in internal app storage
+- `mobile/src/App.tsx` now hydrates preferences during boot, applies light/dark theme plus high-contrast mode to the app shell, and gates thumbnail warm-up based on the saved setting
+- `mobile/src/screens/SettingsScreen.tsx` exposes only real preferences (`Light Mode`, `High-Contrast Mode`, `History Warm-Up`), shows active runtime snapshot values, and reuses the existing sign-out/session cleanup flow
 - runtime snapshot values come from the active build and session (`__MOBILE_APP_VERSION__`, configured API path, access expiry, refresh expiry) instead of placeholders, while the API host is intentionally hidden from operator-facing settings
 - mobile branding now reuses the shared app logo asset from the main frontend/public resources for the login hero, top app bar, favicon, Android launcher icons, and Android splash screens
 
@@ -129,4 +133,13 @@ REST accepts optional expected `plant` on camera requests and optional `deviceId
 
 ### All-plant operator access (2026-09-08)
 
-Explicit account scope `ALL` allows selecting a scheduled session from any plant. Camera destination is always that session's concrete plant, never `ALL`. Single-plant accounts remain restricted and missing account assignments remain blocked on mobile. Capture stays idle without a scheduled session, and changing the selected context releases the previous camera before connecting the next. My Device uses the selected session's plant for `ALL` accounts and offers Open Today Sessions when none is selected. Access is based on account scope, not username or a special case for Widji. REST continues to recheck current database permissions and device placement.
+Explicit account scope `ALL` allows selecting a scheduled session from any plant. Camera destination is always that session's concrete plant, never `ALL`. Single-plant accounts remain restricted and missing account assignments remain blocked on mobile. For ALL accounts, Capture stays idle without a selected scheduled session. Single-plant accounts may use the active automatic session described below. Changing the selected context releases the previous camera before connecting the next. My Device uses the selected session's plant for `ALL` accounts and offers Open Today Sessions when none is selected. Access is based on account scope, not username or a special case for Widji. REST continues to recheck current database permissions and device placement.
+
+
+## Remote Integration With Direct Capture — 2026-09-08
+
+Remote baseline: f6f34aa. `automaticCaptureSession.ts` resolves device-local windows and stable keys containing the session-start date (including the previous date after midnight). `CaptureContext` feeds the resulting context into the existing keyed workflow. Window checks run every second and on visibility change; start/capture handlers also check the current clock to reject a click before the next timer tick. During capture, context updates wait until finalization finishes. The original command-start timestamp is supplied to finalize.
+
+The backend's existing session-date calculation remains responsible for storage dates; no new timestamp or session-date field is introduced. Device clock/timezone must match plant operations; the existing backend timezone assumption still requires deployment verification. Explicit selected sessions retain their previous recovery behavior. The native HTML dialog owns modal focus/inert behavior; stylesheet tokens cover both themes, including disabled controls.
+
+OpenAPI reviewed: existing plant/device targeting and finalize fields are sufficient. No additional REST contract or database changes beyond the fetched remote baseline.

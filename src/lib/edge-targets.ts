@@ -21,6 +21,7 @@ export type EdgeProbeResult =
   | {
       ok: true;
       reachable: boolean;
+      deviceCode?: string;
       url: string;
       status: number | null;
       latencyMs: number;
@@ -221,6 +222,10 @@ export const testEdgeConnection = createServerFn({ method: "POST" })
       return {
         ok: true,
         reachable: true,
+        deviceCode:
+          typeof body.deviceId === "string" && body.deviceId.trim().length <= 50
+            ? body.deviceId.trim()
+            : undefined,
         url,
         status: res.status,
         latencyMs,

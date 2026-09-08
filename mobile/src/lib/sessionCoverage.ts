@@ -73,7 +73,7 @@ function displayTime(sessionLabel: string) {
   return sessionLabel.replace(".", ":");
 }
 
-function localDateKey(value: Date) {
+export function localDateKey(value: Date) {
   const year = value.getFullYear();
   const month = `${value.getMonth() + 1}`.padStart(2, "0");
   const day = `${value.getDate()}`.padStart(2, "0");
@@ -134,7 +134,10 @@ export function mapSessionCoverageToView(payload: SessionCoverageResponse): Toda
         }),
       ),
     )
-    .sort((left, right) => left.hour - right.hour || left.slot - right.slot || left.plant.localeCompare(right.plant));
+    .sort(
+      (left, right) =>
+        left.hour - right.hour || left.slot - right.slot || left.plant.localeCompare(right.plant),
+    );
 
   const summary = items.reduce(
     (acc, item) => {
@@ -148,7 +151,7 @@ export function mapSessionCoverageToView(payload: SessionCoverageResponse): Toda
     date: payload.date,
     plantLabel:
       payload.plants.length === 1
-        ? payload.plants[0]?.plant ?? "Unknown Plant"
+        ? (payload.plants[0]?.plant ?? "Unknown Plant")
         : `${payload.plants.length} Plants`,
     summary,
     items,
@@ -159,9 +162,7 @@ export async function getSessionCoverage(
   session: AuthSession,
   options: { date?: string; plant?: string | null } = {},
 ): Promise<{ session: AuthSession; data: SessionCoverageResponse }> {
-  return requestWithSession<SessionCoverageResponse>(
-    session,
-    `/sessions${buildQuery(options)}`,
-    { method: "GET" },
-  );
+  return requestWithSession<SessionCoverageResponse>(session, `/sessions${buildQuery(options)}`, {
+    method: "GET",
+  });
 }

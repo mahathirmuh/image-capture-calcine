@@ -20,10 +20,12 @@
 3. `Recent Captures` defaults to operator-plant scoping and loads the latest 20 records first.
 4. `My Device` and Capture require one active camera assigned to the operator plant. Missing/ambiguous assignments require administrator correction; no recency or cross-plant fallback.
 5. `My Device` keeps diagnostics read-only on mobile for now; operators can manually refresh status, while remote diagnostics remain in the admin workflow.
-6. `Settings` uses persisted mobile preferences for `High-Contrast Mode` and `History Warm-Up`, and shows runtime snapshot data from the active build/session.
+6. `Settings` uses persisted mobile preferences for `Light Mode`, `High-Contrast Mode` and `History Warm-Up`, and shows runtime snapshot data from the active build/session.
 
 7. Explicit `ALL` operator scope is supported: Capture and My Device follow the concrete plant of the selected scheduled session; no selection means no camera connection. A single-plant account remains restricted.
 
 ## Recording Rule
 
 Any ambiguity discovered during menu integration should be added here before implementing around it silently.
+
+8. Single-plant direct capture uses the device-local active window. Explicit selected sessions retain recovery behavior. Align operator device and backend timezone with the plant during deployment verification.

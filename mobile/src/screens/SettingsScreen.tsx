@@ -20,6 +20,12 @@ type PreferenceItem = {
 
 const PREFERENCE_ITEMS: PreferenceItem[] = [
   {
+    id: "lightMode",
+    icon: "light_mode",
+    label: "Light Mode",
+    description: "Switch the operator interface to a brighter theme and save it on this device.",
+  },
+  {
     id: "highContrastMode",
     icon: "contrast",
     label: "High-Contrast Mode",
@@ -46,7 +52,12 @@ function formatDateTime(iso: string) {
 }
 
 function errorMessageOf(error: unknown) {
-  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
+  if (
+    error &&
+    typeof error === "object" &&
+    "message" in error &&
+    typeof error.message === "string"
+  ) {
     return error.message;
   }
   return "Unable to save the updated mobile preference.";

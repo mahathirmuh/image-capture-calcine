@@ -67,6 +67,9 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
         <p className="mt-2 text-sm text-muted-foreground">
           Terjadi kendala di aplikasi. Coba muat ulang halaman ini atau kembali ke Capture.
         </p>
+        {import.meta.env.DEV && (
+          <pre className="mt-4 whitespace-pre-wrap text-xs">{error.message}</pre>
+        )}
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <button
             onClick={() => {

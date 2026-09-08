@@ -781,11 +781,18 @@ export const listCaptureRecords = createServerFn({ method: "GET" })
       };
     }
 
+    const { requireGalleryAccess, CAPTURE_PLANT_SQL } = await import("./server/gallery-access");
+    const access = await requireGalleryAccess();
+    if (!access.ok) return access;
+
     try {
       const schema = `[${getCardDbSchema()}]`;
       const pool = await getCardDbPool();
       const limit = data?.limit ?? 200;
-      const result = await pool.request().input("limit", sql.Int, limit).query(`
+      const result = await pool
+        .request()
+        .input("limit", sql.Int, limit)
+        .input("galleryPlant", sql.NVarChar(100), access.scope.plant).query(`
         SELECT TOP (@limit)
           cr.id,
           cr.file_name,
@@ -801,11 +808,13 @@ export const listCaptureRecords = createServerFn({ method: "GET" })
         FROM ${schema}.capture_records cr
         LEFT JOIN ${schema}.locations l
           ON l.id = cr.location_id
+        WHERE (@galleryPlant IS NULL OR ${CAPTURE_PLANT_SQL} = @galleryPlant)
         ORDER BY cr.captured_at DESC, cr.id DESC;
       `);
 
       return {
         ok: true as const,
+        scope: access.scope,
         records: result.recordset.map((row) => mapCaptureRecordRow(row as Record<string, unknown>)),
       };
     } catch (error) {
@@ -833,11 +842,16 @@ export const getCaptureDashboardSummary = createServerFn({ method: "GET" })
       };
     }
 
+    const { requireGalleryAccess, CAPTURE_PLANT_SQL } = await import("./server/gallery-access");
+    const access = await requireGalleryAccess();
+    if (!access.ok) return access;
+
     try {
       const schema = `[${getCardDbSchema()}]`;
       const pool = await getCardDbPool();
       const aggregateResult = await pool
         .request()
+        .input("galleryPlant", sql.NVarChar(100), access.scope.plant)
         .input("dayStart", sql.DateTime2, new Date(data.dayStart))
         .input("dayEnd", sql.DateTime2, new Date(data.dayEnd))
         .input("weekStart", sql.DateTime2, new Date(data.weekStart)).query(`
@@ -849,7 +863,9 @@ export const getCaptureDashboardSummary = createServerFn({ method: "GET" })
             MAX(captured_at) AS last_captured_at,
             SUM(CASE WHEN status = N'saved' THEN 1 ELSE 0 END) AS saved_count,
             SUM(CASE WHEN status = N'downloaded' THEN 1 ELSE 0 END) AS downloaded_count
-          FROM ${schema}.capture_records;
+          FROM ${schema}.capture_records cr
+          LEFT JOIN ${schema}.locations l ON l.id = cr.location_id
+          WHERE (@galleryPlant IS NULL OR ${CAPTURE_PLANT_SQL} = @galleryPlant);
         `);
 
       const aggregate = (aggregateResult.recordset[0] ?? {}) as Record<string, unknown>;
@@ -862,19 +878,23 @@ export const getCaptureDashboardSummary = createServerFn({ method: "GET" })
       // penyaringan di listCaptureRecords.
       const breakdownResult = await pool
         .request()
+        .input("galleryPlant", sql.NVarChar(100), access.scope.plant)
         .input("weekStart", sql.DateTime2, new Date(data.weekStart))
         .input("dayEnd", sql.DateTime2, new Date(data.dayEnd)).query(`
           SELECT
-            COALESCE(JSON_VALUE(cr.metadata_json, '$.plant'), l.plant) AS plant,
+            ${CAPTURE_PLANT_SQL} AS plant,
             COUNT(*) AS jumlah
           FROM ${schema}.capture_records cr
           LEFT JOIN ${schema}.locations l ON l.id = cr.location_id
-          GROUP BY COALESCE(JSON_VALUE(cr.metadata_json, '$.plant'), l.plant);
+          WHERE (@galleryPlant IS NULL OR ${CAPTURE_PLANT_SQL} = @galleryPlant)
+          GROUP BY ${CAPTURE_PLANT_SQL};
 
           SELECT
             JSON_VALUE(cr.metadata_json, '$.captureBin') AS bin,
             COUNT(*) AS jumlah
           FROM ${schema}.capture_records cr
+          LEFT JOIN ${schema}.locations l ON l.id = cr.location_id
+          WHERE (@galleryPlant IS NULL OR ${CAPTURE_PLANT_SQL} = @galleryPlant)
           GROUP BY JSON_VALUE(cr.metadata_json, '$.captureBin');
 
           -- Keranjang harian: SELISIH DETIK dibagi sehari, bukan
@@ -894,7 +914,8 @@ export const getCaptureDashboardSummary = createServerFn({ method: "GET" })
             DATEDIFF(second, @weekStart, cr.captured_at) / 86400 AS day_index,
             COUNT(*) AS jumlah
           FROM ${schema}.capture_records cr
-          WHERE cr.captured_at >= @weekStart AND cr.captured_at < @dayEnd
+          LEFT JOIN ${schema}.locations l ON l.id = cr.location_id
+          WHERE (@galleryPlant IS NULL OR ${CAPTURE_PLANT_SQL} = @galleryPlant) AND cr.captured_at >= @weekStart AND cr.captured_at < @dayEnd
           GROUP BY DATEDIFF(second, @weekStart, cr.captured_at) / 86400;
         `);
 
@@ -902,7 +923,10 @@ export const getCaptureDashboardSummary = createServerFn({ method: "GET" })
         Record<string, unknown>[]
       >;
 
-      const recentResult = await pool.request().input("limit", sql.Int, data.recentLimit).query(`
+      const recentResult = await pool
+        .request()
+        .input("galleryPlant", sql.NVarChar(100), access.scope.plant)
+        .input("limit", sql.Int, data.recentLimit).query(`
           SELECT TOP (@limit)
             cr.id,
             cr.file_name,
@@ -918,6 +942,7 @@ export const getCaptureDashboardSummary = createServerFn({ method: "GET" })
           FROM ${schema}.capture_records cr
           LEFT JOIN ${schema}.locations l
             ON l.id = cr.location_id
+          WHERE (@galleryPlant IS NULL OR ${CAPTURE_PLANT_SQL} = @galleryPlant)
           ORDER BY cr.captured_at DESC, cr.id DESC;
         `);
 

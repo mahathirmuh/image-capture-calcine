@@ -15,11 +15,16 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { loadGallery, subscribeGalleryChange } from "@/lib/gallery-store";
+import { subscribeGalleryChange } from "@/lib/gallery-store";
+import {
+  listCaptureRecords,
+  CAPTURE_RECORDS_MAX_LIMIT,
+  isLocalOnlySave,
+} from "@/lib/capture-records";
 import { getDeviceStatus, type DeviceStatus } from "@/lib/camera-api";
 import { EDGE_SELECTION_CHANGED, loadSelectedEdgeDevice } from "@/lib/selected-edge-device";
 import { NAV_GROUPS, NAV_ITEMS } from "@/lib/nav-items";
-import { useIsAdmin } from "@/lib/use-session-user";
+import { useIsAdmin, useSessionUser } from "@/lib/use-session-user";
 
 const DEVICE_STATUS_POLL_MS = 30_000;
 
@@ -48,18 +53,16 @@ function DeviceStatusCard() {
       const current = ++requestId;
       const result = await getDeviceStatus({
         data: { deviceCode: loadSelectedEdgeDevice() || undefined },
-      }).catch(
-        (): DeviceStatus => ({
-          online: false,
-          target: null,
-          deviceId: null,
-          agentVersion: null,
-          connectionState: null,
-          capabilities: [],
-          statusMessage: "Status edge kamera belum bisa dibaca dari sidebar.",
-          camera: null,
-        }),
-      );
+      }).catch((): DeviceStatus => ({
+        online: false,
+        target: null,
+        deviceId: null,
+        agentVersion: null,
+        connectionState: null,
+        capabilities: [],
+        statusMessage: "Status edge kamera belum bisa dibaca dari sidebar.",
+        camera: null,
+      }));
       if (cancelled || current !== requestId) return;
       setStatus(result);
       setLastSync(new Date());
@@ -169,28 +172,37 @@ export function AppSidebar() {
     select: (router) => router.location.pathname,
   });
   const isAdmin = useIsAdmin();
+  const user = useSessionUser();
   const [captureCount, setCaptureCount] = useState(0);
 
   const items = NAV_ITEMS.filter((item) => !item.adminOnly || isAdmin);
 
-  // Angka di sidebar menghitung isi galeri LOKAL browser ini (IndexedDB),
-  // bukan capture_records di database. Dibaca ulang setiap galeri berubah --
-  // sidebar tidak pernah di-mount ulang saat berpindah halaman, jadi tanpa
-  // langganan ini angkanya membeku pada nilai saat tab dibuka.
+  // Count only registry captures authorized for the current account.
   useEffect(() => {
-    let aktif = true;
-    const baca = () => {
-      void loadGallery().then((items) => {
-        if (aktif) setCaptureCount(items.length);
-      });
+    let active = true;
+    let generation = 0;
+    setCaptureCount(0);
+    const refresh = async () => {
+      const request = ++generation;
+      try {
+        const result = await listCaptureRecords({ data: { limit: CAPTURE_RECORDS_MAX_LIMIT } });
+        if (active && request === generation)
+          setCaptureCount(
+            result.ok
+              ? result.records.filter((record) => !isLocalOnlySave(record.saveMethod)).length
+              : 0,
+          );
+      } catch {
+        if (active && request === generation) setCaptureCount(0);
+      }
     };
-    baca();
-    const berhenti = subscribeGalleryChange(baca);
+    void refresh();
+    const unsubscribe = subscribeGalleryChange(() => void refresh());
     return () => {
-      aktif = false;
-      berhenti();
+      active = false;
+      unsubscribe();
     };
-  }, []);
+  }, [user?.id, user?.role]);
 
   const isActive = (path: string) => currentPath === path;
 

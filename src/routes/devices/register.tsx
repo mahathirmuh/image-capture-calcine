@@ -1,5 +1,5 @@
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
   Calendar,
@@ -18,6 +18,7 @@ import {
   Plug,
 } from "lucide-react";
 import { toast } from "sonner";
+import { z } from "zod";
 import {
   PresetCompareTable,
   PresetExplorerGrid,
@@ -43,14 +44,13 @@ import {
   filterTemplatesByTag,
   getTemplateById,
   getTemplateCameraSettings,
-  loadDeviceProfile,
   loadPresetFilterPreference,
   saveDeviceProfile,
   savePresetFilterPreference,
   type CameraSettings,
   type PresetFilter,
 } from "@/lib/device-config";
-import { upsertRegisteredDeviceProfile } from "@/lib/device-registry";
+import { getRegisteredDevice, upsertRegisteredDeviceProfile } from "@/lib/device-registry";
 import { testEdgeConnection } from "@/lib/edge-targets";
 import { PageTitle } from "@/components/page-shell";
 
@@ -63,6 +63,7 @@ export const Route = createFileRoute("/devices/register")({
       throw redirect({ to: "/dashboard" });
     }
   },
+  validateSearch: z.object({ deviceId: z.coerce.number().int().positive().optional() }),
   component: RegisterDevicePage,
   head: () => ({
     meta: [
@@ -72,29 +73,18 @@ export const Route = createFileRoute("/devices/register")({
   }),
 });
 
-function formatNow() {
-  const date = new Date();
-  const datePart = date.toLocaleDateString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-  const timePart = date.toLocaleTimeString("en-GB", { hour12: false });
-  return `${datePart} ${timePart}`;
-}
-
 const HOW_IT_WORKS = [
   {
     title: "Install Capture Agent",
     body: "Pasang Capture Agent di Mini PC lalu hubungkan kameranya.",
   },
   {
-    title: "Ambil Device Code",
-    body: "Buka Capture Agent. Anda akan melihat Device Code yang unik.",
+    title: "Isi Alamat Edge API",
+    body: "Masukkan alamat Camera API. Device Code akan terisi otomatis.",
   },
   {
     title: "Daftarkan di Web UI",
-    body: "Masukkan device code di halaman ini lalu selesaikan proses pendaftarannya.",
+    body: "Periksa hasil deteksi, tentukan nama dan lokasi, lalu simpan device.",
   },
   {
     title: "Sinkron & Siap",
@@ -111,6 +101,10 @@ const WHAT_GETS_CONFIGURED = [
 ];
 
 function RegisterDevicePage() {
+  const { deviceId } = Route.useSearch();
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [hydrating, setHydrating] = useState(!!deviceId);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [deviceCode, setDeviceCode] = useState("");
   const [deviceName, setDeviceName] = useState("");
   const [plant, setPlant] = useState<string>(PLANTS[0]);
@@ -119,6 +113,8 @@ function RegisterDevicePage() {
   const [description, setDescription] = useState("");
   const [edgeApiUrl, setEdgeApiUrl] = useState("");
   const [probe, setProbe] = useState<{ reachable: boolean; detail: string } | null>(null);
+  const probeRequest = useRef(0);
+  const [verifiedUrl, setVerifiedUrl] = useState<string | null>(null);
   const [probing, setProbing] = useState(false);
   const [templateId, setTemplateId] = useState(DEVICE_TEMPLATES[0].id);
   const [templateFilter, setTemplateFilter] = useState<PresetFilter>(PRESET_FILTERS[0]);
@@ -135,41 +131,66 @@ function RegisterDevicePage() {
   const [showReview, setShowReview] = useState(false);
   const [registered, setRegistered] = useState(false);
   const [registering, setRegistering] = useState(false);
-  const [lastSeen] = useState(formatNow());
 
   useEffect(() => {
-    const existing = loadDeviceProfile();
+    let cancelled = false;
+    probeRequest.current += 1;
+    setVerifiedUrl(null);
     setTemplateFilter(loadPresetFilterPreference());
-    if (!existing) return;
-    setDeviceCode(existing.deviceCode);
-    setDeviceName(existing.deviceName);
-    setPlant(existing.plant);
-    setBin(existing.bin);
-    setStation(existing.station);
-    setDescription(existing.description);
-    setTemplateId(existing.templateId);
-    setCompareTemplateId(
-      DEVICE_TEMPLATES.find((template) => template.id !== existing.templateId)?.id ??
-        existing.templateId,
-    );
-    setSchedule(existing.schedule);
-    setTimezone(existing.timezone);
-    setCameraSettings(existing.cameraSettings);
-  }, []);
+    setRegistered(false);
+    setShowReview(false);
+    setHydrating(!!deviceId);
+    setLoadError(null);
+    setProbe(null);
+    if (!deviceId) {
+      setDeviceCode("");
+      setDeviceName("");
+      setEdgeApiUrl("");
+      setDescription("");
+      setPlant(PLANTS[0]);
+      setBin(DEVICE_BINS[0]);
+      setStation(DEVICE_STATIONS[0]);
+      setTemplateId(DEVICE_TEMPLATES[0].id);
+      setSchedule(DEVICE_SCHEDULES[1]);
+      setTimezone(DEVICE_TIMEZONES[0]);
+      setCameraSettings(getTemplateCameraSettings(DEVICE_TEMPLATES[0].id));
+      return;
+    }
+    void getRegisteredDevice({ data: { deviceId } })
+      .then((result) => {
+        if (cancelled) return;
+        if (!result.ok) throw new Error(result.message);
+        const existing = result.device;
+        setDeviceCode(existing.deviceCode);
+        setDeviceName(existing.deviceName);
+        setPlant(existing.plant);
+        setBin(existing.bin);
+        setStation(existing.station);
+        setDescription(existing.description);
+        setEdgeApiUrl(existing.edgeApiUrl ?? "");
+        setVerifiedUrl(existing.edgeApiUrl ?? "");
+        setTemplateId(existing.templateId);
+        setSchedule(existing.schedule);
+        setTimezone(existing.timezone);
+        setCameraSettings(existing.cameraSettings);
+      })
+      .catch((error) => {
+        if (!cancelled)
+          setLoadError(error instanceof Error ? error.message : "Gagal memuat device.");
+      })
+      .finally(() => {
+        if (!cancelled) setHydrating(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [deviceId, loadAttempt]);
 
   useEffect(() => {
     savePresetFilterPreference(templateFilter);
   }, [templateFilter]);
 
-  const codeValid = deviceCode.trim().length >= 4;
-  const mockHostname = codeValid
-    ? `minipc-${deviceCode
-        .trim()
-        .slice(-3)
-        .toLowerCase()
-        .replace(/[^a-z0-9]/g, "0")}`
-    : "";
-
+  const codeValid = deviceCode.trim().length > 0 && verifiedUrl === edgeApiUrl.trim();
   function handleNext() {
     setShowReview(true);
   }
@@ -182,28 +203,52 @@ function RegisterDevicePage() {
    * resolver akan mengarahkan operator ke mesin yang tidak menjawab.
    */
   async function handleProbe() {
+    const request = ++probeRequest.current;
+    const url = edgeApiUrl.trim();
     setProbing(true);
     setProbe(null);
+    setVerifiedUrl(null);
     try {
-      const result = await testEdgeConnection({ data: { url: edgeApiUrl.trim() } });
+      const result = await testEdgeConnection({ data: { url } });
+      if (request !== probeRequest.current) return;
       if (!result.ok) {
         setProbe({ reachable: false, detail: result.message });
         return;
       }
-      setProbe({ reachable: result.reachable, detail: result.detail });
+      if (!result.reachable || !result.deviceCode) {
+        setProbe({
+          reachable: false,
+          detail: result.reachable
+            ? "API tidak mengirim identitas device yang valid."
+            : result.detail,
+        });
+        return;
+      }
+      if (deviceId && result.deviceCode !== deviceCode) {
+        setProbe({
+          reachable: false,
+          detail: "Identitas API berbeda dari device ini. Periksa alamatnya.",
+        });
+        return;
+      }
+      setDeviceCode(result.deviceCode);
+      setDeviceName((current) => (current.trim() ? current : result.deviceCode!));
+      setVerifiedUrl(url);
+      setProbe({ reachable: true, detail: result.detail });
     } catch (error) {
+      if (request !== probeRequest.current) return;
       setProbe({
         reachable: false,
         detail: error instanceof Error ? error.message : "Uji koneksi gagal.",
       });
     } finally {
-      setProbing(false);
+      if (request === probeRequest.current) setProbing(false);
     }
   }
 
   async function handleRegister() {
-    const existing = loadDeviceProfile();
     const profile = createProfileFromInput({
+      ...createDefaultDeviceProfile(),
       deviceCode: deviceCode.trim(),
       deviceName: deviceName.trim(),
       plant,
@@ -214,39 +259,48 @@ function RegisterDevicePage() {
       schedule,
       timezone,
       cameraSettings,
-      registeredAt: existing?.registeredAt ?? createDefaultDeviceProfile().registeredAt,
+      registeredAt: createDefaultDeviceProfile().registeredAt,
     });
 
+    if (registering || hydrating || loadError || !codeValid) return;
     setRegistering(true);
-    const result = await upsertRegisteredDeviceProfile({
-      data: {
-        deviceCode: profile.deviceCode,
-        deviceName: profile.deviceName,
-        plant: profile.plant,
-        bin: profile.bin,
-        station: profile.station,
-        description: profile.description,
-        templateId: profile.templateId,
-        schedule: profile.schedule,
-        timezone: profile.timezone,
-        cameraSettings: profile.cameraSettings,
-        edgeApiUrl,
-      },
-    });
-    setRegistering(false);
-
-    if (!result.ok) {
-      toast.error("Gagal mendaftarkan device", {
-        description: result.message,
+    try {
+      const result = await upsertRegisteredDeviceProfile({
+        data: {
+          deviceId,
+          deviceCode: profile.deviceCode,
+          deviceName: profile.deviceName,
+          plant: profile.plant,
+          bin: profile.bin,
+          station: profile.station,
+          description: profile.description,
+          templateId: profile.templateId,
+          schedule: profile.schedule,
+          timezone: profile.timezone,
+          cameraSettings: profile.cameraSettings,
+          edgeApiUrl,
+        },
       });
-      return;
-    }
 
-    saveDeviceProfile(result.profile);
-    setRegistered(true);
-    toast.success("Device berhasil didaftarkan", {
-      description: "Registry MSSQL dan profil lokal sudah sinkron.",
-    });
+      if (!result.ok) {
+        toast.error("Gagal mendaftarkan device", {
+          description: result.message,
+        });
+        return;
+      }
+
+      saveDeviceProfile(result.profile);
+      setRegistered(true);
+      toast.success(deviceId ? "Device berhasil diperbarui" : "Device berhasil didaftarkan", {
+        description: "Registry MSSQL dan profil lokal sudah sinkron.",
+      });
+    } catch (error) {
+      toast.error("Gagal menyimpan device", {
+        description: error instanceof Error ? error.message : "Coba lagi.",
+      });
+    } finally {
+      setRegistering(false);
+    }
   }
 
   function updateCameraSetting<K extends keyof CameraSettings>(key: K, value: CameraSettings[K]) {
@@ -275,6 +329,24 @@ function RegisterDevicePage() {
     setCompareTemplateId(compareCandidates[0]?.id ?? templateId);
   }, [compareCandidates, compareTemplateId, filteredTemplates, templateId]);
 
+  if (hydrating || loadError)
+    return (
+      <main className="p-6 space-y-4">
+        <p role={loadError ? "alert" : "status"}>{loadError ?? "Memuat data device..."}</p>
+        {loadError && (
+          <button
+            type="button"
+            className="rounded-md border px-3 py-2"
+            onClick={() => setLoadAttempt((value) => value + 1)}
+          >
+            Coba lagi
+          </button>
+        )}
+        <Link to="/devices" className="block underline">
+          Kembali ke Devices
+        </Link>
+      </main>
+    );
   return (
     <div className="p-6">
       <div className="mb-2 flex items-center gap-1.5 text-sm text-muted-foreground">
@@ -282,14 +354,14 @@ function RegisterDevicePage() {
           Devices
         </Link>
         <span>/</span>
-        <span className="text-foreground">Daftarkan Device</span>
+        <span className="text-foreground">{deviceId ? "Edit Device" : "Daftarkan Device"}</span>
       </div>
 
       <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
           <PageTitle
-            title="Daftarkan Device Baru"
-            description="Daftarkan Mini PC aktif lalu siapkan profil devicenya. Pengaturan kamera disimpan di aplikasi ini sekarang dan nantinya bisa disinkronkan ke edge agent."
+            title={deviceId ? "Edit Device" : "Daftarkan Device Baru"}
+            description="Kelola identitas, alamat Edge API, dan profil device. Pengaturan kamera diterapkan melalui halaman Devices."
           />
         </div>
         <div className="flex items-center gap-2">
@@ -359,7 +431,8 @@ function RegisterDevicePage() {
               <div>
                 <h2 className="font-semibold">Identifikasi Device</h2>
                 <p className="text-xs text-muted-foreground">
-                  Masukkan device code yang tampil di Mini PC Capture Agent.
+                  Isi Alamat Edge API di bagian Lokasi & Sumber. Identitas device akan dideteksi
+                  otomatis.
                 </p>
               </div>
             </div>
@@ -372,8 +445,8 @@ function RegisterDevicePage() {
                 <div className="relative">
                   <input
                     value={deviceCode}
-                    onChange={(e) => setDeviceCode(e.target.value)}
-                    placeholder="e.g. A72F-8812"
+                    readOnly
+                    placeholder="Otomatis dari Alamat Edge API"
                     className="w-full rounded-md border border-input bg-background px-3 py-2 pr-9 text-sm font-mono"
                   />
                   {codeValid && (
@@ -381,7 +454,7 @@ function RegisterDevicePage() {
                   )}
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Device code ditampilkan oleh Capture Agent setelah proses instalasi.
+                  Kode diambil otomatis dari Camera API dan tidak perlu diketik.
                 </p>
 
                 <label className="mb-1 mt-4 block text-sm font-medium">
@@ -402,37 +475,15 @@ function RegisterDevicePage() {
                 {codeValid ? (
                   <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3">
                     <div className="mb-2 flex items-center gap-1.5 text-sm font-medium text-emerald-700">
-                      <CheckCircle2 className="h-4 w-4" /> Device Code sudah valid
+                      <CheckCircle2 className="h-4 w-4" /> Identitas Device Terverifikasi
                     </div>
                     <p className="mb-3 text-xs text-emerald-700/80">
-                      Device ditemukan dan siap didaftarkan.
+                      Identitas device sudah dibaca dari Camera API.
                     </p>
-                    <dl className="space-y-1 text-xs">
-                      <div className="flex justify-between">
-                        <dt className="text-muted-foreground">Agent Version</dt>
-                        <dd className="font-medium">1.2.3</dd>
-                      </div>
-                      <div className="flex justify-between">
-                        <dt className="text-muted-foreground">OS</dt>
-                        <dd className="font-medium">Windows 11 IoT</dd>
-                      </div>
-                      <div className="flex justify-between">
-                        <dt className="text-muted-foreground">Hostname</dt>
-                        <dd className="font-medium">{mockHostname}</dd>
-                      </div>
-                      <div className="flex justify-between">
-                        <dt className="text-muted-foreground">IP Address</dt>
-                        <dd className="font-medium">10.10.30.16</dd>
-                      </div>
-                      <div className="flex justify-between">
-                        <dt className="text-muted-foreground">Terakhir terlihat</dt>
-                        <dd className="font-medium text-emerald-700">{lastSeen}</dd>
-                      </div>
-                    </dl>
                   </div>
                 ) : (
                   <div className="flex h-full items-center justify-center rounded-md border border-dashed p-6 text-center text-xs text-muted-foreground">
-                    Masukkan device code untuk mulai pengecekan.
+                    Isi Alamat Edge API untuk mendeteksi device.
                   </div>
                 )}
               </div>
@@ -481,6 +532,14 @@ function RegisterDevicePage() {
                     onChange={(e) => {
                       setEdgeApiUrl(e.target.value);
                       setProbe(null);
+                      setVerifiedUrl(null);
+                      probeRequest.current += 1;
+                      setProbing(false);
+                      if (!deviceId) setDeviceCode("");
+                    }}
+                    onBlur={() => {
+                      if (edgeApiUrl.trim() && verifiedUrl !== edgeApiUrl.trim())
+                        void handleProbe();
                     }}
                     spellCheck={false}
                     placeholder="http://10.60.20.155:3000"
@@ -502,7 +561,8 @@ function RegisterDevicePage() {
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
                   Alamat service kamera pada Mini PC ini, lengkap dengan portnya. Tiap device boleh
-                  memakai port berbeda. Kosongkan untuk memakai alamat cadangan dari server.
+                  memakai port berbeda. Device Code dibaca otomatis setelah Anda selesai mengisi
+                  alamat.
                 </p>
                 {probe && (
                   <p
@@ -812,7 +872,7 @@ function RegisterDevicePage() {
                 <div>
                   <h2 className="font-semibold">Tinjau &amp; Selesai</h2>
                   <p className="text-xs text-muted-foreground">
-                    Konfirmasi detail konfigurasi sebelum device didaftarkan.
+                    Konfirmasi detail konfigurasi sebelum disimpan.
                   </p>
                 </div>
               </div>
@@ -895,15 +955,17 @@ function RegisterDevicePage() {
             ) : (
               <button
                 onClick={() => void handleRegister()}
-                disabled={registered || registering}
+                disabled={registered || registering || !codeValid || probing}
                 className="inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
               >
                 <Cpu className="h-4 w-4" />{" "}
                 {registered
-                  ? "Sudah didaftarkan"
+                  ? "Sudah tersimpan"
                   : registering
                     ? "Mendaftarkan..."
-                    : "Daftarkan Device"}
+                    : deviceId
+                      ? "Simpan Perubahan"
+                      : "Daftarkan Device"}
               </button>
             )}
           </div>
@@ -923,18 +985,6 @@ function RegisterDevicePage() {
                     <div>
                       <div className="text-xs font-medium">{step.title}</div>
                       <div className="text-xs text-muted-foreground">{step.body}</div>
-                      {i === 1 && (
-                        <div className="mt-2 rounded-md border bg-muted p-2">
-                          <div className="text-[10px] text-muted-foreground">Device Code</div>
-                          <div className="font-mono text-sm font-semibold text-emerald-600">
-                            A72F-8812
-                          </div>
-                          <div className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground">
-                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Status:
-                            Siap didaftarkan
-                          </div>
-                        </div>
-                      )}
                     </div>
                   </li>
                 ))}

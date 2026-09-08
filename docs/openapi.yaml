@@ -35,6 +35,22 @@ info:
     akun ber-plant `Semua Plant` yang tetap lintas-plant, persis seperti yang
     berlaku di halaman aplikasi.
 
+    ## Akses galeri berdasarkan plant
+
+    Untuk token pengguna, GET/HEAD `/captures`, `/captures/{id}`, gambar,
+    thumbnail, `/sessions`, dan `/summary` memeriksa ulang akun aktif serta
+    plant dari database pada setiap permintaan. Operator satu plant hanya
+    melihat capture plant tersebut. Superadmin (`admin`) dan akun `ALL`
+    boleh membaca semua plant, termasuk record tanpa plant. Hak melihat
+    lintas plant ini tidak mengubah pembatasan kendali kamera di atas.
+    Kunci API integrasi tetap baca-saja lintas plant.
+
+    Plant mengikuti metadata saat capture, dengan lokasi sebagai fallback
+    untuk record lama. Parameter `plant` tidak dapat memperluas izin akun:
+    permintaan plant lain atau ID di luar izin menjawab `403 FORBIDDEN`.
+    Akun nonaktif/dihapus menjawab `401`; akun tanpa akses plant menjawab `403`.
+    Paginasi dan agregat hanya menghitung capture yang boleh dilihat.
+
     ## Halaman dokumentasi
 
     Versi yang bisa diklik dan dicoba langsung ada di **`/api/v1/docs`**
@@ -295,6 +311,7 @@ paths:
               schema: { $ref: "#/components/schemas/CapturesPage" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/GalleryForbidden" }
         "503": { $ref: "#/components/responses/DatabaseUnavailable" }
 
   /captures/finalize:
@@ -406,6 +423,7 @@ paths:
               schema: { $ref: "#/components/schemas/CaptureRecord" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/GalleryForbidden" }
         "404":
           description: Tidak ada record dengan id itu.
           content:
@@ -504,7 +522,7 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403":
-          description: Path berkasnya di luar folder jaringan yang dikelola app.
+          description: Capture di luar akses plant akun, atau path di luar folder jaringan yang dikelola app.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -542,6 +560,7 @@ paths:
               schema: { type: string, format: binary }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/GalleryForbidden" }
         "404":
           description: Record tidak ada thumbnail, atau thumbnail belum dibuat.
           content:
@@ -590,6 +609,7 @@ paths:
               schema: { $ref: "#/components/schemas/SessionCoverage" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/GalleryForbidden" }
         "503": { $ref: "#/components/responses/DatabaseUnavailable" }
 
   /summary:
@@ -612,6 +632,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Summary" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/GalleryForbidden" }
         "503": { $ref: "#/components/responses/DatabaseUnavailable" }
 
   /devices:
@@ -1185,6 +1206,11 @@ components:
         menonaktifkan akunnya (diperiksa ulang dari database di `/auth/me`).
 
   responses:
+    GalleryForbidden:
+      description: Akun tidak memiliki akses plant, atau capture/plant yang diminta berada di luar izin akun.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
     UserTokenRequired:
       description: |
         Endpoint ini menuntut token pengguna; kunci API ditolak. Ini batas

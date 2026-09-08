@@ -3,11 +3,13 @@ import { Preferences } from "@capacitor/preferences";
 const STORAGE_KEY = "capture-calcine.mobile-preferences";
 
 export type MobilePreferences = {
+  lightMode: boolean;
   highContrastMode: boolean;
   historyWarmupEnabled: boolean;
 };
 
 export const DEFAULT_MOBILE_PREFERENCES: MobilePreferences = {
+  lightMode: false,
   highContrastMode: false,
   historyWarmupEnabled: true,
 };
@@ -16,6 +18,10 @@ function normalizePreferences(
   value: Partial<MobilePreferences> | null | undefined,
 ): MobilePreferences {
   return {
+    lightMode:
+      typeof value?.lightMode === "boolean"
+        ? value.lightMode
+        : DEFAULT_MOBILE_PREFERENCES.lightMode,
     highContrastMode:
       typeof value?.highContrastMode === "boolean"
         ? value.highContrastMode
