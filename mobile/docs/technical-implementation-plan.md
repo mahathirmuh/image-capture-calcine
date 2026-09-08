@@ -61,7 +61,7 @@
 ## M3 Implementation Notes
 
 - `mobile/src/lib/camera.ts` wraps camera session, session renew/release, live preview frame loading, capture, job polling, and capture-finalize contracts
-- the mobile client currently asks backend to resolve the operator device implicitly unless backend requires explicit device selection
+- the mobile client supplies the scheduled plant when creating a session, validates it against the operator account, and pins all subsequent preview, command, job, renewal, release and finalize calls to the returned device identity
 - while the capture screen is open, the mobile client now polls `GET /camera/preview` for JPEG frames and refreshes the lease with `POST /camera/session/renew`
 - the capture screen releases the lease through `DELETE /camera/session/{sessionId}` when the operator leaves the screen so the camera becomes available faster for the next client
 - the capture screen now exposes a slot selector (`Train 1/Train 2` on Acid, `Bin 1/Bin 2` on Chloride) and auto-finalizes every successful camera job through `POST /captures/finalize`
@@ -71,7 +71,7 @@
 
 ## M4 Implementation Notes
 
-- `mobile/src/lib/devices.ts` selects a primary device by preferring active devices that match the operator plant, then falling back to the most recently active device
+- `mobile/src/lib/devices.ts` accepts exactly one active device in the assigned operator plant; missing or ambiguous assignments never fall back to another camera
 - `mobile/src/screens/MyDeviceScreen.tsx` renders loading, error, degraded, offline, and success-friendly states from live backend data
 - diagnostics stay read-only on mobile in this phase, while a manual `Refresh Status` action lets operators re-check live telemetry without leaving the screen
 - the device screen also records a visible last-refresh badge so operators can judge how fresh the snapshot is
@@ -120,3 +120,13 @@ Per phase, record:
 - API contract review
 - workflow verification
 - unresolved blockers in `mobile/docs/open-questions-and-challenges.md`
+
+## Post-M5 camera alignment (2026-09-08)
+
+Capture automatically starts a lease when entering a valid scheduled context. Account or scheduled-context changes remount the workflow, invalidate pending results, release the old lease, and clear preview state. Session operations are serialized across remounts; late successful sessions are released. Capture requires a valid lease and a successful preview with no current preview error. Slots are disabled during capture. My Device shares the same one-active-camera-per-plant eligibility rule, with backend authorization authoritative for live access. REST finalization records the resolved station.
+
+REST accepts optional expected `plant` on camera requests and optional `deviceId`/`plant` on job polling. Existing clients can omit them; mobile always sends the resolved target. Deploy the updated backend before using the rebuilt mobile client. See `plant-camera-alignment-audit.md` for verification.
+
+### All-plant operator access (2026-09-08)
+
+Explicit account scope `ALL` allows selecting a scheduled session from any plant. Camera destination is always that session's concrete plant, never `ALL`. Single-plant accounts remain restricted and missing account assignments remain blocked on mobile. Capture stays idle without a scheduled session, and changing the selected context releases the previous camera before connecting the next. My Device uses the selected session's plant for `ALL` accounts and offers Open Today Sessions when none is selected. Access is based on account scope, not username or a special case for Widji. REST continues to recheck current database permissions and device placement.

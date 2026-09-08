@@ -255,6 +255,8 @@ export default function App() {
         <MyDeviceScreen
           session={session}
           user={session.user}
+          selectedPlant={selectedSession?.plant}
+          onOpenSessions={() => setActiveTab("sessions")}
           onSessionUpdate={setSession}
           onSignOut={handleLogout}
         />

@@ -1,6 +1,6 @@
 # Mobile plant-camera alignment audit
 
-Date: 2026-09-08. Post-M5 audit following web plant-scoped camera selection. The changes below are proposed, not implemented.
+Date: 2026-09-08. Post-M5 audit following web plant-scoped camera selection. The initial findings below were implemented in the follow-up recorded at the end of this document.
 
 ## Findings and follow-up
 
@@ -31,3 +31,16 @@ Mobile connects to the main Capture Calcine REST API, not directly to the camera
 - No application source changed; no APK installation or physical camera operation tested in this audit.
 - Follow-up acceptance: Acid/Chloride operator scoping, cross-plant denial, missing/inactive/ambiguous assignments, reassignment during a lease, pinned preview/actions/jobs, navigation during session creation, edge/USB failures, and recorded plant/device/station metadata.
 - Build success alone does not verify those runtime behaviors. M0–M5 completion remains unchanged; proposed adjustments are pending.
+
+## Implementation follow-up (2026-09-08)
+
+Implemented all six findings: pinned camera target on preview/commands/jobs/renew/release/finalize; expected plant validation in REST; no Acid fallback; automatic session creation with cross-remount serialization and late-response release; strict active same-plant My Device selection with stale-request protection; preview-based capture readiness and resolved station persistence. Updated OpenAPI for optional expected plant and job device targeting. Camera response identity is validated before accepting a lease. Existing callers can omit optional fields; mobile sends them.
+
+Verification evidence:
+- 33 tests passed across mobile request/assignment, mobile Capture lifecycle, REST target propagation and shared edge resolver suites. Includes StrictMode replay, delayed session response after unmount, preview failure gating, cross-plant context rejection, invalid job targets, changed placement and API-key write denial.
+- Mobile TypeScript/Vite production build passed using npm.
+- Backend production build passed in the existing isolated `.capture-verification` checkout after copying current source and OpenAPI, avoiding the running development output directory.
+- OpenAPI parsed successfully with `js-yaml`; duplicate mapping keys are rejected by its default loader.
+- ESLint code checks passed with `prettier/prettier` disabled to avoid repository CRLF/format churn. The initial full formatter lint failed on formatting differences; it is not recorded as a full lint pass.
+- The premium static root audit reported 13 existing findings in unrelated web controls (ownership metadata, literal action detection and textarea styling). No broad UI compliance claim is made. Mobile interaction behavior was verified with component tests, not a browser or physical APK in this follow-up.
+- Remaining operational verification: deploy backend, rebuild/install the APK, and exercise Acid/Chloride operators against physical cameras and confirm saved station metadata. Tests used mocks and did not trigger a real capture or write a production capture record.

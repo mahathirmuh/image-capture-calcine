@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AppLogo } from "../components/AppLogo";
 import type { AuthSession } from "../lib/auth";
 import { MobileAuthError } from "../lib/auth";
 import {
   ensureCameraSession,
+  canAccessCapturePlant,
   sessionValid,
+  queueCameraSessionOperation,
   finalizeCaptureResult,
   getPreviewFrame,
   getJob,
@@ -182,7 +184,7 @@ function CaptureWorkflow({
   const mountedRef = useRef(false);
   const generationRef = useRef(0);
   const actionRef = useRef(false);
-  const lifecycleRef = useRef<Promise<unknown>>(Promise.resolve());
+  const historyRequestRef = useRef(0);
 
   const hasSelectedSession = !!selectedSession;
   const currentPlant = selectedSession?.plant ?? session.user.plant ?? "";
@@ -191,14 +193,14 @@ function CaptureWorkflow({
     ? currentSlotLabel ?? selectedSession.location
     : "Select a session from Today Sessions";
   const contextMeta = hasSelectedSession
-    ? `${selectedSession.plant} â€¢ ${selectedSession.displayTime} â€¢ ${currentSlotLabel}`
+    ? `${selectedSession.plant} • ${selectedSession.displayTime} • ${currentSlotLabel}`
     : "Choose a scheduled slot first so capture actions run in the right operator context.";
   const headerTitle = hasSelectedSession
     ? `${selectedSession.plant} | ${selectedSession.displayTime}`
     : "Capture Workflow";
   const jobLabel = useMemo(() => jobStatusLabel(job?.status ?? null), [job]);
   const progress = useMemo(() => jobProgress(job?.status ?? null), [job]);
-  const contextValid = !!selectedSession && !!currentPlant && currentPlant !== "ALL" && session.user.plant === currentPlant;
+  const contextValid = !!selectedSession && canAccessCapturePlant(session.user.plant, currentPlant);
   const sessionReady = contextValid && sessionValid(lease);
   const cameraReady = sessionReady && !!previewUrl && !previewError;
   const captureBusy = busyAction === "capture";
@@ -230,11 +232,13 @@ function CaptureWorkflow({
       leaseRef.current = null;
       if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
       if (activeLease) {
-        lifecycleRef.current = lifecycleRef.current.catch(() => undefined).then(() =>
+        void queueCameraSessionOperation(() =>
           releaseCameraSession(sessionRef.current, activeLease).catch(() => undefined),
         );
       }
     };
+    // The keyed workflow owns one mount lifecycle; changing callbacks must not restart the camera.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -373,31 +377,13 @@ function CaptureWorkflow({
     };
   }, [lease, onSessionUpdate]);
 
-  useEffect(() => {
+  const refreshLatestCapture = useCallback(async (currentSession: AuthSession, slot = activeSlot) => {
     if (!selectedSession) {
       setLatestCapture(null);
-      return;
+      return currentSession;
     }
 
-    let cancelled = false;
-    void (async () => {
-      try {
-        const latestSession = await refreshLatestCapture(sessionRef.current, activeSlot);
-        if (cancelled) return;
-        onSessionUpdate(latestSession);
-      } catch {
-        if (cancelled) return;
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeSlot, onSessionUpdate, selectedSession?.key]);
-
-  async function refreshLatestCapture(currentSession: AuthSession, slot = activeSlot) {
-    if (!selectedSession) return currentSession;
-
+    const requestId = ++historyRequestRef.current;
     const expectedBin = slotLabelUpper(selectedSession.plant, slot).trim().toLowerCase();
 
     const response = await listCaptures(currentSession, {
@@ -406,6 +392,7 @@ function CaptureWorkflow({
       limit: 10,
       offset: 0,
     });
+    if (!mountedRef.current || requestId !== historyRequestRef.current) return response.session;
     onSessionUpdate(response.session);
     const matchedRecord =
       response.data.items.find(
@@ -414,11 +401,17 @@ function CaptureWorkflow({
 
     setLatestCapture(matchedRecord ? mapCaptureRecordToHistoryItem(matchedRecord) : null);
     return response.session;
-  }
+  }, [activeSlot, onSessionUpdate, selectedSession]);
+
+  useEffect(() => {
+    void refreshLatestCapture(sessionRef.current).catch(() => undefined);
+    return () => { historyRequestRef.current += 1; };
+  }, [refreshLatestCapture]);
 
   async function handleStartSession() {
+    if (!selectedSession) return;
     if (!contextValid) {
-      setError("Select a scheduled session that matches your assigned plant.");
+      setError("Select a scheduled session in a plant your account can access.");
       return;
     }
     const generation = ++generationRef.current;
@@ -426,7 +419,7 @@ function CaptureWorkflow({
     setBusyAction("session");
     setError(null);
     setCaptureNotice(null);
-    const task = lifecycleRef.current.catch(() => undefined).then(async () => {
+    const task = queueCameraSessionOperation(async () => {
       if (!isCurrent()) return;
       const oldLease = leaseRef.current;
       if (oldLease && !sessionValid(oldLease)) {
@@ -445,7 +438,6 @@ function CaptureWorkflow({
       setJob(null);
       setPreviewError(null);
     });
-    lifecycleRef.current = task;
     try {
       await task;
     } catch (actionError) {
@@ -463,7 +455,7 @@ function CaptureWorkflow({
     setCaptureNotice(null);
 
     try {
-      const response = await releaseCameraSession(sessionRef.current, lease);
+      const response = await queueCameraSessionOperation(() => releaseCameraSession(sessionRef.current, lease));
       if (!mountedRef.current || generation !== generationRef.current) return;
       leaseRef.current = null;
       onSessionUpdate(response.session);
@@ -471,9 +463,9 @@ function CaptureWorkflow({
       setJob(null);
       setPreviewError(null);
     } catch (actionError) {
-      setError(errorMessageOf(actionError));
+      if (mountedRef.current && generation === generationRef.current) setError(errorMessageOf(actionError));
     } finally {
-      setBusyAction(null);
+      if (mountedRef.current && generation === generationRef.current) setBusyAction(null);
     }
   }
 
@@ -732,7 +724,7 @@ function CaptureWorkflow({
             <strong>{latestCapture?.title ?? "Awaiting capture result"}</strong>
             <span>
               {latestCapture
-                ? `${latestCapture.plant} â€¢ ${latestCapture.capturedTime}`
+                ? `${latestCapture.plant} • ${latestCapture.capturedTime}`
                 : "After capture completes, the newest saved image will appear here."}
             </span>
           </div>
@@ -763,7 +755,7 @@ function CaptureWorkflow({
               >
                 settings
               </span>
-              <span>JOB_ID: {job?.jobId ?? "â€”"}</span>
+              <span>JOB_ID: {job?.jobId ?? "—"}</span>
             </div>
             <span className="job-progress-card__status">{jobLabel}</span>
           </div>
@@ -782,7 +774,7 @@ function CaptureWorkflow({
           </div>
           <p className="job-progress-card__helper">
             {captureProcess ??
-              "Start a session, then use Capture to save the image for the selected slot."}
+              "Wait for the camera preview, then use Capture to save the image for the selected slot."}
           </p>
         </article>
       </section>

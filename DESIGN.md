@@ -11,3 +11,8 @@ Use an authored Select with keyboard navigation and an accessible label. Loading
 
 ## Scope
 The Gallery status selector is read-only with respect to cameras and the registry. It persists only the browser's selected identity. Capture resolves its own target from the selected plant's current registry assignment; it never inherits Gallery's choice. Operators remain locked to their assigned plant. Location changes clear the previous preview and release the old device's lease before starting the new one. Location controls are disabled during capture, autofocus, or save. The existing native location select is retained for this narrow behavior fix, with platform-owned popup geometry.
+
+## Mobile camera workflow
+Mobile retains its existing English operator interface, AppLogo, native buttons, inline alerts and stylesheet tokens. Behavioral owners are `mobile/src/lib/camera.ts` for pinned target requests and serialized lease operations, `CaptureScreen.tsx` for lifecycle/readiness, and `mobile/src/lib/devices.ts` for active plant eligibility. The mobile functional specification is the workflow contract. No new selector, visual tokens or administrator workflow is introduced. Capture waits for preview readiness; missing/ambiguous assignments are actionable assignment errors. Camera identity is shown beside readiness.
+
+Mobile accounts with explicit ALL scope use the selected scheduled session plant for Capture and My Device. Without selection, camera operations remain idle and My Device directs the operator to Today Sessions. Single-plant accounts keep their assigned scope.

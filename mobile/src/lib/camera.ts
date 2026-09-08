@@ -68,8 +68,8 @@ export async function ensureCameraSession(
   lease: CameraLease | null,
   plant: string,
 ): Promise<{ session: AuthSession; data: CameraLease }> {
-  if (!plant || plant === "ALL" || session.user.plant !== plant) {
-    throw new Error("The selected session must match your assigned plant.");
+  if (!canAccessCapturePlant(session.user.plant, plant)) {
+    throw new Error("Select a session in a plant your account can access.");
   }
   if (lease && (lease.plant !== plant || lease.ownerId !== session.user.username)) {
     throw new Error("Camera assignment changed. Restart the camera session.");
@@ -81,7 +81,7 @@ export async function ensureCameraSession(
   const response = await createCameraSession(session, { plant });
   if (!sessionValid(response.data) || response.data.plant !== plant || response.data.ownerId !== session.user.username) {
     await releaseCameraSession(response.session, response.data).catch(() => undefined);
-    throw new Error("The camera response does not match your assigned plant.");
+    throw new Error("The camera response does not match the selected plant.");
   }
   return response;
 }
@@ -206,4 +206,9 @@ export function queueCameraSessionOperation<T>(operation: () => Promise<T>): Pro
   const next = sessionOperations.catch(() => undefined).then(operation);
   sessionOperations = next;
   return next;
+}
+
+/** Client context check only; REST rechecks the account and placement in the registry. */
+export function canAccessCapturePlant(accountPlant: string | null | undefined, plant: string | null | undefined): boolean {
+  return !!plant && plant !== "ALL" && (accountPlant === "ALL" || accountPlant === plant);
 }

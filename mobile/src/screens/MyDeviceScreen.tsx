@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppLogo } from "../components/AppLogo";
 import type { AuthSession, AuthUser } from "../lib/auth";
 import { MobileAuthError } from "../lib/auth";
+import { canAccessCapturePlant } from "../lib/camera";
 import {
   getDeviceStatus,
   listDevices,
@@ -14,6 +15,8 @@ import {
 type MyDeviceScreenProps = {
   session: AuthSession;
   user: AuthUser;
+  selectedPlant?: string | null;
+  onOpenSessions?: () => void;
   onSessionUpdate: (session: AuthSession) => void;
   onSignOut: () => void | Promise<void>;
 };
@@ -58,7 +61,9 @@ function inferHealthState(device: DeviceListItem | null, status: DeviceStatusRes
   return { label: "Offline", reachability: "Unavailable", alert: "Device is inactive in the registry." };
 }
 
-export function MyDeviceScreen({ session, user, onSessionUpdate, onSignOut }: MyDeviceScreenProps) {
+export function MyDeviceScreen({ session, user, selectedPlant, onOpenSessions, onSessionUpdate, onSignOut }: MyDeviceScreenProps) {
+  const devicePlant = user.plant === "ALL" ? selectedPlant ?? null : user.plant ?? null;
+  const needsSelection = user.plant === "ALL" && !canAccessCapturePlant(user.plant, devicePlant);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -66,16 +71,19 @@ export function MyDeviceScreen({ session, user, onSessionUpdate, onSignOut }: My
   const [status, setStatus] = useState<DeviceStatusResponse | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
   const mountedRef = useRef(true);
+  const requestRef = useRef(0);
 
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      requestRef.current += 1;
     };
   }, []);
 
   const loadDeviceState = useCallback(
     async (mode: "initial" | "refresh" = "initial") => {
+      const requestId = ++requestRef.current;
       if (mode === "initial") {
         setLoading(true);
       } else {
@@ -86,11 +94,12 @@ export function MyDeviceScreen({ session, user, onSessionUpdate, onSignOut }: My
       setStatus(null);
 
       try {
+        if (needsSelection) return;
         const devicesResponse = await listDevices(session);
-        if (!mountedRef.current) return;
+        if (!mountedRef.current || requestId !== requestRef.current) return;
         onSessionUpdate(devicesResponse.session);
 
-        const primary = pickPrimaryDevice(devicesResponse.data.devices, user.plant ?? null);
+        const primary = pickPrimaryDevice(devicesResponse.data.devices, devicePlant);
         setDevice(primary);
 
         if (!primary) {
@@ -100,16 +109,16 @@ export function MyDeviceScreen({ session, user, onSessionUpdate, onSignOut }: My
         }
 
         const statusResponse = await getDeviceStatus(devicesResponse.session, primary.code);
-        if (!mountedRef.current) return;
+        if (!mountedRef.current || requestId !== requestRef.current) return;
         onSessionUpdate(statusResponse.session);
         setStatus(statusResponse.data);
         setLastUpdatedAt(new Date().toISOString());
       } catch (loadError) {
-        if (mountedRef.current) {
+        if (mountedRef.current && requestId === requestRef.current) {
           setError(errorMessageOf(loadError));
         }
       } finally {
-        if (mountedRef.current) {
+        if (mountedRef.current && requestId === requestRef.current) {
           if (mode === "initial") {
             setLoading(false);
           } else {
@@ -118,7 +127,7 @@ export function MyDeviceScreen({ session, user, onSessionUpdate, onSignOut }: My
         }
       }
     },
-    [onSessionUpdate, session, user.plant],
+    [onSessionUpdate, session, devicePlant, needsSelection],
   );
 
   useEffect(() => {
@@ -139,7 +148,7 @@ export function MyDeviceScreen({ session, user, onSessionUpdate, onSignOut }: My
       <header className="top-app-bar">
         <div className="top-app-bar__side">
           <AppLogo className="app-logo--topbar" alt="" />
-          <span className="top-app-bar__label">{user.plant ?? "Operator Device"}</span>
+          <span className="top-app-bar__label">{devicePlant ?? "Operator Device"}</span>
         </div>
 
         <div className="top-app-bar__title">
@@ -158,6 +167,16 @@ export function MyDeviceScreen({ session, user, onSessionUpdate, onSignOut }: My
           </span>
         </button>
       </header>
+
+      {needsSelection ? (
+        <section className="device-alert-card" aria-label="Select device plant">
+          <div>
+            <strong>Select a session first</strong>
+            <p>Your account can access all plants. Choose a session in Today Sessions to view its assigned camera.</p>
+            <button type="button" className="btn btn-primary" onClick={onOpenSessions}>Open Today Sessions</button>
+          </div>
+        </section>
+      ) : null}
 
       {loading ? (
         <section className="device-alert-card" aria-label="Device loading state">
@@ -183,7 +202,7 @@ export function MyDeviceScreen({ session, user, onSessionUpdate, onSignOut }: My
         </section>
       ) : null}
 
-      {!loading && !error && health.alert ? (
+      {!needsSelection && !loading && !error && health.alert ? (
         <section className="device-alert-card" aria-label="System alert">
           <span className="material-symbols-outlined" aria-hidden="true">
             warning
@@ -269,7 +288,7 @@ export function MyDeviceScreen({ session, user, onSessionUpdate, onSignOut }: My
           <div>
             <strong>{user.username}</strong>
             <p>
-              Auth Level: {user.role} {device?.plant ? `â€¢ ${device.plant}` : user.plant ? `â€¢ ${user.plant}` : ""}
+              Auth Level: {user.role} {device?.plant ? `• ${device.plant}` : user.plant ? `• ${user.plant}` : ""}
             </p>
           </div>
         </div>

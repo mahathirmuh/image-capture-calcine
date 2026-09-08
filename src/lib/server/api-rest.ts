@@ -1138,6 +1138,9 @@ async function resolveEdgeForUser(principal: ApiPrincipal, deviceId?: number | n
 async function resolveEdgeForRead(principal: ApiPrincipal, deviceId?: number | null, plant?: unknown) {
   if (principal.kind === "user") return resolveEdgeForUser(principal, deviceId, plant);
 
+  if (plant != null && (typeof plant !== "string" || !(PLANTS as readonly string[]).includes(plant) || deviceId == null)) {
+    return { ok: false as const, code: "INVALID_PARAM", message: "Plant tidak sah atau deviceId belum diisi." };
+  }
   const { findEdgeDevice } = await import("./edge-target");
   const fallback = getServerEnv().CAMERA_API_URL;
 
@@ -1160,6 +1163,9 @@ async function resolveEdgeForRead(principal: ApiPrincipal, deviceId?: number | n
       message: "Device tidak ada di registry.",
     };
   }
+  if (plant != null && device.plant !== plant) {
+    return { ok: false as const, code: "DEVICE_PLANT_MISMATCH", message: "Penempatan kamera telah berubah." };
+  }
   return {
     ok: true as const,
     deviceId: device.id,
@@ -1173,7 +1179,7 @@ async function resolveEdgeForRead(principal: ApiPrincipal, deviceId?: number | n
 /** Terjemahkan kegagalan resolver jadi jawaban HTTP yang sesuai sebabnya. */
 function edgeFailure(result: { code: string; message: string }): Response {
   const status =
-    result.code === "UNAUTHENTICATED" ? 401 : result.code === "DEVICE_NOT_FOUND" ? 404 : 409;
+    result.code === "INVALID_PARAM" ? 400 : result.code === "UNAUTHENTICATED" ? 401 : result.code === "DEVICE_NOT_FOUND" ? 404 : 409;
   return apiError(status, result.code, result.message);
 }
 
@@ -1487,7 +1493,7 @@ async function handleJob(principal: ApiPrincipal, rawJobId: string, url: URL): P
 async function handleCameraSession(principal: ApiPrincipal, request: Request): Promise<Response> {
   const body = await readJsonBody(request);
   const leaseSeconds = typeof body.leaseSeconds === "number" ? body.leaseSeconds : 120;
-  const deviceId = typeof body.deviceId === "number" ? body.deviceId : null;
+  const deviceId = body.deviceId == null ? null : typeof body.deviceId === "number" ? body.deviceId : Number.NaN;
 
   const target = await resolveEdgeForUser(principal, deviceId, body.plant);
   if (!target.ok) return edgeFailure(target);
@@ -1530,7 +1536,7 @@ async function handleCameraSessionRenew(
   const sessionId = text(body.sessionId);
   const leaseToken = text(body.leaseToken);
   const leaseSeconds = typeof body.leaseSeconds === "number" ? body.leaseSeconds : 120;
-  const deviceId = typeof body.deviceId === "number" ? body.deviceId : null;
+  const deviceId = body.deviceId == null ? null : typeof body.deviceId === "number" ? body.deviceId : Number.NaN;
 
   if (!sessionId || !leaseToken) {
     return apiError(
@@ -1593,7 +1599,7 @@ async function handleCameraSessionRelease(
 
   const body = await readJsonBody(request);
   const leaseToken = text(body.leaseToken);
-  const deviceId = typeof body.deviceId === "number" ? body.deviceId : null;
+  const deviceId = body.deviceId == null ? null : typeof body.deviceId === "number" ? body.deviceId : Number.NaN;
   if (!leaseToken) {
     return apiError(
       400,
@@ -1692,7 +1698,7 @@ async function handleCameraCommand(
       "Field `leaseToken` wajib diisi. Ambil dulu lewat POST /camera/session.",
     );
   }
-  const deviceId = typeof body.deviceId === "number" ? body.deviceId : null;
+  const deviceId = body.deviceId == null ? null : typeof body.deviceId === "number" ? body.deviceId : Number.NaN;
 
   const target = await resolveEdgeForUser(principal, deviceId, body.plant);
   if (!target.ok) return edgeFailure(target);

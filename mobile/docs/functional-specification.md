@@ -71,3 +71,11 @@ Capture Calcine Mobile is an operator-only mobile application for daily sampling
 ## Current Known Constraint
 
 Some mobile screens are still backed by mock data in the React app and must be wired to live APIs phase by phase.
+
+## Plant-camera assignment (post-M5)
+
+The operator account must permit the selected scheduled session plant (matching plant or explicit `ALL` scope). Entering Capture automatically connects to its assigned camera. Missing or multiple active assignments block connection with an inline explanation; operators do not select another plant or an arbitrary device. A lease alone is not camera readiness: capture stays disabled until preview succeeds. Leaving or changing the context clears the preview and releases the lease, including late session responses. My Device reports the same active plant assignment. UI copy remains English.
+
+### All-plant operator access (2026-09-08)
+
+Explicit account scope `ALL` allows selecting a scheduled session from any plant. Camera destination is always that session's concrete plant, never `ALL`. Single-plant accounts remain restricted and missing account assignments remain blocked on mobile. Capture stays idle without a scheduled session, and changing the selected context releases the previous camera before connecting the next. My Device uses the selected session's plant for `ALL` accounts and offers Open Today Sessions when none is selected. Access is based on account scope, not username or a special case for Widji. REST continues to recheck current database permissions and device placement.

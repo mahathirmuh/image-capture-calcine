@@ -827,7 +827,17 @@ paths:
           in: path
           required: true
           schema: { type: string }
+        - name: deviceId
+          in: query
+          schema: { type: integer, minimum: 1 }
+          description: Use the deviceId returned by camera session creation for every poll.
+        - name: plant
+          in: query
+          schema: { $ref: "#/components/schemas/PlantName" }
+          description: Expected placement; rejects reassignment. API-key callers must also supply deviceId.
       responses:
+        "400": { description: Invalid deviceId or plant. }
+        "409": { description: Device selection is ambiguous, forbidden for the operator plant, or placement changed. }
         "200":
           description: Status job.
           content:
@@ -866,6 +876,9 @@ paths:
             schema:
               type: object
               properties:
+                plant:
+                  allOf: [{ $ref: "#/components/schemas/PlantName" }]
+                  description: Expected plant; checked against current account scope and device placement.
                 leaseSeconds:
                   type: integer
                   default: 120
@@ -878,6 +891,7 @@ paths:
                     kandidat, resolver memilihkannya; dengan dua, ia menolak
                     menebak.
       responses:
+        "400": { description: Invalid camera target or request parameters. }
         "200":
           description: Sewa diberikan.
           content:
@@ -912,6 +926,9 @@ paths:
               type: object
               required: [sessionId, leaseToken]
               properties:
+                plant:
+                  allOf: [{ $ref: "#/components/schemas/PlantName" }]
+                  description: Expected plant; checked against current account scope and device placement.
                 sessionId:
                   type: string
                   description: Dari `POST /camera/session`.
@@ -978,6 +995,9 @@ paths:
               type: object
               required: [leaseToken]
               properties:
+                plant:
+                  allOf: [{ $ref: "#/components/schemas/PlantName" }]
+                  description: Expected plant; checked against current account scope and device placement.
                 leaseToken:
                   type: string
                   description: Lease token dari `POST /camera/session`.
@@ -1011,6 +1031,10 @@ paths:
       security:
         - BearerAuth: []
       parameters:
+        - name: plant
+          in: query
+          schema: { $ref: "#/components/schemas/PlantName" }
+          description: Expected plant; rejects changed device placement.
         - name: X-Session-Token
           in: header
           required: true
@@ -1064,6 +1088,9 @@ paths:
               type: object
               required: [leaseToken]
               properties:
+                plant:
+                  allOf: [{ $ref: "#/components/schemas/PlantName" }]
+                  description: Expected plant; checked against current account scope and device placement.
                 leaseToken:
                   type: string
                   description: Dari `POST /camera/session`.
@@ -1102,6 +1129,9 @@ paths:
               type: object
               required: [leaseToken]
               properties:
+                plant:
+                  allOf: [{ $ref: "#/components/schemas/PlantName" }]
+                  description: Expected plant; checked against current account scope and device placement.
                 leaseToken: { type: string }
                 deviceId: { type: integer }
       responses:

@@ -407,3 +407,24 @@ Finish the operator settings surface and align runtime configuration behavior wi
 - Docker dependency installation failed because root `package.json` declared `react-test-renderer@19.2.5` while `bun.lock` did not. Regenerated only the Bun lockfile using Bun 1.3.14, matching the reported container build. The diff adds the renderer and its react-is resolution while preserving Recharts react-is 18.3.1.
 - Verification: `bun x bun@1.3.14 install --frozen-lockfile --lockfile-only --ignore-scripts` passed (653 packages); root dependency maps match the Bun workspace manifest; `git diff --check` passed. Full Linux Docker image build was not run locally.
 - README documents synchronizing Bun lockfile after npm dependency changes. No backend/API contract or mobile phase changes.
+
+## Post-M5 Implementation — Plant-Scoped Mobile Camera (2026-09-08)
+
+Sources: mobile functional specification, technical plan, open questions, plant-camera alignment audit, and root OpenAPI. Operator-only scope and existing English interface retained.
+
+- [x] Pin preview, commands and jobs to the returned device ID and expected plant.
+- [x] Validate account/session plant and protect session creation, cleanup and stale responses.
+- [x] Connect automatically and gate capture on preview readiness.
+- [x] Replace My Device recency fallback with unambiguous active plant assignment.
+- [x] Record resolved station on REST finalization; review/update OpenAPI.
+- [x] Verify with 33 targeted tests, mobile TypeScript/build, isolated backend build, parsed OpenAPI and code lint (format rule excluded).
+- [ ] Verify deployed backend and installed APK with physical Acid/Chloride cameras, including persisted station metadata.
+
+Evidence and verification limitations are recorded in [plant-camera-alignment-audit.md](plant-camera-alignment-audit.md). M0–M5 historical completion remains unchanged. No Bun used and no database migration required.
+
+## Post-M5 Maintenance — ALL Operator Scope (2026-09-08)
+
+- Enabled explicit `ALL` accounts to capture in the selected scheduled session plant. No camera is selected without a scheduled context; single-plant restrictions remain.
+- My Device follows that same selected plant and offers navigation to Today Sessions when selection is missing.
+- Updated functional specification, technical plan and resolved decisions. Reviewed `docs/openapi.yaml`: existing expected-plant parameters and backend account-scope checks already support this; no new backend contract change.
+- Verification: targeted mobile, lifecycle, REST and resolver suites plus mobile npm build. Includes idle/no-selection, ALL Acid-to-Chloride release-before-start, single-plant denial and My Device selection tests. Physical APK/camera verification remains pending.
