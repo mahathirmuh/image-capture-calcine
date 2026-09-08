@@ -22,8 +22,8 @@
 5. `My Device` keeps diagnostics read-only on mobile for now; operators can manually refresh status, while remote diagnostics remain in the admin workflow.
 6. `Settings` uses persisted mobile preferences for `High-Contrast Mode` and `History Warm-Up`, and shows runtime snapshot data from the active build/session.
 
+7. Explicit `ALL` operator scope is supported: Capture and My Device follow the concrete plant of the selected scheduled session; no selection means no camera connection. A single-plant account remains restricted.
+
 ## Recording Rule
 
 Any ambiguity discovered during menu integration should be added here before implementing around it silently.
-
-7. Explicit `ALL` operator scope is supported: Capture and My Device follow the concrete plant of the selected scheduled session; no selection means no camera connection. A single-plant account remains restricted.
