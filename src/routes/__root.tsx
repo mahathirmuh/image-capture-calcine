@@ -26,7 +26,7 @@ import { Toaster } from "@/components/ui/sonner";
 const TOAST_DURATION_MS = 3000;
 import { SidebarProvider, SidebarTrigger, SidebarInset, useSidebar } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
-import { findNavItem, SUB_PAGE_TITLES } from "@/lib/nav-items";
+import { canRoleOpenPath, findNavItem, SUB_PAGE_TITLES, VIEWER_HOME } from "@/lib/nav-items";
 import { UserMenu } from "@/components/user-menu";
 import { fetchCurrentUser, type SessionUser } from "@/lib/auth";
 
@@ -104,6 +104,16 @@ export const Route = createRootRouteWithContext<{
 
     if (!user && location.pathname !== LOGIN_PATH) {
       throw redirect({ to: LOGIN_PATH, search: { redirect: location.href } });
+    }
+
+    // Viewer hanya punya Gallery. Dijaga di sini, bukan di tiap rute, supaya
+    // rute baru otomatis tertutup untuk peran ini tanpa perlu diingat.
+    if (
+      user?.role === "viewer" &&
+      location.pathname !== LOGIN_PATH &&
+      !canRoleOpenPath(user.role, location.pathname)
+    ) {
+      throw redirect({ to: VIEWER_HOME });
     }
 
     return { user };

@@ -101,6 +101,20 @@ describe("edge target selection with multiple registered devices", () => {
     ).toMatchObject({ ok: true, deviceId: 2 });
   });
 
+  it("never resolves a camera for a viewer, even in their own plant", async () => {
+    mocks.findUserById.mockResolvedValue({
+      id: 7,
+      isActive: true,
+      role: "viewer",
+      plant: "Acid Plant",
+    });
+    expect(await resolveEdgeTarget(undefined, undefined, undefined, "Acid Plant")).toMatchObject({
+      ok: false,
+      code: "DEVICE_FORBIDDEN",
+    });
+    expect(mocks.query).not.toHaveBeenCalled();
+  });
+
   it("rejects an Acid operator's attempt to select Chloride", async () => {
     mocks.findUserById.mockResolvedValue({ id: 7, isActive: true, plant: "Acid Plant" });
     expect(

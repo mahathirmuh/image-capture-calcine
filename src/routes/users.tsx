@@ -312,6 +312,8 @@ function UsersPage() {
                           <ShieldCheck className="h-3 w-3" />
                           {ROLE_LABELS.admin}
                         </Badge>
+                      ) : user.role === "viewer" ? (
+                        <Badge variant="outline">{ROLE_LABELS.viewer}</Badge>
                       ) : (
                         <Badge variant="secondary">{ROLE_LABELS.operator}</Badge>
                       )}
@@ -455,7 +457,9 @@ function UserFormDialog({
             email: existing.email ?? "",
             password: "",
             confirmPassword: "",
-            role: (existing.role === "admin" ? "admin" : "operator") as UserRole,
+            role: (USER_ROLES as readonly string[]).includes(existing.role)
+              ? (existing.role as UserRole)
+              : "operator",
             plant: existing.plant,
             isActive: existing.isActive,
           }
@@ -694,7 +698,8 @@ function UserFormDialog({
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                Hanya {ROLE_LABELS.admin} yang bisa membuka halaman ini.
+                Hanya {ROLE_LABELS.admin} yang bisa membuka halaman ini. {ROLE_LABELS.viewer} hanya
+                bisa melihat Gallery.
               </p>
             </div>
 

@@ -1341,7 +1341,13 @@ components:
         username: { type: string }
         fullName: { type: string }
         email: { type: string, nullable: true }
-        role: { type: string, example: operator }
+        role:
+          type: string
+          enum: [admin, operator, viewer]
+          example: operator
+          description: |
+            `viewer` hanya boleh membaca galeri. Setiap endpoint kendali kamera
+            dan `/captures/finalize` menjawab `DEVICE_FORBIDDEN` untuk peran ini.
 
     MeResponse:
       type: object

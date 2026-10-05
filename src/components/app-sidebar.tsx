@@ -23,7 +23,7 @@ import {
 } from "@/lib/capture-records";
 import { getDeviceStatus, type DeviceStatus } from "@/lib/camera-api";
 import { EDGE_SELECTION_CHANGED, loadSelectedEdgeDevice } from "@/lib/selected-edge-device";
-import { NAV_GROUPS, NAV_ITEMS } from "@/lib/nav-items";
+import { canRoleOpenPath, NAV_GROUPS, NAV_ITEMS } from "@/lib/nav-items";
 import { useIsAdmin, useSessionUser } from "@/lib/use-session-user";
 
 const DEVICE_STATUS_POLL_MS = 30_000;
@@ -175,7 +175,9 @@ export function AppSidebar() {
   const user = useSessionUser();
   const [captureCount, setCaptureCount] = useState(0);
 
-  const items = NAV_ITEMS.filter((item) => !item.adminOnly || isAdmin);
+  const items = NAV_ITEMS.filter(
+    (item) => (!item.adminOnly || isAdmin) && canRoleOpenPath(user?.role, item.url),
+  );
 
   // Count only registry captures authorized for the current account.
   useEffect(() => {

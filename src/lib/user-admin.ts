@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { SessionUser } from "./auth";
 import { PLANTS } from "./locations";
 
-export const USER_ROLES = ["admin", "operator"] as const;
+export const USER_ROLES = ["admin", "operator", "viewer"] as const;
 export type UserRole = (typeof USER_ROLES)[number];
 
 /**
@@ -16,6 +16,8 @@ export type UserRole = (typeof USER_ROLES)[number];
 export const ROLE_LABELS: Record<UserRole, string> = {
   admin: "Super Admin",
   operator: "Operator",
+  // Hanya melihat Gallery: tidak ada Dashboard, Capture, maupun kendali kamera.
+  viewer: "Viewer",
 };
 
 // Dipakai di pesan penolakan supaya sebutannya tidak pernah berbeda dari label

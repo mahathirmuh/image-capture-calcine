@@ -157,6 +157,17 @@ export async function resolveEdgeTarget(
     return { ok: false, code: "UNAUTHENTICATED", message: "Akun Anda sudah tidak aktif." };
   }
 
+  // Viewer hanya melihat Gallery. Ditolak di sini karena resolver ini dilewati
+  // SETIAP perintah kamera, dari halaman maupun REST -- menyembunyikan menu
+  // Capture saja tidak menghalangi serverFn-nya dipanggil langsung.
+  if (user.role === "viewer") {
+    return {
+      ok: false,
+      code: "DEVICE_FORBIDDEN",
+      message: "Peran Viewer tidak boleh mengakses kamera.",
+    };
+  }
+
   const { resolveUserPlantScope } = await import("../operator-plant");
   const plantScope = resolveUserPlantScope(user);
   const bebas = !plantScope.locked;

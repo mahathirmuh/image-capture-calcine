@@ -54,6 +54,19 @@ export const SUB_PAGE_TITLES: Record<string, string> = {
  * adminOnly langsung membuat setiap tautan menujunya ikut disembunyikan, tanpa
  * ada daftar kedua yang bisa lupa diperbarui.
  */
+/**
+ * Satu-satunya halaman yang boleh dibuka peran Viewer. Dipakai sidebar dan
+ * gerbang di __root.tsx, supaya keduanya tidak pernah berbeda.
+ */
+export const VIEWER_HOME = "/gallery";
+
+/** Apakah peran ini boleh membuka path tersebut. */
+export function canRoleOpenPath(role: string | null | undefined, pathname: string): boolean {
+  if (role === "viewer") return pathname === VIEWER_HOME || pathname.startsWith(`${VIEWER_HOME}/`);
+  if (role === "admin") return true;
+  return !isAdminOnlyPath(pathname);
+}
+
 export function isAdminOnlyPath(pathname: string): boolean {
   return findNavItem(pathname)?.adminOnly === true;
 }

@@ -511,3 +511,15 @@ Sources: functional specification, technical plan, product principles, root Open
 - [ ] Build and install APK 1.2.0; physical capture on both tabs with files confirmed in both share folders.
 
 Verification: 43 suites / 378 tests pass; the two mobile suites above plus two web hook suites cannot load on this workstation (missing `react-test-renderer`, no `mobile/node_modules`) and are therefore unverified against this change. Root and mobile `tsc` report no new errors in the touched files (mobile checked without installed dependencies). Changed sources pass Prettier with line endings ignored. No mobile build, APK, browser run, camera capture or share write was performed.
+
+## Post-M5 — Viewer role on web (2026-10-05)
+
+Web/backend change; mobile remains operator-only and unchanged.
+
+- [x] New account role `viewer` (label "Viewer") selectable on `/users`; no database migration (`app_users.role` is free text).
+- [x] Viewer sees only Gallery in the sidebar; every other page redirects to `/gallery` from the root route guard.
+- [x] Camera target resolution rejects viewers (`DEVICE_FORBIDDEN`), covering web server functions and REST camera/finalize endpoints.
+- [x] OpenAPI `role` enum updated.
+- [ ] Browser check with a real viewer account.
+
+Verification: 44 suites / 381 tests pass (3 new: page access per role, resolver denial); the same 4 suites cannot load on this workstation. Dev server compiles the changed route modules. Not exercised in a browser. Gallery plant scope for viewers follows the account plant as for operators. Page roles come from the session cookie, so a role change applies at the user's next login; the camera denial applies immediately.
