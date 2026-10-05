@@ -77,3 +77,31 @@ it("binds finalization to server command time and user; rejects tampering and ex
   vi.spyOn(Date, "now").mockReturnValue(value.capturedAt + 3600001);
   expect(() => verifyCaptureReceipt(ticket, 42)).toThrow("INVALID_CAPTURE_RECEIPT");
 });
+it("replaces stored default rows with the current built-in default", async () => {
+  await mkdir(join(config.root, "schedules"), { recursive: true });
+  const saved = { ...input, id: "saved-1", createdAt: "2026-10-05T00:00:00.000Z", createdBy: 1 };
+  const { expectedRevision: _unused, ...savedVersion } = saved;
+  await writeFile(
+    join(config.root, "schedules", "versions.json"),
+    JSON.stringify({
+      revision: 1,
+      versions: [
+        {
+          id: "default-Acid Plant",
+          plant: "Acid Plant",
+          effectiveDate: "1970-01-01",
+          startHour: 2,
+          intervalHours: 3,
+          windowMinutes: 120,
+          timezone: "Asia/Makassar",
+          createdAt: "1970-01-01T00:00:00.000Z",
+          createdBy: null,
+        },
+        savedVersion,
+      ],
+    }),
+  );
+  const loaded = await readScheduleSnapshot();
+  expect(loaded.versions[0]).toMatchObject({ id: "default-Acid Plant", windowMinutes: 180 });
+  expect(loaded.versions[1]).toMatchObject({ id: "saved-1", windowMinutes: 60 });
+});

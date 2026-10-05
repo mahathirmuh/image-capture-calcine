@@ -38,7 +38,14 @@ export async function readScheduleSnapshot(): Promise<ScheduleSnapshot> {
       )
     )
       throw new Error("SCHEDULE_STORAGE_INVALID: Data jadwal tidak valid; periksa backup.");
-    return { ...parsed, serverNow: Date.now() };
+    // Baris "default-<plant>" ikut tertulis ke berkas saat versi pertama
+    // disimpan, tetapi itu bukan keputusan admin -- hanya salinan bawaan pada
+    // hari itu. Selalu diganti bawaan yang berlaku sekarang, supaya perubahan
+    // bawaan (mis. jendela sepanjang interval) tidak tertahan salinan lama.
+    const versions = (parsed.versions as ScheduleVersion[]).map((v) =>
+      v.id === defaultSchedule(v.plant).id ? defaultSchedule(v.plant) : v,
+    );
+    return { ...parsed, versions, serverNow: Date.now() };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return fallback;
     throw error;
