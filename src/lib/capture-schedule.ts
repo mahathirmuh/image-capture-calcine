@@ -57,7 +57,9 @@ export function defaultSchedule(plant: string): ScheduleVersion {
     effectiveDate: "1970-01-01",
     startHour: 2,
     intervalHours: 3,
-    windowMinutes: 120,
+    // Sesi dihitung sebagai RENTANG: 11.00 berlaku sampai 14.00 dimulai, jadi
+    // jendelanya sepanjang interval dan tidak ada jam kosong di antara sesi.
+    windowMinutes: 180,
     timezone: "Asia/Makassar",
     createdAt: "1970-01-01T00:00:00.000Z",
     createdBy: null,

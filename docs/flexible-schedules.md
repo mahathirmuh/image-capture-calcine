@@ -21,3 +21,9 @@ Trial records keep `plant = Acid Plant` and carry `captureTrack: "trial"` in `me
 The spool's "forwarded" marker now matches on the destination path as well as file name, because `02.00 Train 1.jpg` exists in both folders.
 
 Not included: mobile (REST capture/finalize remain regular-only), other plants, and a Gallery filter for the track.
+
+## Default window is the full interval (2026-10-05)
+
+Supersedes "two-hour window" above: the built-in default schedule now uses a 180-minute window, equal to its 3-hour interval. A session is a range — 11.00 stays open until 14.00 starts — so there is no closed hour between sessions. This applies to every plant that has no saved schedule version, on web and on the REST/mobile path (mobile direct capture no longer shows "Session not available" between sessions). A plant with a saved version keeps that version's window; change it in Settings (effective tomorrow). The trial track keeps a 120-minute window, which equals its 2-hour interval.
+
+The two mobile lifecycle suites that assert out-of-window blocking could not be run on this workstation (missing `react-test-renderer` / `mobile/node_modules`) and must be re-run after `npm install`.

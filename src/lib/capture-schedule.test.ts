@@ -143,10 +143,14 @@ describe("trial capture track", () => {
   });
   it("ignores admin schedule versions and always has an open session", () => {
     const versions = versionsForTrack([version], plant, "trial");
-    // 04:30 WITA: no regular window (02.00 closed at 04.00), trial 04.00 is open.
+    // 04:30 WITA: regular is still inside the 02.00 range, trial is in 04.00.
     const now = at("2026-10-06T04:30:00+08:00");
-    expect(activeScheduledContext([legacy], plant, now)).toBeNull();
+    expect(activeScheduledContext([legacy], plant, now)?.label).toBe("02.00");
     expect(activeScheduledContext(versions, plant, now)?.label).toBe("04.00");
+    // 13:10 WITA belongs to the 11.00 range until 14.00 starts.
+    expect(activeScheduledContext([legacy], plant, at("2026-10-06T13:10:00+08:00"))?.label).toBe(
+      "11.00",
+    );
     expect(versionsForTrack([version], plant, "regular")).toEqual([version]);
   });
   it("rejects a regular-only session label on the trial track", () => {
