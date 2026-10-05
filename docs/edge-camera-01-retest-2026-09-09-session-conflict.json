@@ -1,0 +1,535 @@
+{
+  "testedAt": "2026-09-09T04:18:44.705Z",
+  "base": "http://10.60.20.155:3000",
+  "results": [
+    {
+      "name": "health",
+      "path": "/v1/health",
+      "status": 200,
+      "elapsedMs": 157,
+      "data": {
+        "status": "ok",
+        "agentVersion": "0.1.0",
+        "time": "2026-09-09T04:18:24.623Z"
+      }
+    },
+    {
+      "name": "device",
+      "path": "/v1/device",
+      "status": 200,
+      "elapsedMs": 1751,
+      "data": {
+        "deviceId": "edge-camera-01",
+        "agentVersion": "0.1.0",
+        "connectionState": "ready",
+        "capabilities": [
+          "stillCapture",
+          "previewCapture",
+          "configRead",
+          "configWrite",
+          "storageList",
+          "fileDownload",
+          "fileDelete",
+          "autofocus",
+          "manualFocusStep"
+        ],
+        "camera": {
+          "connected": true,
+          "manufacturer": "Canon.Inc",
+          "model": "Canon EOS R50",
+          "serialNumber": "fda936f5d04d4058417bfbb89e7f621",
+          "firmwareVersion": "3-1.4.0"
+        }
+      }
+    },
+    {
+      "name": "status",
+      "path": "/v1/camera/status",
+      "status": 200,
+      "elapsedMs": 7743,
+      "data": {
+        "connectionState": "ready",
+        "batteryLevel": null,
+        "lensName": null,
+        "availableShots": null,
+        "storage": [
+          {
+            "id": "store_00020001",
+            "description": "SD1",
+            "access": "readWrite",
+            "fileSystemType": "Camera layout (DCIM)",
+            "totalBytes": 63831015424,
+            "freeBytes": 59105476608
+          }
+        ],
+        "settings": [
+          {
+            "key": "captureEnabled",
+            "label": "Capture",
+            "type": "toggle",
+            "writable": true,
+            "supported": true,
+            "value": false,
+            "choices": [],
+            "rawPath": "/main/settings/capture"
+          },
+          {
+            "key": "captureTarget",
+            "label": "Capture Target",
+            "type": "enum",
+            "writable": true,
+            "supported": true,
+            "value": "Memory card",
+            "choices": [
+              "Internal RAM",
+              "Memory card"
+            ],
+            "rawPath": "/main/settings/capturetarget"
+          },
+          {
+            "key": "iso",
+            "label": "ISO Speed",
+            "type": "enum",
+            "writable": true,
+            "supported": true,
+            "value": "Auto",
+            "choices": [
+              "Auto",
+              "100",
+              "125",
+              "160",
+              "200",
+              "250",
+              "320",
+              "400",
+              "500",
+              "640",
+              "800",
+              "1000",
+              "1250",
+              "1600",
+              "2000",
+              "2500",
+              "3200",
+              "4000",
+              "5000",
+              "6400",
+              "8000",
+              "10000",
+              "12800",
+              "16000",
+              "20000",
+              "25600",
+              "32000",
+              "51200"
+            ],
+            "rawPath": "/main/imgsettings/iso"
+          },
+          {
+            "key": "shutterSpeed",
+            "label": "Shutter Speed",
+            "type": "enum",
+            "writable": true,
+            "supported": true,
+            "value": "1/100",
+            "choices": [
+              "bulb",
+              "30",
+              "25",
+              "20",
+              "15",
+              "13",
+              "10.3",
+              "8",
+              "6.3",
+              "5",
+              "4",
+              "3.2",
+              "2.5",
+              "2",
+              "1.6",
+              "1.3",
+              "1",
+              "0.8",
+              "0.6",
+              "0.5",
+              "0.4",
+              "0.3",
+              "1/4",
+              "1/5",
+              "1/6",
+              "1/8",
+              "1/10",
+              "1/13",
+              "1/15",
+              "1/20",
+              "1/25",
+              "1/30",
+              "1/40",
+              "1/50",
+              "1/60",
+              "1/80",
+              "1/100",
+              "1/125",
+              "1/160",
+              "1/200",
+              "1/250",
+              "1/320",
+              "1/400",
+              "1/500",
+              "1/640",
+              "1/800",
+              "1/1000",
+              "1/1250",
+              "1/1600",
+              "1/2000",
+              "1/2500",
+              "1/3200",
+              "1/4000"
+            ],
+            "rawPath": "/main/capturesettings/shutterspeed"
+          },
+          {
+            "key": "aperture",
+            "label": "Aperture",
+            "type": "enum",
+            "writable": true,
+            "supported": true,
+            "value": "8",
+            "choices": [
+              "5",
+              "5.6",
+              "6.3",
+              "7.1",
+              "8",
+              "9",
+              "10",
+              "11",
+              "13",
+              "14",
+              "16",
+              "18",
+              "20",
+              "22",
+              "25"
+            ],
+            "rawPath": "/main/capturesettings/aperture"
+          },
+          {
+            "key": "whiteBalance",
+            "label": "WhiteBalance",
+            "type": "enum",
+            "writable": true,
+            "supported": true,
+            "value": "Auto",
+            "choices": [
+              "Auto",
+              "Daylight",
+              "Shadow",
+              "Cloudy",
+              "Tungsten",
+              "Fluorescent",
+              "Flash",
+              "Manual",
+              "Color Temperature",
+              "AWB White"
+            ],
+            "rawPath": "/main/imgsettings/whitebalance"
+          },
+          {
+            "key": "focusMode",
+            "label": "Focus Mode",
+            "type": "enum",
+            "writable": true,
+            "supported": true,
+            "value": "AI Focus",
+            "choices": [
+              "One Shot",
+              "AI Servo",
+              "AI Focus"
+            ],
+            "rawPath": "/main/capturesettings/focusmode"
+          },
+          {
+            "key": "driveMode",
+            "label": "Drive Mode",
+            "type": "enum",
+            "writable": true,
+            "supported": true,
+            "value": "Single",
+            "choices": [
+              "Single",
+              "Super high speed continuous shooting",
+              "Continuous high speed",
+              "Continuous low speed",
+              "Timer 10 sec",
+              "Timer 2 sec",
+              "Continuous timer"
+            ],
+            "rawPath": "/main/capturesettings/drivemode"
+          }
+        ]
+      }
+    },
+    {
+      "name": "configs",
+      "path": "/v1/camera/configs",
+      "status": 200,
+      "elapsedMs": 6949,
+      "data": {
+        "items": [
+          {
+            "key": "captureEnabled",
+            "label": "Capture",
+            "type": "toggle",
+            "writable": true,
+            "supported": true,
+            "value": false,
+            "choices": [],
+            "rawPath": "/main/settings/capture"
+          },
+          {
+            "key": "captureTarget",
+            "label": "Capture Target",
+            "type": "enum",
+            "writable": true,
+            "supported": true,
+            "value": "Memory card",
+            "choices": [
+              "Internal RAM",
+              "Memory card"
+            ],
+            "rawPath": "/main/settings/capturetarget"
+          },
+          {
+            "key": "iso",
+            "label": "ISO Speed",
+            "type": "enum",
+            "writable": true,
+            "supported": true,
+            "value": "Auto",
+            "choices": [
+              "Auto",
+              "100",
+              "125",
+              "160",
+              "200",
+              "250",
+              "320",
+              "400",
+              "500",
+              "640",
+              "800",
+              "1000",
+              "1250",
+              "1600",
+              "2000",
+              "2500",
+              "3200",
+              "4000",
+              "5000",
+              "6400",
+              "8000",
+              "10000",
+              "12800",
+              "16000",
+              "20000",
+              "25600",
+              "32000",
+              "51200"
+            ],
+            "rawPath": "/main/imgsettings/iso"
+          },
+          {
+            "key": "shutterSpeed",
+            "label": "Shutter Speed",
+            "type": "enum",
+            "writable": true,
+            "supported": true,
+            "value": "1/100",
+            "choices": [
+              "bulb",
+              "30",
+              "25",
+              "20",
+              "15",
+              "13",
+              "10.3",
+              "8",
+              "6.3",
+              "5",
+              "4",
+              "3.2",
+              "2.5",
+              "2",
+              "1.6",
+              "1.3",
+              "1",
+              "0.8",
+              "0.6",
+              "0.5",
+              "0.4",
+              "0.3",
+              "1/4",
+              "1/5",
+              "1/6",
+              "1/8",
+              "1/10",
+              "1/13",
+              "1/15",
+              "1/20",
+              "1/25",
+              "1/30",
+              "1/40",
+              "1/50",
+              "1/60",
+              "1/80",
+              "1/100",
+              "1/125",
+              "1/160",
+              "1/200",
+              "1/250",
+              "1/320",
+              "1/400",
+              "1/500",
+              "1/640",
+              "1/800",
+              "1/1000",
+              "1/1250",
+              "1/1600",
+              "1/2000",
+              "1/2500",
+              "1/3200",
+              "1/4000"
+            ],
+            "rawPath": "/main/capturesettings/shutterspeed"
+          },
+          {
+            "key": "aperture",
+            "label": "Aperture",
+            "type": "enum",
+            "writable": true,
+            "supported": true,
+            "value": "8",
+            "choices": [
+              "5",
+              "5.6",
+              "6.3",
+              "7.1",
+              "8",
+              "9",
+              "10",
+              "11",
+              "13",
+              "14",
+              "16",
+              "18",
+              "20",
+              "22",
+              "25"
+            ],
+            "rawPath": "/main/capturesettings/aperture"
+          },
+          {
+            "key": "whiteBalance",
+            "label": "WhiteBalance",
+            "type": "enum",
+            "writable": true,
+            "supported": true,
+            "value": "Auto",
+            "choices": [
+              "Auto",
+              "Daylight",
+              "Shadow",
+              "Cloudy",
+              "Tungsten",
+              "Fluorescent",
+              "Flash",
+              "Manual",
+              "Color Temperature",
+              "AWB White"
+            ],
+            "rawPath": "/main/imgsettings/whitebalance"
+          },
+          {
+            "key": "focusMode",
+            "label": "Focus Mode",
+            "type": "enum",
+            "writable": true,
+            "supported": true,
+            "value": "AI Focus",
+            "choices": [
+              "One Shot",
+              "AI Servo",
+              "AI Focus"
+            ],
+            "rawPath": "/main/capturesettings/focusmode"
+          },
+          {
+            "key": "driveMode",
+            "label": "Drive Mode",
+            "type": "enum",
+            "writable": true,
+            "supported": true,
+            "value": "Single",
+            "choices": [
+              "Single",
+              "Super high speed continuous shooting",
+              "Continuous high speed",
+              "Continuous low speed",
+              "Timer 10 sec",
+              "Timer 2 sec",
+              "Continuous timer"
+            ],
+            "rawPath": "/main/capturesettings/drivemode"
+          }
+        ]
+      }
+    },
+    {
+      "name": "create-session",
+      "path": "/v1/sessions",
+      "status": 409,
+      "elapsedMs": 31,
+      "data": {
+        "code": "SESSION_CONFLICT",
+        "message": "The camera is already leased by another session.",
+        "details": {
+          "sessionId": "fd207998-9eb6-4f17-b822-61bf0aa07313",
+          "ownerType": "operator",
+          "ownerId": "web-5sqa8eye",
+          "expiresAt": "2026-09-09T04:19:31.259Z"
+        }
+      }
+    },
+    {
+      "name": "final-device",
+      "path": "/v1/device",
+      "status": 200,
+      "elapsedMs": 3115,
+      "data": {
+        "deviceId": "edge-camera-01",
+        "agentVersion": "0.1.0",
+        "connectionState": "ready",
+        "capabilities": [
+          "stillCapture",
+          "previewCapture",
+          "configRead",
+          "configWrite",
+          "storageList",
+          "fileDownload",
+          "fileDelete",
+          "autofocus",
+          "manualFocusStep"
+        ],
+        "camera": {
+          "connected": true,
+          "manufacturer": "Canon.Inc",
+          "model": "Canon EOS R50",
+          "serialNumber": "fda936f5d04d4058417bfbb89e7f621",
+          "firmwareVersion": "3-1.4.0"
+        }
+      }
+    }
+  ]
+}

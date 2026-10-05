@@ -15,7 +15,7 @@ services:
     environment:
       # The Camera Control edge API running natively on the Mini PC next to the
       # camera. It is NOT containerised: gphoto2 needs direct USB access to the
-      # Canon, which Docker on Windows cannot reliably pass through.
+      # Canon, which Docker on Windows cannot reliably pass throullgh.
       #
       # This must be an address the CONTAINER can reach. localhost/127.0.0.1
       # would resolve to the container itself, so a real LAN IP is required.

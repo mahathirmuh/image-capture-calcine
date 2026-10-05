@@ -1,0 +1,869 @@
+{
+  "testedAt": "2026-09-09T04:20:59.829Z",
+  "base": "http://10.60.20.155:3000",
+  "results": [
+    {
+      "name": "health",
+      "path": "/v1/health",
+      "status": 200,
+      "elapsedMs": 792,
+      "data": {
+        "status": "ok",
+        "agentVersion": "0.1.0",
+        "time": "2026-09-09T04:20:25.865Z"
+      }
+    },
+    {
+      "name": "device",
+      "path": "/v1/device",
+      "status": 200,
+      "elapsedMs": 1577,
+      "data": {
+        "deviceId": "edge-camera-01",
+        "agentVersion": "0.1.0",
+        "connectionState": "ready",
+        "capabilities": [
+          "stillCapture",
+          "previewCapture",
+          "configRead",
+          "configWrite",
+          "storageList",
+          "fileDownload",
+          "fileDelete",
+          "autofocus",
+          "manualFocusStep"
+        ],
+        "camera": {
+          "connected": true,
+          "manufacturer": "Canon.Inc",
+          "model": "Canon EOS R50",
+          "serialNumber": "fda936f5d04d4058417bfbb89e7f621",
+          "firmwareVersion": "3-1.4.0"
+        }
+      }
+    },
+    {
+      "name": "status",
+      "path": "/v1/camera/status",
+      "status": 200,
+      "elapsedMs": 7101,
+      "data": {
+        "connectionState": "ready",
+        "batteryLevel": null,
+        "lensName": null,
+        "availableShots": null,
+        "storage": [
+          {
+            "id": "store_00020001",
+            "description": "SD1",
+            "access": "readWrite",
+            "fileSystemType": "Camera layout (DCIM)",
+            "totalBytes": 63831015424,
+            "freeBytes": 59105476608
+          }
+        ],
+        "settings": [
+          {
+            "key": "captureEnabled",
+            "label": "Capture",
+            "type": "toggle",
+            "writable": true,
+            "supported": true,
+            "value": false,
+            "choices": [],
+            "rawPath": "/main/settings/capture"
+          },
+          {
+            "key": "captureTarget",
+            "label": "Capture Target",
+            "type": "enum",
+            "writable": true,
+            "supported": true,
+            "value": "Memory card",
+            "choices": [
+              "Internal RAM",
+              "Memory card"
+            ],
+            "rawPath": "/main/settings/capturetarget"
+          },
+          {
+            "key": "iso",
+            "label": "ISO Speed",
+            "type": "enum",
+            "writable": true,
+            "supported": true,
+            "value": "Auto",
+            "choices": [
+              "Auto",
+              "100",
+              "125",
+              "160",
+              "200",
+              "250",
+              "320",
+              "400",
+              "500",
+              "640",
+              "800",
+              "1000",
+              "1250",
+              "1600",
+              "2000",
+              "2500",
+              "3200",
+              "4000",
+              "5000",
+              "6400",
+              "8000",
+              "10000",
+              "12800",
+              "16000",
+              "20000",
+              "25600",
+              "32000",
+              "51200"
+            ],
+            "rawPath": "/main/imgsettings/iso"
+          },
+          {
+            "key": "shutterSpeed",
+            "label": "Shutter Speed",
+            "type": "enum",
+            "writable": true,
+            "supported": true,
+            "value": "1/100",
+            "choices": [
+              "bulb",
+              "30",
+              "25",
+              "20",
+              "15",
+              "13",
+              "10.3",
+              "8",
+              "6.3",
+              "5",
+              "4",
+              "3.2",
+              "2.5",
+              "2",
+              "1.6",
+              "1.3",
+              "1",
+              "0.8",
+              "0.6",
+              "0.5",
+              "0.4",
+              "0.3",
+              "1/4",
+              "1/5",
+              "1/6",
+              "1/8",
+              "1/10",
+              "1/13",
+              "1/15",
+              "1/20",
+              "1/25",
+              "1/30",
+              "1/40",
+              "1/50",
+              "1/60",
+              "1/80",
+              "1/100",
+              "1/125",
+              "1/160",
+              "1/200",
+              "1/250",
+              "1/320",
+              "1/400",
+              "1/500",
+              "1/640",
+              "1/800",
+              "1/1000",
+              "1/1250",
+              "1/1600",
+              "1/2000",
+              "1/2500",
+              "1/3200",
+              "1/4000"
+            ],
+            "rawPath": "/main/capturesettings/shutterspeed"
+          },
+          {
+            "key": "aperture",
+            "label": "Aperture",
+            "type": "enum",
+            "writable": true,
+            "supported": true,
+            "value": "8",
+            "choices": [
+              "5",
+              "5.6",
+              "6.3",
+              "7.1",
+              "8",
+              "9",
+              "10",
+              "11",
+              "13",
+              "14",
+              "16",
+              "18",
+              "20",
+              "22",
+              "25"
+            ],
+            "rawPath": "/main/capturesettings/aperture"
+          },
+          {
+            "key": "whiteBalance",
+            "label": "WhiteBalance",
+            "type": "enum",
+            "writable": true,
+            "supported": true,
+            "value": "Auto",
+            "choices": [
+              "Auto",
+              "Daylight",
+              "Shadow",
+              "Cloudy",
+              "Tungsten",
+              "Fluorescent",
+              "Flash",
+              "Manual",
+              "Color Temperature",
+              "AWB White"
+            ],
+            "rawPath": "/main/imgsettings/whitebalance"
+          },
+          {
+            "key": "focusMode",
+            "label": "Focus Mode",
+            "type": "enum",
+            "writable": true,
+            "supported": true,
+            "value": "AI Focus",
+            "choices": [
+              "One Shot",
+              "AI Servo",
+              "AI Focus"
+            ],
+            "rawPath": "/main/capturesettings/focusmode"
+          },
+          {
+            "key": "driveMode",
+            "label": "Drive Mode",
+            "type": "enum",
+            "writable": true,
+            "supported": true,
+            "value": "Single",
+            "choices": [
+              "Single",
+              "Super high speed continuous shooting",
+              "Continuous high speed",
+              "Continuous low speed",
+              "Timer 10 sec",
+              "Timer 2 sec",
+              "Continuous timer"
+            ],
+            "rawPath": "/main/capturesettings/drivemode"
+          }
+        ]
+      }
+    },
+    {
+      "name": "configs",
+      "path": "/v1/camera/configs",
+      "status": 200,
+      "elapsedMs": 5700,
+      "data": {
+        "items": [
+          {
+            "key": "captureEnabled",
+            "label": "Capture",
+            "type": "toggle",
+            "writable": true,
+            "supported": true,
+            "value": false,
+            "choices": [],
+            "rawPath": "/main/settings/capture"
+          },
+          {
+            "key": "captureTarget",
+            "label": "Capture Target",
+            "type": "enum",
+            "writable": true,
+            "supported": true,
+            "value": "Memory card",
+            "choices": [
+              "Internal RAM",
+              "Memory card"
+            ],
+            "rawPath": "/main/settings/capturetarget"
+          },
+          {
+            "key": "iso",
+            "label": "ISO Speed",
+            "type": "enum",
+            "writable": true,
+            "supported": true,
+            "value": "Auto",
+            "choices": [
+              "Auto",
+              "100",
+              "125",
+              "160",
+              "200",
+              "250",
+              "320",
+              "400",
+              "500",
+              "640",
+              "800",
+              "1000",
+              "1250",
+              "1600",
+              "2000",
+              "2500",
+              "3200",
+              "4000",
+              "5000",
+              "6400",
+              "8000",
+              "10000",
+              "12800",
+              "16000",
+              "20000",
+              "25600",
+              "32000",
+              "51200"
+            ],
+            "rawPath": "/main/imgsettings/iso"
+          },
+          {
+            "key": "shutterSpeed",
+            "label": "Shutter Speed",
+            "type": "enum",
+            "writable": true,
+            "supported": true,
+            "value": "1/100",
+            "choices": [
+              "bulb",
+              "30",
+              "25",
+              "20",
+              "15",
+              "13",
+              "10.3",
+              "8",
+              "6.3",
+              "5",
+              "4",
+              "3.2",
+              "2.5",
+              "2",
+              "1.6",
+              "1.3",
+              "1",
+              "0.8",
+              "0.6",
+              "0.5",
+              "0.4",
+              "0.3",
+              "1/4",
+              "1/5",
+              "1/6",
+              "1/8",
+              "1/10",
+              "1/13",
+              "1/15",
+              "1/20",
+              "1/25",
+              "1/30",
+              "1/40",
+              "1/50",
+              "1/60",
+              "1/80",
+              "1/100",
+              "1/125",
+              "1/160",
+              "1/200",
+              "1/250",
+              "1/320",
+              "1/400",
+              "1/500",
+              "1/640",
+              "1/800",
+              "1/1000",
+              "1/1250",
+              "1/1600",
+              "1/2000",
+              "1/2500",
+              "1/3200",
+              "1/4000"
+            ],
+            "rawPath": "/main/capturesettings/shutterspeed"
+          },
+          {
+            "key": "aperture",
+            "label": "Aperture",
+            "type": "enum",
+            "writable": true,
+            "supported": true,
+            "value": "8",
+            "choices": [
+              "5",
+              "5.6",
+              "6.3",
+              "7.1",
+              "8",
+              "9",
+              "10",
+              "11",
+              "13",
+              "14",
+              "16",
+              "18",
+              "20",
+              "22",
+              "25"
+            ],
+            "rawPath": "/main/capturesettings/aperture"
+          },
+          {
+            "key": "whiteBalance",
+            "label": "WhiteBalance",
+            "type": "enum",
+            "writable": true,
+            "supported": true,
+            "value": "Auto",
+            "choices": [
+              "Auto",
+              "Daylight",
+              "Shadow",
+              "Cloudy",
+              "Tungsten",
+              "Fluorescent",
+              "Flash",
+              "Manual",
+              "Color Temperature",
+              "AWB White"
+            ],
+            "rawPath": "/main/imgsettings/whitebalance"
+          },
+          {
+            "key": "focusMode",
+            "label": "Focus Mode",
+            "type": "enum",
+            "writable": true,
+            "supported": true,
+            "value": "AI Focus",
+            "choices": [
+              "One Shot",
+              "AI Servo",
+              "AI Focus"
+            ],
+            "rawPath": "/main/capturesettings/focusmode"
+          },
+          {
+            "key": "driveMode",
+            "label": "Drive Mode",
+            "type": "enum",
+            "writable": true,
+            "supported": true,
+            "value": "Single",
+            "choices": [
+              "Single",
+              "Super high speed continuous shooting",
+              "Continuous high speed",
+              "Continuous low speed",
+              "Timer 10 sec",
+              "Timer 2 sec",
+              "Continuous timer"
+            ],
+            "rawPath": "/main/capturesettings/drivemode"
+          }
+        ]
+      }
+    },
+    {
+      "name": "create-session",
+      "path": "/v1/sessions",
+      "status": 201,
+      "elapsedMs": 19,
+      "data": {
+        "sessionId": "77ead02f-4f34-436a-b81b-9758422a21cf",
+        "leaseToken": "[redacted]",
+        "ownerType": "automation",
+        "ownerId": "authorized-edge-camera-01-retest",
+        "status": "active",
+        "createdAt": "2026-09-09T04:20:40.318Z",
+        "expiresAt": "2026-09-09T04:25:40.318Z"
+      }
+    },
+    {
+      "name": "renew-session",
+      "path": "/v1/sessions/77ead02f-4f34-436a-b81b-9758422a21cf/renew",
+      "status": 200,
+      "elapsedMs": 13,
+      "data": {
+        "sessionId": "77ead02f-4f34-436a-b81b-9758422a21cf",
+        "leaseToken": "[redacted]",
+        "ownerType": "automation",
+        "ownerId": "authorized-edge-camera-01-retest",
+        "status": "active",
+        "createdAt": "2026-09-09T04:20:40.318Z",
+        "expiresAt": "2026-09-09T04:25:40.332Z"
+      }
+    },
+    {
+      "name": "storage",
+      "path": "/v1/storage/volumes",
+      "status": 200,
+      "elapsedMs": 1442,
+      "data": {
+        "items": [
+          {
+            "id": "store_00020001",
+            "description": "SD1",
+            "access": "readWrite",
+            "fileSystemType": "Camera layout (DCIM)",
+            "totalBytes": 63831015424,
+            "freeBytes": 59105476608
+          }
+        ]
+      }
+    },
+    {
+      "name": "preview-1",
+      "path": "/v1/camera/preview",
+      "status": 200,
+      "elapsedMs": 1077,
+      "data": {
+        "bytes": 109287,
+        "contentType": "image/jpeg",
+        "jpegSignature": "ffd8ff"
+      }
+    },
+    {
+      "name": "preview-2",
+      "path": "/v1/camera/preview",
+      "status": 200,
+      "elapsedMs": 832,
+      "data": {
+        "bytes": 109040,
+        "contentType": "image/jpeg",
+        "jpegSignature": "ffd8ff"
+      }
+    },
+    {
+      "name": "preview-3",
+      "path": "/v1/camera/preview",
+      "status": 200,
+      "elapsedMs": 793,
+      "data": {
+        "bytes": 109415,
+        "contentType": "image/jpeg",
+        "jpegSignature": "ffd8ff"
+      }
+    },
+    {
+      "name": "autofocus",
+      "path": "/v1/camera/focus/autofocus",
+      "status": 202,
+      "elapsedMs": 24,
+      "data": {
+        "jobId": "8652ffbd-2e1c-4792-b90f-645a64c5f2c1",
+        "status": "queued",
+        "type": "autofocus"
+      }
+    },
+    {
+      "name": "autofocus-job",
+      "path": "/v1/jobs/8652ffbd-2e1c-4792-b90f-645a64c5f2c1",
+      "status": 200,
+      "elapsedMs": 6,
+      "data": {
+        "jobId": "8652ffbd-2e1c-4792-b90f-645a64c5f2c1",
+        "type": "autofocus",
+        "status": "running",
+        "createdAt": "2026-09-09T04:20:47.526Z",
+        "startedAt": "2026-09-09T04:20:47.540Z",
+        "finishedAt": null,
+        "result": null,
+        "error": null
+      }
+    },
+    {
+      "name": "autofocus-job",
+      "path": "/v1/jobs/8652ffbd-2e1c-4792-b90f-645a64c5f2c1",
+      "status": 200,
+      "elapsedMs": 7,
+      "data": {
+        "jobId": "8652ffbd-2e1c-4792-b90f-645a64c5f2c1",
+        "type": "autofocus",
+        "status": "succeeded",
+        "createdAt": "2026-09-09T04:20:47.526Z",
+        "startedAt": "2026-09-09T04:20:47.540Z",
+        "finishedAt": "2026-09-09T04:20:48.148Z",
+        "result": {
+          "ok": true
+        },
+        "error": null
+      }
+    },
+    {
+      "name": "capture",
+      "path": "/v1/captures",
+      "status": 202,
+      "elapsedMs": 27,
+      "data": {
+        "jobId": "6b4cc054-e20d-4a0a-8f89-721f9b913570",
+        "status": "queued",
+        "type": "captureStill"
+      }
+    },
+    {
+      "name": "capture-job",
+      "path": "/v1/jobs/6b4cc054-e20d-4a0a-8f89-721f9b913570",
+      "status": 200,
+      "elapsedMs": 7,
+      "data": {
+        "jobId": "6b4cc054-e20d-4a0a-8f89-721f9b913570",
+        "type": "captureStill",
+        "status": "running",
+        "createdAt": "2026-09-09T04:20:48.574Z",
+        "startedAt": "2026-09-09T04:20:48.589Z",
+        "finishedAt": null,
+        "result": null,
+        "error": null
+      }
+    },
+    {
+      "name": "capture-job",
+      "path": "/v1/jobs/6b4cc054-e20d-4a0a-8f89-721f9b913570",
+      "status": 200,
+      "elapsedMs": 7,
+      "data": {
+        "jobId": "6b4cc054-e20d-4a0a-8f89-721f9b913570",
+        "type": "captureStill",
+        "status": "running",
+        "createdAt": "2026-09-09T04:20:48.574Z",
+        "startedAt": "2026-09-09T04:20:48.589Z",
+        "finishedAt": null,
+        "result": null,
+        "error": null
+      }
+    },
+    {
+      "name": "capture-job",
+      "path": "/v1/jobs/6b4cc054-e20d-4a0a-8f89-721f9b913570",
+      "status": 200,
+      "elapsedMs": 13,
+      "data": {
+        "jobId": "6b4cc054-e20d-4a0a-8f89-721f9b913570",
+        "type": "captureStill",
+        "status": "running",
+        "createdAt": "2026-09-09T04:20:48.574Z",
+        "startedAt": "2026-09-09T04:20:48.589Z",
+        "finishedAt": null,
+        "result": null,
+        "error": null
+      }
+    },
+    {
+      "name": "capture-job",
+      "path": "/v1/jobs/6b4cc054-e20d-4a0a-8f89-721f9b913570",
+      "status": 200,
+      "elapsedMs": 58,
+      "data": {
+        "jobId": "6b4cc054-e20d-4a0a-8f89-721f9b913570",
+        "type": "captureStill",
+        "status": "running",
+        "createdAt": "2026-09-09T04:20:48.574Z",
+        "startedAt": "2026-09-09T04:20:48.589Z",
+        "finishedAt": null,
+        "result": null,
+        "error": null
+      }
+    },
+    {
+      "name": "capture-job",
+      "path": "/v1/jobs/6b4cc054-e20d-4a0a-8f89-721f9b913570",
+      "status": 200,
+      "elapsedMs": 37,
+      "data": {
+        "jobId": "6b4cc054-e20d-4a0a-8f89-721f9b913570",
+        "type": "captureStill",
+        "status": "running",
+        "createdAt": "2026-09-09T04:20:48.574Z",
+        "startedAt": "2026-09-09T04:20:48.589Z",
+        "finishedAt": null,
+        "result": null,
+        "error": null
+      }
+    },
+    {
+      "name": "capture-job",
+      "path": "/v1/jobs/6b4cc054-e20d-4a0a-8f89-721f9b913570",
+      "status": 200,
+      "elapsedMs": 15,
+      "data": {
+        "jobId": "6b4cc054-e20d-4a0a-8f89-721f9b913570",
+        "type": "captureStill",
+        "status": "running",
+        "createdAt": "2026-09-09T04:20:48.574Z",
+        "startedAt": "2026-09-09T04:20:48.589Z",
+        "finishedAt": null,
+        "result": null,
+        "error": null
+      }
+    },
+    {
+      "name": "capture-job",
+      "path": "/v1/jobs/6b4cc054-e20d-4a0a-8f89-721f9b913570",
+      "status": 200,
+      "elapsedMs": 65,
+      "data": {
+        "jobId": "6b4cc054-e20d-4a0a-8f89-721f9b913570",
+        "type": "captureStill",
+        "status": "running",
+        "createdAt": "2026-09-09T04:20:48.574Z",
+        "startedAt": "2026-09-09T04:20:48.589Z",
+        "finishedAt": null,
+        "result": null,
+        "error": null
+      }
+    },
+    {
+      "name": "capture-job",
+      "path": "/v1/jobs/6b4cc054-e20d-4a0a-8f89-721f9b913570",
+      "status": 200,
+      "elapsedMs": 33,
+      "data": {
+        "jobId": "6b4cc054-e20d-4a0a-8f89-721f9b913570",
+        "type": "captureStill",
+        "status": "running",
+        "createdAt": "2026-09-09T04:20:48.574Z",
+        "startedAt": "2026-09-09T04:20:48.589Z",
+        "finishedAt": null,
+        "result": null,
+        "error": null
+      }
+    },
+    {
+      "name": "capture-job",
+      "path": "/v1/jobs/6b4cc054-e20d-4a0a-8f89-721f9b913570",
+      "status": 200,
+      "elapsedMs": 10,
+      "data": {
+        "jobId": "6b4cc054-e20d-4a0a-8f89-721f9b913570",
+        "type": "captureStill",
+        "status": "running",
+        "createdAt": "2026-09-09T04:20:48.574Z",
+        "startedAt": "2026-09-09T04:20:48.589Z",
+        "finishedAt": null,
+        "result": null,
+        "error": null
+      }
+    },
+    {
+      "name": "capture-job",
+      "path": "/v1/jobs/6b4cc054-e20d-4a0a-8f89-721f9b913570",
+      "status": 200,
+      "elapsedMs": 12,
+      "data": {
+        "jobId": "6b4cc054-e20d-4a0a-8f89-721f9b913570",
+        "type": "captureStill",
+        "status": "succeeded",
+        "createdAt": "2026-09-09T04:20:48.574Z",
+        "startedAt": "2026-09-09T04:20:48.589Z",
+        "finishedAt": "2026-09-09T04:20:57.890Z",
+        "result": {
+          "cameraPath": "/store_00020001/DCIM/100CANON/IMG_0564.JPG",
+          "asset": {
+            "assetId": "57110534-3969-4862-81ce-53e5d520a2a4",
+            "filename": "capture-d67c784a-e517-4d9d-b89a-61a4cddc37c7.jpg",
+            "mimeType": "image/jpeg",
+            "sizeBytes": 2892701,
+            "localPath": "data/media/capture-d67c784a-e517-4d9d-b89a-61a4cddc37c7.jpg",
+            "cameraPath": "/store_00020001/DCIM/100CANON/IMG_0564.JPG",
+            "sha256": "051a2231293ed040e3ab285746d8565f9e53765beccfd38aa82b2b41cc066a0f",
+            "createdAt": "2026-09-09T04:20:57.875Z"
+          },
+          "storedOnCamera": true,
+          "storedLocally": true
+        },
+        "error": null
+      }
+    },
+    {
+      "name": "media",
+      "path": "/v1/media/57110534-3969-4862-81ce-53e5d520a2a4",
+      "status": 200,
+      "elapsedMs": 9,
+      "data": {
+        "assetId": "57110534-3969-4862-81ce-53e5d520a2a4",
+        "filename": "capture-d67c784a-e517-4d9d-b89a-61a4cddc37c7.jpg",
+        "mimeType": "image/jpeg",
+        "sizeBytes": 2892701,
+        "localPath": "data/media/capture-d67c784a-e517-4d9d-b89a-61a4cddc37c7.jpg",
+        "cameraPath": "/store_00020001/DCIM/100CANON/IMG_0564.JPG",
+        "sha256": "051a2231293ed040e3ab285746d8565f9e53765beccfd38aa82b2b41cc066a0f",
+        "createdAt": "2026-09-09T04:20:57.875Z"
+      }
+    },
+    {
+      "name": "capture-image",
+      "path": "/v1/media/57110534-3969-4862-81ce-53e5d520a2a4/content",
+      "status": 200,
+      "elapsedMs": 178,
+      "data": {
+        "bytes": 2892701,
+        "contentType": "image/jpeg",
+        "jpegSignature": "ffd8ff"
+      }
+    },
+    {
+      "name": "release-session",
+      "path": "/v1/sessions/77ead02f-4f34-436a-b81b-9758422a21cf",
+      "status": 204,
+      "elapsedMs": 23,
+      "data": ""
+    },
+    {
+      "name": "final-device",
+      "path": "/v1/device",
+      "status": 200,
+      "elapsedMs": 1176,
+      "data": {
+        "deviceId": "edge-camera-01",
+        "agentVersion": "0.1.0",
+        "connectionState": "ready",
+        "capabilities": [
+          "stillCapture",
+          "previewCapture",
+          "configRead",
+          "configWrite",
+          "storageList",
+          "fileDownload",
+          "fileDelete",
+          "autofocus",
+          "manualFocusStep"
+        ],
+        "camera": {
+          "connected": true,
+          "manufacturer": "Canon.Inc",
+          "model": "Canon EOS R50",
+          "serialNumber": "fda936f5d04d4058417bfbb89e7f621",
+          "firmwareVersion": "3-1.4.0"
+        }
+      }
+    }
+  ],
+  "downloadVerification": {
+    "sizeMatches": true,
+    "sha256Matches": true,
+    "sha256": "051a2231293ed040e3ab285746d8565f9e53765beccfd38aa82b2b41cc066a0f"
+  }
+}
