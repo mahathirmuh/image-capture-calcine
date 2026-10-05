@@ -199,7 +199,13 @@ async function mountDirect(hour = 14, minute = 0, second = 0) {
     session,
     data:
       path === "/schedules"
-        ? { revision: 0, serverNow: Date.now(), versions: [defaultSchedule("Acid Plant")] }
+        ? {
+            revision: 0,
+            serverNow: Date.now(),
+            // A saved schedule with a closed hour between sessions; the built-in
+            // default now keeps a session open until the next one starts.
+            versions: [{ ...defaultSchedule("Acid Plant"), windowMinutes: 120 }],
+          }
         : path === "/camera/session"
           ? {
               ...lease,

@@ -507,7 +507,7 @@ Sources: functional specification, technical plan, product principles, root Open
 - [x] REST: `track` on `POST /camera/capture`, carried in the signed receipt; finalize derives the `Acid Plant Trial` folder and `captureTrack` from the receipt; `GET /sessions?track=trial`.
 - [x] Mobile: `3-Hour Sessions` / `2-Hour Trial` tabs on Today Sessions and direct Capture for Acid Plant (and ALL accounts on Today Sessions); latest-result lookup filtered by track. Version 1.2.0 / versionCode 3.
 - [x] OpenAPI updated for the new parameter, body field and record field.
-- [ ] Re-run `automatic-capture-session` and `mobile-capture-lifecycle` suites after `npm install` (root and mobile).
+- [x] Re-run `automatic-capture-session` and `mobile-capture-lifecycle` suites after installing dependencies: 5 assertions that encoded the old closed hour were updated (legacy fallback now 3-hour ranges; lifecycle tests use a saved 120-minute schedule to keep exercising window expiry). Full run: 48 suites / 408 tests pass. Mobile `tsc -b` passes and `vite build` succeeds with a placeholder API URL.
 - [ ] Build and install APK 1.2.0; physical capture on both tabs with files confirmed in both share folders.
 
 Verification: 43 suites / 378 tests pass; the two mobile suites above plus two web hook suites cannot load on this workstation (missing `react-test-renderer`, no `mobile/node_modules`) and are therefore unverified against this change. Root and mobile `tsc` report no new errors in the touched files (mobile checked without installed dependencies). Changed sources pass Prettier with line endings ignored. No mobile build, APK, browser run, camera capture or share write was performed.
