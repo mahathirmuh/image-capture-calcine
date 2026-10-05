@@ -76,13 +76,13 @@ export const Route = createFileRoute("/capture")({
   component: CapturePage,
   head: () => ({
     meta: [
-      { title: "Capture â€” Capture App" },
+      { title: "Capture — Capture App" },
       {
         name: "description",
         content:
           "Ambil gambar dari kamera, lihat preview, lalu simpan ke folder pilihan dengan format nama file kustom.",
       },
-      { property: "og:title", content: "Capture â€” Capture App" },
+      { property: "og:title", content: "Capture — Capture App" },
       {
         property: "og:description",
         content:
@@ -844,7 +844,7 @@ function CapturePage() {
           // capture isn't lost, but say so, the same way the folder tier's
           // own failure gets a banner rather than failing silently.
           setError(
-            `Network save dari app server gagal (${saved.message}) â€” mencoba jalur simpan fallback.`,
+            `Network save dari app server gagal (${saved.message}) — mencoba jalur simpan fallback.`,
           );
           fallbackReasons.push(`app-network:${saved.code}`);
           void logOperationalEvent(
@@ -901,7 +901,7 @@ function CapturePage() {
           parentDir = null;
           if (!permissionAlreadyReported) {
             setError(
-              `Folder jaringan tidak tersedia (${getErrorMessage(error, "error tidak diketahui")}) â€” hasil capture diunduh lokal sebagai gantinya. Pindahkan manual ke shared folder bila diperlukan.`,
+              `Folder jaringan tidak tersedia (${getErrorMessage(error, "error tidak diketahui")}) — hasil capture diunduh lokal sebagai gantinya. Pindahkan manual ke shared folder bila diperlukan.`,
             );
           }
           fallbackReasons.push("browser-folder:write-failed");
@@ -944,7 +944,7 @@ function CapturePage() {
         } else {
           setStatus(`${binLabel(bin)} tersimpan ke folder browser: ${savedNetworkPath}`);
           toast.warning(`${binLabel(bin)} tersimpan ke folder browser`, {
-            description: `${savedNetworkPath} â€” belum masuk folder jaringan.`,
+            description: `${savedNetworkPath} — belum masuk folder jaringan.`,
           });
         }
       } else {
@@ -954,7 +954,7 @@ function CapturePage() {
         a.download = filename;
         a.click();
         URL.revokeObjectURL(url);
-        setStatus(`${binLabel(bin)} diunduh lokal: ${filename} â€” belum masuk folder jaringan.`);
+        setStatus(`${binLabel(bin)} diunduh lokal: ${filename} — belum masuk folder jaringan.`);
         toast.warning(`${binLabel(bin)} diunduh lokal`, {
           description: `${filename} belum masuk folder jaringan. Pindahkan manual bila diperlukan.`,
         });
@@ -1192,7 +1192,7 @@ function CapturePage() {
         : sessionSummary.detail,
       hint:
         prioritizedSessionIssue && sessionIssue
-          ? `${prioritizedSessionIssue.title} Â· ${formatRelativeTime(sessionIssue.updatedAt)}`
+          ? `${prioritizedSessionIssue.title} · ${formatRelativeTime(sessionIssue.updatedAt)}`
           : "Lease akan diperbarui otomatis selama tab aktif.",
       icon: Activity,
       tone: sessionSummary.tone === "info" ? ("warning" as const) : sessionSummary.tone,
@@ -1356,7 +1356,7 @@ function CapturePage() {
               jaringan dan biasanya berhasil. Yang disebut sekarang hanya
               perannya: cadangan kedua, dipakai kalau yang utama gagal. */}
           <span>
-            Folder simpan di browser belum dipilih. Ini cuma cadangan â€” dipakai kalau folder
+            Folder simpan di browser belum dipilih. Ini cuma cadangan — dipakai kalau folder
             jaringan sedang tidak bisa diakses. Tanpa folder ini, capture yang gagal masuk jaringan
             akan diunduh ke folder `Downloads` dan harus dipindahkan manual.
           </span>
@@ -1527,14 +1527,14 @@ function CapturePage() {
                 ) : (
                   <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
                     {sessionStarting
-                      ? "Menghubungkan ke kameraâ€¦"
+                      ? "Menghubungkan ke kamera…"
                       : cameraAsleep
-                        ? "Kamera tidak meresponsâ€¦"
+                        ? "Kamera tidak merespons…"
                         : !sessionId
                           ? "Kamera belum aktif"
                           : livePreview
-                            ? "Menunggu previewâ€¦"
-                            : "Live preview mati â€” capture tetap bisa dijalankan"}
+                            ? "Menunggu preview…"
+                            : "Live preview mati — capture tetap bisa dijalankan"}
                   </div>
                 )}
               </div>
@@ -1572,9 +1572,9 @@ function CapturePage() {
                   className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
                 >
                   {isSaving
-                    ? "Menyimpanâ€¦"
+                    ? "Menyimpan…"
                     : isCapturing
-                      ? "Mengambilâ€¦"
+                      ? "Mengambil…"
                       : showFrozen
                         ? `Ambil ulang ${binLabel(bin)}`
                         : `Capture ${binLabel(bin)}`}
@@ -1591,7 +1591,7 @@ function CapturePage() {
             <>
               <span className="inline-flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm text-amber-700">
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
-                Kamera sedang dipakai station lain, menunggu giliran untuk terhubungâ€¦
+                Kamera sedang dipakai station lain, menunggu giliran untuk terhubung…
               </span>
               <button
                 onClick={cancelStart}
@@ -1606,7 +1606,7 @@ function CapturePage() {
               disabled={sessionStarting}
               className="rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
             >
-              {sessionStarting ? "Menghubungkanâ€¦" : "Mulai kamera"}
+              {sessionStarting ? "Menghubungkan…" : "Mulai kamera"}
             </button>
           )
         ) : (
@@ -1640,7 +1640,7 @@ function CapturePage() {
             className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
           >
             <Camera className="h-3.5 w-3.5" />
-            {previewFetching ? "Mengambilâ€¦" : "Ambil 1 frame"}
+            {previewFetching ? "Mengambil…" : "Ambil 1 frame"}
           </button>
         )}
         <button
@@ -1650,7 +1650,7 @@ function CapturePage() {
           className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
         >
           <Crosshair className="h-3.5 w-3.5" />
-          {autofocusing ? "Memfokuskanâ€¦" : "Autofocus"}
+          {autofocusing ? "Memfokuskan…" : "Autofocus"}
         </button>
       </div>
 
@@ -1690,9 +1690,9 @@ function CapturePage() {
                 )}
                 <span className="text-sm text-muted-foreground">
                   {dirName
-                    ? `${dirName}${pendingReconnect ? " (izin diperlukan)" : " Â· diingat"}`
+                    ? `${dirName}${pendingReconnect ? " (izin diperlukan)" : " · diingat"}`
                     : fsUnsupportedNote
-                      ? "Tidak didukung â€” akan diunduh"
+                      ? "Tidak didukung — akan diunduh"
                       : "Belum ada folder dipilih"}
                 </span>
               </div>
@@ -1770,7 +1770,7 @@ function CapturePage() {
                       rendered until after hydration -- the server's HH.mm and the
                       browser's would differ by the time hydration runs, and React
                       would throw a text-mismatch (#418) on this node. */}
-                Contoh: <span className="font-mono">{hydrated ? nextFilename : "â€”"}</span>
+                Contoh: <span className="font-mono">{hydrated ? nextFilename : "—"}</span>
               </p>
             </div>
 
@@ -1797,7 +1797,7 @@ function CapturePage() {
           </div>
 
           <div className="mt-4 rounded-md bg-muted px-3 py-2 text-xs font-mono break-all">
-            File berikutnya akan disimpan sebagai: {hydrated ? nextFilename : "â€”"}
+            File berikutnya akan disimpan sebagai: {hydrated ? nextFilename : "—"}
           </div>
         </section>
       )}
