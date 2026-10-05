@@ -39,3 +39,8 @@ Device Code is read-only and detected from the entered Camera API endpoint on bl
 ## Gallery viewing scope (2026-09-09)
 
 Only the authenticated server response establishes gallery visibility. Single-plant users see their plant; Superadmin and explicit ALL users see all. Keep the existing layout while stating the scope under the title. Loading or denied scope must not expose local cache or look like a successful empty gallery. Filters, visible counts, CSV and thumbnails follow the authorized records; retain hidden cache without displaying it. Gallery state is reset on account changes. Device-control restrictions remain separate from gallery viewing permissions.
+
+
+## Flexible schedule settings (2026-10-05)
+
+Reuse the existing Settings card layout, shared Radix Select and theme tokens. The admin form owns plant/start/interval/window/timezone/effective-date values, preview and historical versions; mobile remains operator-only. Date uses a typed ISO YYYY-MM-DD field to keep parsing deterministic across locales. Errors remain visible, entered values survive failure, duplicate saves are blocked, and plant switching is disabled until dirty changes are saved/cancelled. Toast owner is Sonner. Schedule arithmetic is shared; server timestamps own session availability. Existing device-level schedule labels are legacy metadata and do not override plant schedules.

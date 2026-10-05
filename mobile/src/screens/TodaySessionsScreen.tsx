@@ -5,7 +5,6 @@ import type { AuthSession } from "../lib/auth";
 import { MobileAuthError } from "../lib/auth";
 import {
   getSessionCoverage,
-  localDateKey,
   mapSessionCoverageToView,
   type TodaySessionItem,
 } from "../lib/sessionCoverage";
@@ -28,6 +27,8 @@ function formatCoverageDate(isoDate: string) {
 
 function statusMeta(status: TodaySessionItem["status"]) {
   switch (status) {
+    case "open":
+      return { label: "Open", icon: "photo_camera", tone: "upcoming" as const };
     case "completed":
       return { label: "Completed", icon: "check_circle", tone: "completed" as const };
     case "missing":
@@ -59,6 +60,10 @@ export function TodaySessionsScreen({
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<ReturnType<typeof mapSessionCoverageToView> | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
+  useEffect(() => {
+    const timer = window.setInterval(() => setReloadToken((value) => value + 1), 60000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -71,7 +76,8 @@ export function TodaySessionsScreen({
         const plant =
           session.user.plant && session.user.plant !== "ALL" ? session.user.plant : null;
         const response = await getSessionCoverage(session, {
-          date: localDateKey(new Date()),
+          // Backend supplies the plant-local date.
+          date: undefined,
           plant,
         });
         if (cancelled) return;
@@ -95,6 +101,7 @@ export function TodaySessionsScreen({
   const summaryItems = useMemo(() => {
     if (!view) return [];
     return [
+      { label: "Open", count: view.summary.open, tone: "upcoming" as const },
       { label: "Completed", count: view.summary.completed, tone: "completed" as const },
       { label: "Missing", count: view.summary.missing, tone: "missing" as const },
       { label: "Upcoming", count: view.summary.upcoming, tone: "upcoming" as const },
@@ -185,6 +192,8 @@ export function TodaySessionsScreen({
                       type="button"
                       className={`session-card session-card--${meta.tone}`}
                       onClick={() => onSelectSession(item)}
+                      disabled={item.status === "upcoming"}
+                      aria-label={`${item.displayTime} ${item.location}: ${meta.label}`}
                     >
                       <div className="session-card__body">
                         <span className="session-card__time">{item.displayTime}</span>

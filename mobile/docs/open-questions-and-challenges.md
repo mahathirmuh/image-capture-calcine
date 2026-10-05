@@ -29,3 +29,8 @@
 Any ambiguity discovered during menu integration should be added here before implementing around it silently.
 
 8. Single-plant direct capture uses the device-local active window. Explicit selected sessions retain recovery behavior. Align operator device and backend timezone with the plant during deployment verification.
+
+
+## Flexible schedule decisions — 2026-10-05
+
+Fixed/device-clock scheduling decisions above are superseded by versioned schedules per plant and explicit plant timezone (default Asia/Makassar). Recovery is limited to already-started sessions today/yesterday. New schedule settings take effect tomorrow or later. Old APK finalization is incompatible; install 1.1.0 for verification after backend release. Physical Android/camera and network-share E2E acceptance remain user verification steps.

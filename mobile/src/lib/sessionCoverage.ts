@@ -2,11 +2,16 @@ import { requestWithSession, type AuthSession } from "./auth";
 
 export type SessionCoverageResponse = {
   date: string;
+  serverNow?: number;
   plants: Array<{
     plant: string;
     sessions: Array<{
       session: string;
       hour: number;
+      sessionDate?: string;
+      startsAt?: number;
+      endsAt?: number;
+      scheduleId?: string;
       slots: Array<{
         slot: 1 | 2;
         label: string;
@@ -35,7 +40,7 @@ export type SessionCoverageResponse = {
   };
 };
 
-export type TodaySessionStatus = "completed" | "missing" | "upcoming";
+export type TodaySessionStatus = "completed" | "missing" | "upcoming" | "open";
 
 export type TodaySessionItem = {
   key: string;
@@ -48,6 +53,10 @@ export type TodaySessionItem = {
   status: TodaySessionStatus;
   trailing: string | null;
   recordId: number | null;
+  sessionDate?: string;
+  startsAt?: number;
+  endsAt?: number;
+  scheduleId?: string;
 };
 
 export type TodaySessionsView = {
@@ -55,6 +64,7 @@ export type TodaySessionsView = {
   plantLabel: string;
   summary: {
     completed: number;
+    open: number;
     missing: number;
     upcoming: number;
   };
@@ -107,18 +117,28 @@ export function mapSessionCoverageToView(payload: SessionCoverageResponse): Toda
     .flatMap((plantCoverage) =>
       plantCoverage.sessions.flatMap((sessionCoverage) =>
         sessionCoverage.slots.map((slotCoverage) => {
-          const status = inferStatus(
-            payload.date,
-            sessionCoverage.hour,
-            slotCoverage.captured && !!slotCoverage.record,
-          );
+          const now = payload.serverNow ?? Date.now();
+          const status =
+            slotCoverage.captured && !!slotCoverage.record
+              ? "completed"
+              : sessionCoverage.startsAt != null && sessionCoverage.endsAt != null
+                ? now < sessionCoverage.startsAt
+                  ? "upcoming"
+                  : now < sessionCoverage.endsAt
+                    ? "open"
+                    : "missing"
+                : inferStatus(payload.date, sessionCoverage.hour, false);
           const location =
             payload.plants.length > 1
               ? `${slotCoverage.label} • ${plantCoverage.plant}`
               : slotCoverage.label;
 
           return {
-            key: `${plantCoverage.plant}-${sessionCoverage.session}-${slotCoverage.slot}`,
+            key: `${plantCoverage.plant}-${payload.date}-${sessionCoverage.session}-${slotCoverage.slot}`,
+            sessionDate: sessionCoverage.sessionDate ?? payload.date,
+            startsAt: sessionCoverage.startsAt,
+            endsAt: sessionCoverage.endsAt,
+            scheduleId: sessionCoverage.scheduleId,
             plant: plantCoverage.plant,
             session: sessionCoverage.session,
             hour: sessionCoverage.hour,
@@ -144,7 +164,7 @@ export function mapSessionCoverageToView(payload: SessionCoverageResponse): Toda
       acc[item.status] += 1;
       return acc;
     },
-    { completed: 0, missing: 0, upcoming: 0 },
+    { completed: 0, open: 0, missing: 0, upcoming: 0 },
   );
 
   return {

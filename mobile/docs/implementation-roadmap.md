@@ -465,3 +465,22 @@ Verification on the integrated source:
 - `docs/openapi.yaml` reviewed: no additional endpoint/payload/auth changes needed beyond the remote baseline. Existing expected-plant, device targeting and finalize contract retained. No database changes.
 
 Limits: installed APK, physical camera capture and production network-share persistence were not tested. Operator-device/backend timezone alignment remains a deployment check. Edge-02 runtime reports are historical; this integration does not recreate deleted registry records.
+
+
+## Post-M5 — Flexible plant schedules (2026-10-05)
+
+Objective: versioned admin-configurable plant schedules used by backend, web and mobile.
+Sources: functional specification, technical implementation plan, product principles, root OpenAPI and DESIGN.md. Operator-only mobile scope retained.
+
+- [x] Implement interval/start/window/timezone/effective-date schedule model with historical versions.
+- [x] Add admin Settings preview, concurrent-write rejection and append-only persistent storage.
+- [x] Use shared schedule source for web capture, direct mobile capture and coverage.
+- [x] Validate capture commands and preserve signed server context for finalization across expiry/midnight.
+- [x] Add Open status and block upcoming session selection; preserve explicit recent recovery.
+- [x] Update OpenAPI and mobile workflow documents.
+- [x] Final local build, browser workflow and APK signature verification. Production release evidence is recorded separately below.
+- [ ] Physical APK/camera/share end-to-end user acceptance.
+
+Initial regression evidence: 45 suites / 394 tests passed. Includes interval generation, independent plant versions, Indonesian timezones, midnight schedule transitions, historical coverage, recovery restrictions, real temporary-file persistence/concurrency/corruption and signed receipt tampering/expiry. No database migration or operational camera mutation performed during tests.
+
+Final local verification (2026-10-05): 47 suites / 401 tests passed. Web/backend and mobile production builds passed. Actual Settings and mobile components were exercised in an isolated browser fixture: interval preview/save/history, invalid input, conflict and draft-preserving reload, mobile open/upcoming sessions, capture completion, closed-window blocking and failed-schedule Retry. No production business records were changed. APK 1.1.0 / versionCode 2 was built and its v1/v2 signatures verified; SHA256 `4B9A3BE029467277E3F19C14788BDE5F1D3CC442BC9B587D4108C9B80FDE6841`. Root TypeScript has the same 50 baseline errors and no new error messages; mobile TypeScript passes. Changed-code ESLint passed with the existing formatter rule excluded, changed source Prettier passed; 13 pre-existing UI audit findings remain. Physical Android/camera/share acceptance remains pending.

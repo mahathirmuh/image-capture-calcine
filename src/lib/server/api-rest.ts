@@ -21,6 +21,13 @@
 // di dalam masing-masing handler -- penjagaan yang tersebar akan terlewat pada
 // endpoint berikutnya yang ditambahkan orang.
 import sql from "mssql";
+import {
+  readScheduleSnapshot,
+  checkScheduledCapture,
+  issueCaptureReceipt,
+  verifyCaptureReceipt,
+} from "./capture-schedules";
+import { plantToday, validDate } from "../capture-schedule";
 import { canViewGalleryPlant } from "../gallery-access";
 import { CAPTURE_PLANT_SQL, requireGalleryUserAccess } from "./gallery-access";
 
@@ -39,8 +46,8 @@ import { CAPTURE_SESSION_HOURS, formatSessionLabel } from "../capture-session";
 import { getServerEnv } from "../env";
 import { BIN_SLOTS, PLANTS, toBinLabel, toBinTitle, toLocationToken } from "../locations";
 import { joinNetworkPath, normalizeRelativeSegments } from "../network-path";
-import { buildSessionCoverage, toLocalDateKey, type CoverageRecord } from "../session-coverage";
-import { parseSessionLabel, sessionDateFromCapturedAt } from "../session-coverage";
+import { buildSessionCoverage, type CoverageRecord } from "../session-coverage";
+
 import { deleteCaptureRecordById } from "./capture-record-delete";
 import { upsertCaptureRecordResult } from "./capture-record-write";
 import {
@@ -550,23 +557,6 @@ function normalizeCaptureSlot(value: unknown): 1 | 2 | null {
   return value === 1 || value === 2 ? value : null;
 }
 
-function formatCaptureStoragePath(capturedAt: number, captureSession: string, plant: string, slot: 1 | 2) {
-  const sessionHour = parseSessionLabel(captureSession);
-  if (sessionHour === null) {
-    return {
-      ok: false as const,
-      code: "INVALID_BODY",
-      message: `captureSession tidak sah: ${captureSession}`,
-    };
-  }
-
-  const dateKey = sessionDateFromCapturedAt(new Date(capturedAt), sessionHour);
-  const [year, month, day] = dateKey.split("-");
-  const fileName = `${captureSession} ${toBinTitle(plant, slot)}.jpg`;
-  const relativePath = `${plant}/${year}/${month}/${day}/${fileName}`;
-  return { ok: true as const, fileName, relativePath };
-}
-
 async function saveEdgeAssetToNetworkForApi(args: {
   targetBaseUrl: string;
   assetId: string;
@@ -606,9 +596,12 @@ async function saveEdgeAssetToNetworkForApi(args: {
 
   let res: Response;
   try {
-    res = await fetch(`${args.targetBaseUrl}/v1/media/${encodeURIComponent(args.assetId)}/content`, {
-      headers: edgeHeaders(),
-    });
+    res = await fetch(
+      `${args.targetBaseUrl}/v1/media/${encodeURIComponent(args.assetId)}/content`,
+      {
+        headers: edgeHeaders(),
+      },
+    );
   } catch {
     return { ok: false, code: "UNREACHABLE", message: "Tidak bisa menjangkau service kamera." };
   }
@@ -621,8 +614,13 @@ async function saveEdgeAssetToNetworkForApi(args: {
   }
 
   const bytes = Buffer.from(await res.arrayBuffer());
-  const { enqueueCapture, ensureSpoolWorker, flushSpool, getSpoolStatus, getSpoolStatus: probeSpool } =
-    await import("./capture-spool");
+  const {
+    enqueueCapture,
+    ensureSpoolWorker,
+    flushSpool,
+    getSpoolStatus,
+    getSpoolStatus: probeSpool,
+  } = await import("./capture-spool");
   ensureSpoolWorker();
 
   if (!(await probeSpool()).configured) {
@@ -700,7 +698,7 @@ async function handleCaptureFinalize(principal: ApiPrincipal, request: Request):
   const plant = text(body.plant);
   const captureSession = text(body.captureSession);
   const slot = normalizeCaptureSlot(body.slot);
-  const capturedAt = typeof body.capturedAt === "number" ? body.capturedAt : Number.NaN;
+  let capturedAt = typeof body.capturedAt === "number" ? body.capturedAt : Number.NaN;
   const explicitDeviceId = typeof body.deviceId === "number" ? body.deviceId : null;
 
   if (!assetId || !plant || !captureSession || slot === null || !Number.isFinite(capturedAt)) {
@@ -711,7 +709,34 @@ async function handleCaptureFinalize(principal: ApiPrincipal, request: Request):
     );
   }
 
-  const pathResult = formatCaptureStoragePath(capturedAt, captureSession, plant, slot);
+  let receipt;
+  try {
+    receipt = verifyCaptureReceipt(text(body.receipt), principal.claims.userId);
+  } catch (error) {
+    return apiError(409, "INVALID_CAPTURE_RECEIPT", (error as Error).message);
+  }
+  if (
+    receipt.plant !== plant ||
+    receipt.captureSession !== captureSession ||
+    receipt.deviceId !== explicitDeviceId
+  )
+    return apiError(
+      409,
+      "CAPTURE_CONTEXT_MISMATCH",
+      "Capture context tidak cocok dengan perintah kamera.",
+    );
+  const fileName = `${receipt.captureSession} ${toBinTitle(plant, slot)}.jpg`;
+  const pathResult = {
+    ok:
+      validDate(receipt.sessionDate) &&
+      !!normalizeRelativeSegments(
+        `${plant}/${receipt.sessionDate.replaceAll("-", "/")}/${fileName}`,
+      ),
+    code: "INVALID_RELATIVE_PATH",
+    message: "Path sesi capture tidak valid.",
+    fileName,
+    relativePath: `${plant}/${receipt.sessionDate.replaceAll("-", "/")}/${fileName}`,
+  };
   if (!pathResult.ok) {
     return apiError(400, pathResult.code, pathResult.message);
   }
@@ -733,6 +758,23 @@ async function handleCaptureFinalize(principal: ApiPrincipal, request: Request):
     );
   }
 
+  capturedAt = receipt.capturedAt;
+  const jobResponse = await fetch(
+    `${target.baseUrl}/v1/jobs/${encodeURIComponent(receipt.jobId)}`,
+    { headers: edgeHeaders() },
+  );
+  if (!jobResponse.ok)
+    return apiError(502, "CAPTURE_JOB_UNAVAILABLE", "Tidak dapat memverifikasi job capture.");
+  const completedJob = (await jobResponse.json()) as {
+    status: string;
+    result?: { asset?: { assetId?: string } };
+  };
+  if (completedJob.status !== "succeeded" || completedJob.result?.asset?.assetId !== assetId)
+    return apiError(
+      409,
+      "CAPTURE_ASSET_MISMATCH",
+      "Foto tidak cocok dengan job capture yang terverifikasi.",
+    );
   const saved = await saveEdgeAssetToNetworkForApi({
     targetBaseUrl: target.baseUrl,
     assetId,
@@ -933,7 +975,8 @@ async function handleSummary(galleryPlant: string | null): Promise<Response> {
     new Date(dayStart.getTime() - daysAgo * 24 * 60 * 60 * 1000).toISOString();
 
   const aggregate = await pool
-    .request().input("galleryPlant", sql.NVarChar(100), galleryPlant)
+    .request()
+    .input("galleryPlant", sql.NVarChar(100), galleryPlant)
     .input("dayStart", sql.NVarChar(40), dayStart.toISOString())
     .input("weekStart", sql.NVarChar(40), startOf(6))
     .input("monthStart", sql.NVarChar(40), startOf(29)).query(`
@@ -951,7 +994,8 @@ async function handleSummary(galleryPlant: string | null): Promise<Response> {
       WHERE (@galleryPlant IS NULL OR ${CAPTURE_PLANT_SQL} = @galleryPlant);
     `);
 
-  const byPlant = await pool.request().input("galleryPlant", sql.NVarChar(100), galleryPlant).query(`
+  const byPlant = await pool.request().input("galleryPlant", sql.NVarChar(100), galleryPlant)
+    .query(`
     SELECT
       ${CAPTURE_PLANT_SQL} AS plant,
       COUNT(*) AS captures,
@@ -1119,8 +1163,15 @@ async function readEdgeFailure(
  * juga di sini. Resolver kedua yang lebih longgar akan jadi jalan memutar
  * mengelilingi aturan yang justru sedang dijaga.
  */
-async function resolveEdgeForUser(principal: ApiPrincipal, deviceId?: number | null, plant?: unknown) {
-  if (plant != null && (typeof plant !== "string" || !(PLANTS as readonly string[]).includes(plant))) {
+async function resolveEdgeForUser(
+  principal: ApiPrincipal,
+  deviceId?: number | null,
+  plant?: unknown,
+) {
+  if (
+    plant != null &&
+    (typeof plant !== "string" || !(PLANTS as readonly string[]).includes(plant))
+  ) {
     return { ok: false as const, code: "INVALID_PARAM", message: "Plant tidak sah." };
   }
   if (deviceId != null && (!Number.isInteger(deviceId) || deviceId < 1)) {
@@ -1140,11 +1191,24 @@ async function resolveEdgeForUser(principal: ApiPrincipal, deviceId?: number | n
  * sudah boleh membaca data seluruh plant. Jadi status kamera dan status job
  * dibaca lewat jalur ini, dan HANYA jalur baca yang memakainya.
  */
-async function resolveEdgeForRead(principal: ApiPrincipal, deviceId?: number | null, plant?: unknown) {
+async function resolveEdgeForRead(
+  principal: ApiPrincipal,
+  deviceId?: number | null,
+  plant?: unknown,
+) {
   if (principal.kind === "user") return resolveEdgeForUser(principal, deviceId, plant);
 
-  if (plant != null && (typeof plant !== "string" || !(PLANTS as readonly string[]).includes(plant) || deviceId == null)) {
-    return { ok: false as const, code: "INVALID_PARAM", message: "Plant tidak sah atau deviceId belum diisi." };
+  if (
+    plant != null &&
+    (typeof plant !== "string" ||
+      !(PLANTS as readonly string[]).includes(plant) ||
+      deviceId == null)
+  ) {
+    return {
+      ok: false as const,
+      code: "INVALID_PARAM",
+      message: "Plant tidak sah atau deviceId belum diisi.",
+    };
   }
   const { findEdgeDevice } = await import("./edge-target");
   const fallback = getServerEnv().CAMERA_API_URL;
@@ -1169,7 +1233,11 @@ async function resolveEdgeForRead(principal: ApiPrincipal, deviceId?: number | n
     };
   }
   if (plant != null && device.plant !== plant) {
-    return { ok: false as const, code: "DEVICE_PLANT_MISMATCH", message: "Penempatan kamera telah berubah." };
+    return {
+      ok: false as const,
+      code: "DEVICE_PLANT_MISMATCH",
+      message: "Penempatan kamera telah berubah.",
+    };
   }
   return {
     ok: true as const,
@@ -1184,7 +1252,13 @@ async function resolveEdgeForRead(principal: ApiPrincipal, deviceId?: number | n
 /** Terjemahkan kegagalan resolver jadi jawaban HTTP yang sesuai sebabnya. */
 function edgeFailure(result: { code: string; message: string }): Response {
   const status =
-    result.code === "INVALID_PARAM" ? 400 : result.code === "UNAUTHENTICATED" ? 401 : result.code === "DEVICE_NOT_FOUND" ? 404 : 409;
+    result.code === "INVALID_PARAM"
+      ? 400
+      : result.code === "UNAUTHENTICATED"
+        ? 401
+        : result.code === "DEVICE_NOT_FOUND"
+          ? 404
+          : 409;
   return apiError(status, result.code, result.message);
 }
 
@@ -1498,7 +1572,8 @@ async function handleJob(principal: ApiPrincipal, rawJobId: string, url: URL): P
 async function handleCameraSession(principal: ApiPrincipal, request: Request): Promise<Response> {
   const body = await readJsonBody(request);
   const leaseSeconds = typeof body.leaseSeconds === "number" ? body.leaseSeconds : 120;
-  const deviceId = body.deviceId == null ? null : typeof body.deviceId === "number" ? body.deviceId : Number.NaN;
+  const deviceId =
+    body.deviceId == null ? null : typeof body.deviceId === "number" ? body.deviceId : Number.NaN;
 
   const target = await resolveEdgeForUser(principal, deviceId, body.plant);
   if (!target.ok) return edgeFailure(target);
@@ -1541,7 +1616,8 @@ async function handleCameraSessionRenew(
   const sessionId = text(body.sessionId);
   const leaseToken = text(body.leaseToken);
   const leaseSeconds = typeof body.leaseSeconds === "number" ? body.leaseSeconds : 120;
-  const deviceId = body.deviceId == null ? null : typeof body.deviceId === "number" ? body.deviceId : Number.NaN;
+  const deviceId =
+    body.deviceId == null ? null : typeof body.deviceId === "number" ? body.deviceId : Number.NaN;
 
   if (!sessionId || !leaseToken) {
     return apiError(
@@ -1604,7 +1680,8 @@ async function handleCameraSessionRelease(
 
   const body = await readJsonBody(request);
   const leaseToken = text(body.leaseToken);
-  const deviceId = body.deviceId == null ? null : typeof body.deviceId === "number" ? body.deviceId : Number.NaN;
+  const deviceId =
+    body.deviceId == null ? null : typeof body.deviceId === "number" ? body.deviceId : Number.NaN;
   if (!leaseToken) {
     return apiError(
       400,
@@ -1703,11 +1780,25 @@ async function handleCameraCommand(
       "Field `leaseToken` wajib diisi. Ambil dulu lewat POST /camera/session.",
     );
   }
-  const deviceId = body.deviceId == null ? null : typeof body.deviceId === "number" ? body.deviceId : Number.NaN;
+  const deviceId =
+    body.deviceId == null ? null : typeof body.deviceId === "number" ? body.deviceId : Number.NaN;
 
   const target = await resolveEdgeForUser(principal, deviceId, body.plant);
   if (!target.ok) return edgeFailure(target);
 
+  let captureContext;
+  const commandAt = Date.now();
+  if (kind === "capture") {
+    try {
+      captureContext = await checkScheduledCapture(target.plant ?? text(body.plant), {
+        sessionDate: typeof body.sessionDate === "string" ? body.sessionDate : undefined,
+        captureSession: typeof body.captureSession === "string" ? body.captureSession : undefined,
+        recovery: body.recovery === true,
+      });
+    } catch (error) {
+      return apiError(409, "CAPTURE_SCHEDULE_REJECTED", (error as Error).message);
+    }
+  }
   let res: Response;
   try {
     res =
@@ -1741,7 +1832,20 @@ async function handleCameraCommand(
   // GET /jobs/{jobId}; capture Canon butuh beberapa detik dan menahan koneksi
   // HTTP selama itu membuat klien yang timeout menyangka capture-nya gagal
   // padahal rananya sudah terlanjur jatuh.
-  return json({ deviceCode: target.deviceCode, job: (await res.json()) as unknown }, 202);
+  const job = (await res.json()) as { jobId: string };
+  const receipt =
+    captureContext && principal.kind === "user"
+      ? issueCaptureReceipt({
+          userId: principal.claims.userId,
+          deviceId: target.deviceId,
+          plant: target.plant ?? text(body.plant),
+          sessionDate: captureContext.date,
+          captureSession: captureContext.label,
+          capturedAt: commandAt,
+          jobId: job.jobId,
+        })
+      : undefined;
+  return json({ deviceCode: target.deviceCode, job, ...(receipt ? { receipt } : {}) }, 202);
 }
 
 async function handleSessions(url: URL): Promise<Response> {
@@ -1749,7 +1853,10 @@ async function handleSessions(url: URL): Promise<Response> {
   if (rawDate !== null && !BARE_DATE.test(rawDate.trim())) {
     return apiError(400, "INVALID_PARAM", `date harus berbentuk YYYY-MM-DD, bukan: ${rawDate}`);
   }
-  const date = rawDate ? rawDate.trim() : toLocalDateKey(new Date());
+  const snapshot = await readScheduleSnapshot();
+  const date = rawDate
+    ? rawDate.trim()
+    : plantToday(snapshot.versions, url.searchParams.get("plant") ?? PLANTS[0], Date.now());
 
   const requestedPlant = url.searchParams.get("plant");
   if (requestedPlant !== null && !(PLANTS as readonly string[]).includes(requestedPlant)) {
@@ -1786,8 +1893,8 @@ async function handleSessions(url: URL): Promise<Response> {
     toCoverageRecord(mapCaptureRecordRow(row as Record<string, unknown>)),
   );
 
-  const coverage = buildSessionCoverage({ date, plants, records });
-  return json({ date, ...coverage });
+  const coverage = buildSessionCoverage({ date, plants, records, versions: snapshot.versions });
+  return json({ date, serverNow: Date.now(), ...coverage });
 }
 
 // --- pengarah -----------------------------------------------------------------
@@ -1865,6 +1972,11 @@ const ROUTES: Route[] = [
     method: "GET",
     pattern: /^\/captures\/([^/]+)\/thumb$/,
     handle: (c) => handleCaptureThumb(c.params[0]),
+  },
+  {
+    method: "GET",
+    pattern: /^\/schedules$/,
+    handle: async () => json(await readScheduleSnapshot()),
   },
   { method: "GET", pattern: /^\/sessions$/, handle: (c) => handleSessions(c.url) },
   { method: "GET", pattern: /^\/summary$/, handle: (c) => handleSummary(c.galleryPlant) },
@@ -1952,9 +2064,9 @@ export async function handleApiRequest(request: Request): Promise<Response> {
     if (!isApiEnabled()) {
       return respond(
         apiError(
-        503,
-        "API_DISABLED",
-        "REST API belum diaktifkan di app server ini. Isi API_KEYS di environment untuk menyalakannya.",
+          503,
+          "API_DISABLED",
+          "REST API belum diaktifkan di app server ini. Isi API_KEYS di environment untuk menyalakannya.",
         ),
       );
     }
@@ -2010,11 +2122,7 @@ export async function handleApiRequest(request: Request): Promise<Response> {
 
   if (NEEDS_DATABASE.test(path) && !isCardDbConfigured()) {
     return respond(
-      apiError(
-        503,
-        "CARDDB_NOT_CONFIGURED",
-        "Konfigurasi CARDDB belum lengkap di app server ini.",
-      ),
+      apiError(503, "CARDDB_NOT_CONFIGURED", "Konfigurasi CARDDB belum lengkap di app server ini."),
     );
   }
 

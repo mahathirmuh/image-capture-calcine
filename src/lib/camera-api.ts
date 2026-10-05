@@ -207,11 +207,22 @@ export const getPreviewFrame = createServerFn({ method: "GET" })
 export type CaptureJob = { jobId: string; status: string; type: string };
 
 export const triggerCapture = createServerFn({ method: "POST" })
-  .validator(sessionRefSchema)
+  .validator(
+    sessionRefSchema.extend({
+      sessionDate: z.string().optional(),
+      captureSession: z.string().optional(),
+    }),
+  )
   .handler(async ({ data }): Promise<ApiSuccess<{ job: CaptureJob }> | ApiFailure> => {
     const target = await resolveTarget(data.deviceId, undefined, data.plant);
     if (!target.ok) return target;
 
+    try {
+      const { checkScheduledCapture } = await import("./server/capture-schedules");
+      await checkScheduledCapture(target.plant ?? data.plant ?? "", data);
+    } catch (error) {
+      return { ok: false, code: "CAPTURE_SCHEDULE_REJECTED", message: (error as Error).message };
+    }
     let res: Response;
     try {
       res = await fetch(`${target.baseUrl}/v1/captures`, {

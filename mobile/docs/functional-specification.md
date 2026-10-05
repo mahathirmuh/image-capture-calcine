@@ -92,3 +92,14 @@ Explicit account scope `ALL` allows selecting a scheduled session from any plant
 - An idle automatic context is released when its window ends. A capture already started is allowed to finish polling and saving against its original slot, plant and device before context expiry takes effect; a new capture cannot start outside the window.
 - Stop Session remains stopped within the same window until explicitly started again. A new automatic window receives a new context.
 - Session conflict uses an accessible modal with Escape, focus containment and restoration. Light Mode and High Contrast remain persisted device preferences.
+
+
+## Flexible plant schedules — 2026-10-05 (supersedes fixed/device-local rules above)
+
+- Backend `/schedules` is the source of versioned plant schedules and server time. Web Settings is admin-only; mobile remains operator-only.
+- Admin sets whole-hour start, interval (1/2/3/4/6/8/12/24 hours), capture window (1 minute through interval length), plant timezone and effective date (tomorrow or later).
+- Defaults preserve eight sessions beginning 02:00 every three hours with a 120-minute window in Asia/Makassar.
+- Both web and direct mobile capture use an open window in plant time, including the previous date after midnight. Mobile uses server clock offset and refreshes schedules every minute; unavailable schedules block direct capture and show Retry.
+- Today Sessions uses backend plant-local date, session timestamps and historical schedule versions. Status is Upcoming/Open/Completed/Missing; upcoming sessions cannot be selected. Explicit selection permits recovery for a started session today or yesterday; server rechecks it.
+- The capture command is validated server-side. Its signed receipt pins command time, user, device, job and session date; finalize verifies the receipt and asset/job association, allowing an in-flight capture to save after window expiry. Rebuilt mobile APK is required for this finalize contract.
+- Session date determines storage path; capture time remains distinct. Retake file naming is unchanged in this feature.

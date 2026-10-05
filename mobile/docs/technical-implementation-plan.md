@@ -143,3 +143,10 @@ Remote baseline: f6f34aa. `automaticCaptureSession.ts` resolves device-local win
 The backend's existing session-date calculation remains responsible for storage dates; no new timestamp or session-date field is introduced. Device clock/timezone must match plant operations; the existing backend timezone assumption still requires deployment verification. Explicit selected sessions retain their previous recovery behavior. The native HTML dialog owns modal focus/inert behavior; stylesheet tokens cover both themes, including disabled controls.
 
 OpenAPI reviewed: existing plant/device targeting and finalize fields are sufficient. No additional REST contract or database changes beyond the fetched remote baseline.
+
+
+## Flexible schedules — 2026-10-05
+
+Shared pure schedule arithmetic: `src/lib/capture-schedule.ts`. Version store: `src/lib/server/capture-schedules.ts`, beneath `CAPTURE_SPOOL_DIR/schedules/versions.json` in the existing persistent spool volume. Admin RPC uses fresh DB role checks, optimistic revision matching, exclusive file lock and atomic fsync/rename. History is append-only; same-effective-date replacements resolve to the last appended version. Corrupt storage fails closed. No MSSQL schema/query change.
+
+Web Settings previews all session hours and expected photos; web Capture pins the selected context into each preview before save. Mobile `/schedules` refresh and server-time offset replace device-local direct capture; `/sessions` carries explicit dates/start/end timestamps. REST capture issues a signed receipt; finalize checks actor/context and the completed edge job's asset before saving. Deploy backend and install APK 1.1.0 together; previous APKs cannot finalize through the new receipt requirement.

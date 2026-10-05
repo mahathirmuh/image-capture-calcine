@@ -4,6 +4,12 @@
 // Sengaja murni -- tidak menyentuh database maupun filesystem -- supaya
 // aturannya bisa diuji tanpa SQL Server. Handler REST di
 // src/lib/server/api-rest.ts yang mengambil barisnya; modul ini yang berpikir.
+import {
+  scheduleForDate,
+  scheduleHours,
+  sessionContext,
+  type ScheduleVersion,
+} from "./capture-schedule";
 import { CAPTURE_SESSION_HOURS, formatSessionLabel } from "./capture-session";
 import { BIN_SLOTS, toBinSlot, toBinTitle, type BinSlot } from "./locations";
 
@@ -101,12 +107,15 @@ export function sessionDateFromCapturedAt(capturedAt: Date, sessionHour: number)
 }
 
 /** Jam sesi dari label "02.00"/"23.00". Null kalau bukan jam sesi yang dikenal. */
-export function parseSessionLabel(label: string | null | undefined): number | null {
+export function parseSessionLabel(
+  label: string | null | undefined,
+  hours: readonly number[] = CAPTURE_SESSION_HOURS,
+): number | null {
   if (!label) return null;
   const match = label.trim().match(/^(\d{1,2})[.:]00$/);
   if (!match) return null;
   const hour = Number(match[1]);
-  return (CAPTURE_SESSION_HOURS as readonly number[]).includes(hour) ? hour : null;
+  return hours.includes(hour) ? hour : null;
 }
 
 /** Tanggal sesi sebuah record: path dulu, waktu capture sebagai cadangan. */
@@ -114,7 +123,10 @@ export function resolveRecordSessionDate(record: CoverageRecord): string | null 
   const fromPath = sessionDateFromPath(record.filePath);
   if (fromPath) return fromPath;
 
-  const hour = parseSessionLabel(record.captureSession);
+  const hour = parseSessionLabel(
+    record.captureSession,
+    Array.from({ length: 24 }, (_, i) => i),
+  );
   if (hour === null) return null;
 
   const capturedAt = new Date(record.capturedAt);
@@ -146,17 +158,20 @@ export function buildSessionCoverage(input: {
   date: string;
   plants: readonly string[];
   records: readonly CoverageRecord[];
+  versions?: ScheduleVersion[];
 }): { plants: CoveragePlant[]; summary: CoverageSummary } {
   const plants = input.plants.map((plant): CoveragePlant => {
     const forPlant = input.records.filter(
       (record) => record.plant === plant && resolveRecordSessionDate(record) === input.date,
     );
 
-    const sessions = CAPTURE_SESSION_HOURS.map((hour): CoverageSession => {
+    const schedule = input.versions ? scheduleForDate(input.versions, plant, input.date) : null;
+    const hours = schedule ? scheduleHours(schedule) : [...CAPTURE_SESSION_HOURS];
+    const sessions = hours.map((hour): CoverageSession => {
       const slots = BIN_SLOTS.map((slot): CoverageSlot => {
         const matching = forPlant.filter(
           (record) =>
-            parseSessionLabel(record.captureSession) === hour &&
+            parseSessionLabel(record.captureSession, hours) === hour &&
             toBinSlot(record.captureBin) === slot,
         );
         const latest = matching.reduce<CoverageRecord | null>((newest, record) => {
@@ -167,7 +182,20 @@ export function buildSessionCoverage(input: {
         return { slot, label: toBinTitle(plant, slot), captured: latest !== null, record: latest };
       });
 
-      return { session: formatSessionLabel(hour), hour, slots };
+      const context = schedule ? sessionContext(schedule, input.date, hour) : null;
+      return {
+        session: formatSessionLabel(hour),
+        hour,
+        slots,
+        ...(context
+          ? {
+              sessionDate: context.date,
+              startsAt: context.startsAt,
+              endsAt: context.endsAt,
+              scheduleId: context.scheduleId,
+            }
+          : {}),
+      };
     });
 
     const expected = sessions.length * BIN_SLOTS.length;

@@ -1,6 +1,7 @@
 import { createRequire } from "node:module";
 import { createElement, StrictMode } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { defaultSchedule } from "./capture-schedule";
 import type { AuthSession } from "../../mobile/src/lib/auth";
 import type { TodaySessionItem } from "../../mobile/src/lib/sessionCoverage";
 const { create, act } = createRequire(import.meta.url)("react-test-renderer");
@@ -40,7 +41,14 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("window", { setTimeout, clearTimeout });
   vi.stubGlobal("document", Object.assign(new EventTarget(), { visibilityState: "visible" }));
-  api.requestWithSession.mockResolvedValue({ session, data: lease });
+  api.requestWithSession.mockImplementation(async (_session, path) =>
+    path === "/schedules"
+      ? {
+          session,
+          data: { revision: 0, serverNow: Date.now(), versions: [defaultSchedule("Acid Plant")] },
+        }
+      : { session, data: lease },
+  );
   api.requestResponseWithSession.mockResolvedValue({
     session,
     response: new Response("image", { headers: { "content-type": "image/jpeg" } }),
@@ -182,16 +190,25 @@ it("ALL My Device reads only the selected plant camera", async () => {
 });
 
 async function mountDirect(hour = 14, minute = 0, second = 0) {
-  vi.setSystemTime(new Date(2026, 8, 8, hour, minute, second));
+  vi.setSystemTime(
+    new Date(
+      `2026-09-08T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:${String(second).padStart(2, "0")}+08:00`,
+    ),
+  );
   api.requestWithSession.mockImplementation(async (_session, path) => ({
     session,
     data:
-      path === "/camera/session"
-        ? {
-            ...lease,
-            session: { ...lease.session, expiresAt: new Date(Date.now() + 120_000).toISOString() },
-          }
-        : { released: true },
+      path === "/schedules"
+        ? { revision: 0, serverNow: Date.now(), versions: [defaultSchedule("Acid Plant")] }
+        : path === "/camera/session"
+          ? {
+              ...lease,
+              session: {
+                ...lease.session,
+                expiresAt: new Date(Date.now() + 120_000).toISOString(),
+              },
+            }
+          : { released: true },
   }));
   await act(async () => {
     renderer = create(
@@ -207,14 +224,20 @@ async function mountDirect(hour = 14, minute = 0, second = 0) {
 
 it("direct capture connects the assigned plant and waits for preview", async () => {
   await mountDirect();
-  expect(JSON.parse(api.requestWithSession.mock.calls[0][2].body).plant).toBe("Acid Plant");
+  expect(
+    JSON.parse(
+      api.requestWithSession.mock.calls.find((call) => call[1] === "/camera/session")![2].body,
+    ).plant,
+  ).toBe("Acid Plant");
   expect(renderer.root.findByProps({ "aria-label": "Capture image" }).props.disabled).toBe(false);
   expect(api.requestResponseWithSession.mock.calls[0][1]).toContain("deviceId=7");
 });
 
 it("direct capture outside its window never acquires a camera", async () => {
   await mountDirect(16);
-  expect(api.requestWithSession).not.toHaveBeenCalled();
+  expect(api.requestWithSession.mock.calls.some((call) => call[1] === "/camera/session")).toBe(
+    false,
+  );
   expect(renderer.root.findByProps({ "aria-label": "Capture image" }).props.disabled).toBe(true);
 });
 
@@ -262,7 +285,7 @@ it("direct capture finishes saving before releasing at a window boundary", async
     deviceId: 7,
     plant: "Acid Plant",
     captureSession: "14.00",
-    capturedAt: new Date(2026, 8, 8, 15, 59, 59).getTime(),
+    capturedAt: Date.parse("2026-09-08T15:59:59+08:00"),
   });
   expect(api.requestWithSession.mock.calls.some((call) => call[2]?.method === "DELETE")).toBe(true);
   expect(renderer.root.findByProps({ "aria-label": "Capture image" }).props.disabled).toBe(true);

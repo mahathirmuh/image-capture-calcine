@@ -25,6 +25,7 @@ import {
   type Prefs,
 } from "@/lib/capture-prefs";
 import { PLANTS, toLocationToken } from "@/lib/locations";
+import { CaptureScheduleSettings } from "@/components/capture-schedule-settings";
 import { EdgeApiSettings } from "@/components/edge-api-settings";
 import { PageTitle } from "@/components/page-shell";
 
@@ -549,6 +550,7 @@ function SettingsPage() {
             </div>
           </div>
 
+          <CaptureScheduleSettings />
           <EdgeApiSettings />
 
           <div className="rounded-xl border bg-card shadow-sm p-5">

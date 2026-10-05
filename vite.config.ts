@@ -126,6 +126,7 @@ export default defineConfig(async ({ command, mode }) => {
       // compiling its server functions, leaving otherwise valid IDs unknown.
       warmup: {
         ssrFiles: [
+          "./src/lib/capture-schedules.ts",
           "./src/lib/activity-log.ts",
           "./src/lib/auth.ts",
           "./src/lib/camera-api.ts",

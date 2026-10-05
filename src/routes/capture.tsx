@@ -48,13 +48,15 @@ import {
   toLocationToken,
   type BinSlot,
 } from "@/lib/locations";
-import {
-  isSessionOnAnotherDay,
-  resolveNearestSession,
-  sessionPathSegment,
-} from "@/lib/capture-session";
+import { isSessionOnAnotherDay, resolveNearestSession } from "@/lib/capture-session";
 import { getOperatorPlant, type OperatorPlant } from "@/lib/operator-plant";
 import { useIsAdmin, useSessionUser } from "@/lib/use-session-user";
+import { fetchCaptureSchedules } from "@/lib/capture-schedules";
+import {
+  activeScheduledContext,
+  type ScheduleSnapshot,
+  type ScheduledContext,
+} from "@/lib/capture-schedule";
 import { PageTitle } from "@/components/page-shell";
 
 const CAPTURE_PAGE_PLANTS = ["Acid Plant", "Chloride Plant"] as const;
@@ -70,13 +72,13 @@ export const Route = createFileRoute("/capture")({
   component: CapturePage,
   head: () => ({
     meta: [
-      { title: "Capture — Capture App" },
+      { title: "Capture â€” Capture App" },
       {
         name: "description",
         content:
           "Ambil gambar dari kamera, lihat preview, lalu simpan ke folder pilihan dengan format nama file kustom.",
       },
-      { property: "og:title", content: "Capture — Capture App" },
+      { property: "og:title", content: "Capture â€” Capture App" },
       {
         property: "og:description",
         content:
@@ -95,7 +97,13 @@ type Bin = BinSlot;
 // assetId is kept around so Save can later ask the edge device to export the
 // already-captured asset straight to its network share, without the browser
 // re-uploading the bytes it already downloaded once for the preview.
-type BinPreview = { blob: Blob; url: string; assetId: string; capturedAt: number };
+type BinPreview = {
+  blob: Blob;
+  url: string;
+  assetId: string;
+  capturedAt: number;
+  context: ScheduledContext;
+};
 
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
@@ -298,7 +306,7 @@ function CapturePage() {
   // sesi yang tiga jam.
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 60_000);
+    const timer = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
@@ -309,7 +317,50 @@ function CapturePage() {
   // tercatat di sesi TERDEKAT, bukan sesi yang sebenarnya dikejar -- dan sesi
   // menentukan nama berkas sekaligus folder tanggalnya, jadi memperbaikinya
   // menuntut rename langsung di share, bukan lewat aplikasi.
-  const activeSession = useMemo(() => resolveNearestSession(now), [now]);
+  const [schedule, setSchedule] = useState<ScheduleSnapshot | null>(null);
+  const clockOffset = useRef(0);
+  useEffect(() => {
+    let cancelled = false;
+    async function loadSchedule() {
+      try {
+        const start = Date.now();
+        const value = await fetchCaptureSchedules();
+        if (!cancelled) {
+          clockOffset.current = value.serverNow - (start + Date.now()) / 2;
+          setSchedule(value);
+        }
+      } catch {
+        if (!cancelled) {
+          setSchedule(null);
+          setError("Gagal memuat jadwal capture. Muat ulang sebelum mengambil foto.");
+        }
+      }
+    }
+    void loadSchedule();
+    const timer = setInterval(() => void loadSchedule(), 60000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, []);
+  const scheduledContext = useMemo(
+    () =>
+      schedule
+        ? activeScheduledContext(
+            schedule.versions,
+            activePlant,
+            now.getTime() + clockOffset.current,
+          )
+        : null,
+    [schedule, activePlant, now],
+  );
+  const activeSession = scheduledContext
+    ? {
+        hour: scheduledContext.hour,
+        label: scheduledContext.label,
+        startsAt: new Date(scheduledContext.startsAt),
+      }
+    : resolveNearestSession(now);
   const [pattern, setPattern] = useState<string>(DEFAULT_PREFS.pattern);
   const [ext, setExt] = useState<"jpg">(DEFAULT_PREFS.ext);
   const [counter, setCounter] = useState<number>(DEFAULT_PREFS.counter);
@@ -456,7 +507,17 @@ function CapturePage() {
   }, [livePreview, sessionId]);
 
   async function captureToBin(bin: Bin) {
-    if (!sessionId || !leaseToken || !captureDevice || !cameraUsable || cameraBusyRef.current)
+    const pinnedContext = schedule
+      ? activeScheduledContext(schedule.versions, activePlant, Date.now() + clockOffset.current)
+      : null;
+    if (
+      !pinnedContext ||
+      !sessionId ||
+      !leaseToken ||
+      !captureDevice ||
+      !cameraUsable ||
+      cameraBusyRef.current
+    )
       return;
     setError(null);
     setCapturingBin(bin);
@@ -466,7 +527,14 @@ function CapturePage() {
     await new Promise((r) => setTimeout(r, 300));
     try {
       const triggered = await triggerCapture({
-        data: { sessionId, leaseToken, deviceId: captureDevice.deviceId, plant: activePlant },
+        data: {
+          sessionId,
+          leaseToken,
+          deviceId: captureDevice.deviceId,
+          plant: activePlant,
+          sessionDate: pinnedContext.date,
+          captureSession: pinnedContext.label,
+        },
       });
       if (!triggered.ok) {
         void logOperationalEvent("capture-trigger-failed", "warning", triggered.message, {
@@ -512,7 +580,7 @@ function CapturePage() {
       });
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
-      const captured: BinPreview = { blob, url, assetId, capturedAt };
+      const captured: BinPreview = { blob, url, assetId, capturedAt, context: pinnedContext };
       const setBin = bin === 1 ? setBin1 : setBin2;
       setBin((prev) => {
         if (prev) URL.revokeObjectURL(prev.url);
@@ -542,7 +610,17 @@ function CapturePage() {
   }
 
   async function runAutofocus() {
-    if (!sessionId || !leaseToken || !captureDevice || !cameraUsable || cameraBusyRef.current)
+    const pinnedContext = schedule
+      ? activeScheduledContext(schedule.versions, activePlant, Date.now() + clockOffset.current)
+      : null;
+    if (
+      !pinnedContext ||
+      !sessionId ||
+      !leaseToken ||
+      !captureDevice ||
+      !cameraUsable ||
+      cameraBusyRef.current
+    )
       return;
     setError(null);
     setAutofocusing(true);
@@ -659,7 +737,7 @@ function CapturePage() {
       location: toLocationToken(activePlant),
       source,
       slot: toBinTitle(activePlant, bin),
-      session: activeSession.label,
+      session: previewItem.context.label,
     });
     // Resolved to the actual on-disk name below (may gain a " (2)" suffix if a
     // same-minute capture already claimed the plain name).
@@ -703,7 +781,7 @@ function CapturePage() {
         // Folder plant dan tanggalnya dibuat sendiri oleh saveMediaToNetwork --
         // hanya root-nya yang wajib sudah ada, karena root yang hilang adalah
         // tanda share tidak ter-mount.
-        const relativePath = `${activePlant}/${sessionPathSegment(activeSession)}/${base}.${ext}`;
+        const relativePath = `${activePlant}/${previewItem.context.date.replaceAll("-", "/")}/${base}.${ext}`;
         const saved = await saveMediaToNetwork({
           data: {
             deviceId: captureDevice.deviceId,
@@ -731,7 +809,7 @@ function CapturePage() {
           // capture isn't lost, but say so, the same way the folder tier's
           // own failure gets a banner rather than failing silently.
           setError(
-            `Network save dari app server gagal (${saved.message}) — mencoba jalur simpan fallback.`,
+            `Network save dari app server gagal (${saved.message}) â€” mencoba jalur simpan fallback.`,
           );
           fallbackReasons.push(`app-network:${saved.code}`);
           void logOperationalEvent(
@@ -782,7 +860,7 @@ function CapturePage() {
           parentDir = null;
           if (!permissionAlreadyReported) {
             setError(
-              `Folder jaringan tidak tersedia (${getErrorMessage(error, "error tidak diketahui")}) — hasil capture diunduh lokal sebagai gantinya. Pindahkan manual ke shared folder bila diperlukan.`,
+              `Folder jaringan tidak tersedia (${getErrorMessage(error, "error tidak diketahui")}) â€” hasil capture diunduh lokal sebagai gantinya. Pindahkan manual ke shared folder bila diperlukan.`,
             );
           }
           fallbackReasons.push("browser-folder:write-failed");
@@ -825,7 +903,7 @@ function CapturePage() {
         } else {
           setStatus(`${binLabel(bin)} tersimpan ke folder browser: ${savedNetworkPath}`);
           toast.warning(`${binLabel(bin)} tersimpan ke folder browser`, {
-            description: `${savedNetworkPath} — belum masuk folder jaringan.`,
+            description: `${savedNetworkPath} â€” belum masuk folder jaringan.`,
           });
         }
       } else {
@@ -835,7 +913,7 @@ function CapturePage() {
         a.download = filename;
         a.click();
         URL.revokeObjectURL(url);
-        setStatus(`${binLabel(bin)} diunduh lokal: ${filename} — belum masuk folder jaringan.`);
+        setStatus(`${binLabel(bin)} diunduh lokal: ${filename} â€” belum masuk folder jaringan.`);
         toast.warning(`${binLabel(bin)} diunduh lokal`, {
           description: `${filename} belum masuk folder jaringan. Pindahkan manual bila diperlukan.`,
         });
@@ -862,7 +940,7 @@ function CapturePage() {
           deviceName: captureDevice.deviceName,
           plant: activePlant,
           captureBin: binLabel(bin),
-          captureSession: activeSession.label,
+          captureSession: previewItem.context.label,
           station: captureDevice?.station ?? null,
           fileName: filename,
           filePath: persistedPath ?? savedNetworkPath ?? `browser-download/${filename}`,
@@ -1072,7 +1150,7 @@ function CapturePage() {
         : sessionSummary.detail,
       hint:
         prioritizedSessionIssue && sessionIssue
-          ? `${prioritizedSessionIssue.title} · ${formatRelativeTime(sessionIssue.updatedAt)}`
+          ? `${prioritizedSessionIssue.title} Â· ${formatRelativeTime(sessionIssue.updatedAt)}`
           : "Lease akan diperbarui otomatis selama tab aktif.",
       icon: Activity,
       tone: sessionSummary.tone === "info" ? ("warning" as const) : sessionSummary.tone,
@@ -1140,7 +1218,7 @@ function CapturePage() {
               Sesi
             </span>
             <span className="text-sm font-semibold">
-              {activeSession.label}
+              {scheduledContext ? activeSession.label : "Tidak ada sesi terbuka"}
               {/* Sesi 23.00 yang dikerjakan setelah tengah malam bertanggal
                   KEMARIN, dan berkasnya memang mendarat di folder kemarin.
                   Tanpa keterangan ini "23.00" pada pukul 00.20 terbaca seperti
@@ -1199,7 +1277,7 @@ function CapturePage() {
               jaringan dan biasanya berhasil. Yang disebut sekarang hanya
               perannya: cadangan kedua, dipakai kalau yang utama gagal. */}
           <span>
-            Folder simpan di browser belum dipilih. Ini cuma cadangan — dipakai kalau folder
+            Folder simpan di browser belum dipilih. Ini cuma cadangan â€” dipakai kalau folder
             jaringan sedang tidak bisa diakses. Tanpa folder ini, capture yang gagal masuk jaringan
             akan diunduh ke folder `Downloads` dan harus dipindahkan manual.
           </span>
@@ -1370,14 +1448,14 @@ function CapturePage() {
                 ) : (
                   <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
                     {sessionStarting
-                      ? "Menghubungkan ke kamera…"
+                      ? "Menghubungkan ke kameraâ€¦"
                       : cameraAsleep
-                        ? "Kamera tidak merespons…"
+                        ? "Kamera tidak meresponsâ€¦"
                         : !sessionId
                           ? "Kamera belum aktif"
                           : livePreview
-                            ? "Menunggu preview…"
-                            : "Live preview mati — capture tetap bisa dijalankan"}
+                            ? "Menunggu previewâ€¦"
+                            : "Live preview mati â€” capture tetap bisa dijalankan"}
                   </div>
                 )}
               </div>
@@ -1404,14 +1482,20 @@ function CapturePage() {
               <div className="mt-3 flex flex-wrap gap-2">
                 <button
                   onClick={() => captureToBin(bin)}
-                  disabled={!cameraUsable || capturingBin !== null || isSaving || autofocusing}
+                  disabled={
+                    !scheduledContext ||
+                    !cameraUsable ||
+                    capturingBin !== null ||
+                    isSaving ||
+                    autofocusing
+                  }
                   title={captureActionHint}
                   className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
                 >
                   {isSaving
-                    ? "Menyimpan…"
+                    ? "Menyimpanâ€¦"
                     : isCapturing
-                      ? "Mengambil…"
+                      ? "Mengambilâ€¦"
                       : showFrozen
                         ? `Ambil ulang ${binLabel(bin)}`
                         : `Capture ${binLabel(bin)}`}
@@ -1428,7 +1512,7 @@ function CapturePage() {
             <>
               <span className="inline-flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm text-amber-700">
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
-                Kamera sedang dipakai station lain, menunggu giliran untuk terhubung…
+                Kamera sedang dipakai station lain, menunggu giliran untuk terhubungâ€¦
               </span>
               <button
                 onClick={cancelStart}
@@ -1443,7 +1527,7 @@ function CapturePage() {
               disabled={sessionStarting}
               className="rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
             >
-              {sessionStarting ? "Menghubungkan…" : "Mulai kamera"}
+              {sessionStarting ? "Menghubungkanâ€¦" : "Mulai kamera"}
             </button>
           )
         ) : (
@@ -1477,7 +1561,7 @@ function CapturePage() {
             className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
           >
             <Camera className="h-3.5 w-3.5" />
-            {previewFetching ? "Mengambil…" : "Ambil 1 frame"}
+            {previewFetching ? "Mengambilâ€¦" : "Ambil 1 frame"}
           </button>
         )}
         <button
@@ -1487,7 +1571,7 @@ function CapturePage() {
           className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
         >
           <Crosshair className="h-3.5 w-3.5" />
-          {autofocusing ? "Memfokuskan…" : "Autofocus"}
+          {autofocusing ? "Memfokuskanâ€¦" : "Autofocus"}
         </button>
       </div>
 
@@ -1527,9 +1611,9 @@ function CapturePage() {
                 )}
                 <span className="text-sm text-muted-foreground">
                   {dirName
-                    ? `${dirName}${pendingReconnect ? " (izin diperlukan)" : " · diingat"}`
+                    ? `${dirName}${pendingReconnect ? " (izin diperlukan)" : " Â· diingat"}`
                     : fsUnsupportedNote
-                      ? "Tidak didukung — akan diunduh"
+                      ? "Tidak didukung â€” akan diunduh"
                       : "Belum ada folder dipilih"}
                 </span>
               </div>
@@ -1607,7 +1691,7 @@ function CapturePage() {
                       rendered until after hydration -- the server's HH.mm and the
                       browser's would differ by the time hydration runs, and React
                       would throw a text-mismatch (#418) on this node. */}
-                Contoh: <span className="font-mono">{hydrated ? nextFilename : "—"}</span>
+                Contoh: <span className="font-mono">{hydrated ? nextFilename : "â€”"}</span>
               </p>
             </div>
 
@@ -1634,7 +1718,7 @@ function CapturePage() {
           </div>
 
           <div className="mt-4 rounded-md bg-muted px-3 py-2 text-xs font-mono break-all">
-            File berikutnya akan disimpan sebagai: {hydrated ? nextFilename : "—"}
+            File berikutnya akan disimpan sebagai: {hydrated ? nextFilename : "â€”"}
           </div>
         </section>
       )}

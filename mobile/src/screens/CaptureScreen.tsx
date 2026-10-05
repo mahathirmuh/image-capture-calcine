@@ -23,6 +23,8 @@ import {
   type CaptureHistoryItem,
 } from "../lib/captures";
 import type { TodaySessionItem } from "../lib/sessionCoverage";
+import { requestWithSession } from "../lib/auth";
+import type { ScheduleSnapshot } from "../../../src/lib/capture-schedule";
 import { resolveAutomaticCaptureSession } from "../lib/automaticCaptureSession";
 
 type CaptureScreenProps = {
@@ -42,6 +44,8 @@ function sessionStatusCopy(status: TodaySessionItem["status"] | null) {
       return "Completed in coverage";
     case "missing":
       return "Ready for recovery";
+    case "open":
+      return "Session open";
     case "upcoming":
       return "Ready for schedule";
     default:
@@ -161,15 +165,68 @@ export function CaptureScreen(props: CaptureScreenProps) {
 }
 
 function CaptureContext(props: CaptureScreenProps) {
+  const [schedule, setSchedule] = useState<ScheduleSnapshot | null>(null);
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
+  const [retry, setRetry] = useState(0);
+  const clockOffset = useRef(0);
+  const currentAuth = useRef(props.session);
+  useEffect(() => {
+    currentAuth.current = props.session;
+  }, [props.session]);
+  useEffect(() => {
+    if (props.selectedSession || !props.session.user.plant || props.session.user.plant === "ALL")
+      return;
+    let cancelled = false;
+    let timer: number;
+    async function load() {
+      try {
+        const start = Date.now();
+        const response = await requestWithSession<ScheduleSnapshot>(
+          currentAuth.current,
+          "/schedules",
+          { method: "GET" },
+        );
+        if (cancelled || captureBusyRef.current) return;
+        if (!Array.isArray(response.data.versions) || !Number.isFinite(response.data.serverNow))
+          throw new Error("Invalid schedule response.");
+        clockOffset.current = response.data.serverNow - (start + Date.now()) / 2;
+        setSchedule(response.data);
+        setScheduleError(null);
+      } catch (error) {
+        if (!cancelled && !captureBusyRef.current) {
+          setSchedule(null);
+          setScheduleError((error as Error).message);
+        }
+      }
+      if (!cancelled) timer = window.setTimeout(load, 60000);
+    }
+    void load();
+    const visible = () => {
+      if (document.visibilityState === "visible") {
+        window.clearTimeout(timer);
+        void load();
+      }
+    };
+    document.addEventListener("visibilitychange", visible);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", visible);
+    };
+  }, [props.session.user.id, props.session.user.plant, props.selectedSession, retry]);
   const captureBusyRef = useRef(false);
-  const [automaticSession, setAutomaticSession] = useState(() =>
-    resolveAutomaticCaptureSession(props.session.user.plant),
-  );
+  const [automaticSession, setAutomaticSession] = useState(() => null as TodaySessionItem | null);
   const refreshContext = useCallback(() => {
     if (captureBusyRef.current) return;
-    const next = resolveAutomaticCaptureSession(props.session.user.plant);
+    const next = schedule
+      ? resolveAutomaticCaptureSession(
+          props.session.user.plant,
+          new Date(Date.now() + clockOffset.current),
+          schedule,
+        )
+      : null;
     setAutomaticSession((previous) => (previous?.key === next?.key ? previous : next));
-  }, [props.session.user.plant]);
+  }, [props.session.user.plant, schedule]);
   const onCaptureBusyChange = useCallback(
     (busy: boolean) => {
       captureBusyRef.current = busy;
@@ -192,6 +249,33 @@ function CaptureContext(props: CaptureScreenProps) {
     };
   }, [props.selectedSession, refreshContext]);
   const context = props.selectedSession ?? automaticSession;
+  if (
+    !props.selectedSession &&
+    props.session.user.plant &&
+    props.session.user.plant !== "ALL" &&
+    !schedule
+  )
+    return (
+      <main className="app-page-shell">
+        <section className="data-state-card" role={scheduleError ? "alert" : "status"}>
+          <div>
+            <strong>
+              {scheduleError ? "Unable to load capture schedule" : "Loading capture schedule"}
+            </strong>
+            <p>{scheduleError ?? "Checking the plant schedule with the backend."}</p>
+            {scheduleError && (
+              <button
+                type="button"
+                className="capture-session-bar__button"
+                onClick={() => setRetry((x) => x + 1)}
+              >
+                Retry
+              </button>
+            )}
+          </div>
+        </section>
+      </main>
+    );
   // A new account or scheduled context must never inherit another camera lease.
   const key = `${context?.key}:${context?.plant}`;
   return (
@@ -200,6 +284,8 @@ function CaptureContext(props: CaptureScreenProps) {
       {...props}
       selectedSession={context}
       automatic={!props.selectedSession}
+      clockOffset={clockOffset.current}
+      schedule={schedule}
       onCaptureBusyChange={onCaptureBusyChange}
     />
   );
@@ -213,8 +299,15 @@ function CaptureWorkflow({
   onOpenSessions,
   onOpenLatestCapture,
   automatic,
+  clockOffset,
+  schedule,
   onCaptureBusyChange,
-}: CaptureScreenProps & { automatic: boolean; onCaptureBusyChange: (busy: boolean) => void }) {
+}: CaptureScreenProps & {
+  automatic: boolean;
+  clockOffset: number;
+  schedule: ScheduleSnapshot | null;
+  onCaptureBusyChange: (busy: boolean) => void;
+}) {
   const [lease, setLease] = useState<CameraLease | null>(null);
   const [job, setJob] = useState<CameraJob | null>(null);
   const [latestCapture, setLatestCapture] = useState<CaptureHistoryItem | null>(null);
@@ -279,7 +372,13 @@ function CaptureWorkflow({
 
   function withinAutomaticWindow() {
     return (
-      !automatic || resolveAutomaticCaptureSession(session.user.plant)?.key === selectedSession?.key
+      !automatic ||
+      (!!schedule &&
+        resolveAutomaticCaptureSession(
+          session.user.plant,
+          new Date(Date.now() + clockOffset),
+          schedule,
+        )?.key === selectedSession?.key)
     );
   }
 
@@ -585,7 +684,11 @@ function CaptureWorkflow({
     });
 
     try {
-      const actionResponse = await triggerCapture(sessionRef.current, activeLease);
+      const actionResponse = await triggerCapture(sessionRef.current, activeLease, {
+        sessionDate: selectedSession.sessionDate,
+        captureSession: selectedSession.session,
+        recovery: !automatic,
+      });
 
       if (!isCurrent()) return;
       onSessionUpdate(actionResponse.session);
@@ -611,6 +714,7 @@ function CaptureWorkflow({
 
         const finalized = await finalizeCaptureResult(latestSession, {
           assetId,
+          receipt: actionResponse.data.receipt,
           capturedAt,
           plant: selectedSession.plant,
           captureSession: selectedSession.session,

@@ -86,3 +86,8 @@ npm run db:migrate
 4. Implement only the checklist items for that phase
 5. Run verification and record evidence
 6. Update docs before declaring completion
+
+
+## Flexible capture schedules
+
+Admin-configurable, versioned schedules per plant are available in Settings. See [schedule operations](docs/flexible-schedules.md). Back up `CAPTURE_SPOOL_DIR/schedules/versions.json` with the persistent spool volume. Mobile 1.1.0 is required for signed capture finalization; install the rebuilt APK when deploying this backend.
