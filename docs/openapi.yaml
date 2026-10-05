@@ -620,6 +620,9 @@ paths:
         Kalau satu slot punya beberapa percobaan capture, yang dikembalikan
         **yang terbaru**: capture ulang menimpa berkas di share, jadi tulisan
         terakhirlah yang menggambarkan berkas yang benar-benar ada di sana.
+
+        Hanya jalur reguler yang dihitung. Capture ber-`captureTrack: trial`
+        disisihkan, karena label jamnya bisa sama dengan sesi reguler.
       parameters:
         - name: date
           in: query
@@ -1566,6 +1569,14 @@ components:
           description: |
             `null` untuk record dari sebelum skema sesi dipakai -- bukan
             kelalaian, dan halaman Gallery pun menampilkannya sebagai "—".
+        captureTrack:
+          type: string
+          enum: [regular, trial]
+          description: |
+            Jalur jadwal. `trial` adalah sesi Acid Plant per 2 jam (00.00,
+            02.00, ...) yang disimpan di folder `Acid Plant Trial`. Record
+            trial tetap ber-`plant` Acid Plant, tetapi **tidak** dihitung di
+            `/sessions`. Record lama tanpa kunci ini dibaca sebagai `regular`.
         capturedBy:
           type: string
           nullable: true

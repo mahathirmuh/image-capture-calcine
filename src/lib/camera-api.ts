@@ -211,6 +211,9 @@ export const triggerCapture = createServerFn({ method: "POST" })
     sessionRefSchema.extend({
       sessionDate: z.string().optional(),
       captureSession: z.string().optional(),
+      // Jalur jadwal: "trial" divalidasi terhadap jadwal tetap per 2 jam,
+      // bukan jadwal plant yang diatur admin.
+      track: z.enum(["regular", "trial"]).optional(),
     }),
   )
   .handler(async ({ data }): Promise<ApiSuccess<{ job: CaptureJob }> | ApiFailure> => {
@@ -219,7 +222,7 @@ export const triggerCapture = createServerFn({ method: "POST" })
 
     try {
       const { checkScheduledCapture } = await import("./server/capture-schedules");
-      await checkScheduledCapture(target.plant ?? data.plant ?? "", data);
+      await checkScheduledCapture(target.plant ?? data.plant ?? "", data, data.track ?? "regular");
     } catch (error) {
       return { ok: false, code: "CAPTURE_SCHEDULE_REJECTED", message: (error as Error).message };
     }

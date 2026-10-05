@@ -486,3 +486,15 @@ Initial regression evidence: 45 suites / 394 tests passed. Includes interval gen
 Final local verification (2026-10-05): 47 suites / 401 tests passed. Web/backend and mobile production builds passed. Actual Settings and mobile components were exercised in an isolated browser fixture: interval preview/save/history, invalid input, conflict and draft-preserving reload, mobile open/upcoming sessions, capture completion, closed-window blocking and failed-schedule Retry. No production business records were changed. APK 1.1.0 / versionCode 2 was built and its v1/v2 signatures verified; SHA256 `4B9A3BE029467277E3F19C14788BDE5F1D3CC442BC9B587D4108C9B80FDE6841`. Root TypeScript has the same 50 baseline errors and no new error messages; mobile TypeScript passes. Changed-code ESLint passed with the existing formatter rule excluded, changed source Prettier passed; 13 pre-existing UI audit findings remain. Physical Android/camera/share acceptance remains pending.
 
 Production verification: image source `4b8e79d2b377971e6e518064ca22a22b5a70476a` is deployed and healthy; authenticated schedule/session reads, public TLS/assets and mobile API schedule read pass. Existing configuration, storage and other services are retained, with rollback available. All tracked-source ESLint passes with formatter rule excluded; combined formatter lint did not finish, while direct changed-source Prettier passes. Details: `docs/releases/flexible-schedules-2026-10-05.md`. Physical acceptance checkbox remains open.
+
+## Post-M5 — Acid Plant trial track on web Capture (2026-10-05)
+
+Web/backend change; mobile scope and M0–M5 status unchanged. Details: `docs/flexible-schedules.md`.
+
+- [x] Two tabs on web `/capture` for Acid Plant: regular (plant schedule) and trial (fixed 2-hour sessions from 00.00).
+- [x] Trial photos saved under `Acid Plant Trial/`; records tagged `captureTrack: "trial"` and excluded from `/sessions` coverage.
+- [x] Server-side window validation per track; forwarded-marker matches destination path.
+- [x] OpenAPI updated: `CaptureRecord.captureTrack`, `/sessions` note. No new routes; mobile request/response contract otherwise unchanged.
+- [ ] Physical capture on both tabs with files confirmed in both share folders.
+
+Verification: 43 suites / 378 tests pass locally (4 new trial-track tests); 4 suites cannot load on this workstation because `react-test-renderer` and `mobile/node_modules` are not installed (pre-existing). Changed sources pass Prettier (line endings ignored); the dev server compiles the Capture route with the tabs. No production build, browser click-through, camera capture or share write was performed.

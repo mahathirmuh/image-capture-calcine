@@ -27,13 +27,20 @@ export async function markCaptureForwarded(
   // Dicocokkan lewat nama berkas + waktu capture, pola yang sama dengan rename
   // dan hapus. Jendela 120 detik menyerap selisih antara jam app server dan
   // nilai capturedAt yang berasal dari browser.
+  //
+  // Path tujuan ikut jadi syarat. Nama berkas saja tidak lagi unik: jalur
+  // reguler dan trial sama-sama punya "02.00 Train 1.jpg", di folder berbeda,
+  // dan operator memang mengambil keduanya berdekatan. Tanpa syarat ini,
+  // pengiriman berkas trial menulis ulang path milik record reguler.
   const found = await pool
     .request()
     .input("fileName", sql.NVarChar(255), fileName)
+    .input("filePath", sql.NVarChar(1000), finalPath)
     .input("capturedAt", sql.DateTime2, new Date(capturedAt)).query(`
       SELECT TOP 1 id, metadata_json
       FROM ${schema}.capture_records
       WHERE file_name = @fileName
+        AND file_path = @filePath
         AND ABS(DATEDIFF(second, captured_at, @capturedAt)) <= 120
       ORDER BY ABS(DATEDIFF(second, captured_at, @capturedAt)), id DESC;
     `);

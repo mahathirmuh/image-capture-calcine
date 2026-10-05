@@ -31,6 +31,7 @@ function buildCaptureRecordMetadata(input: RecordCaptureInput, operator: Capture
     plant: input.plant,
     captureBin: input.captureBin,
     captureSession: input.captureSession ?? null,
+    captureTrack: input.captureTrack ?? "regular",
     capturedByUserId: operator?.id ?? null,
     capturedBy: operator?.name ?? null,
     station: input.station ?? null,

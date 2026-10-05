@@ -47,6 +47,10 @@ const recordCaptureSchema = z.object({
   // bisa dijawab dari registry, bukan dengan mengurai nama berkas yang bisa
   // bersuffix "(2)" atau sudah di-rename orang.
   captureSession: z.string().trim().max(20).nullable().optional(),
+  // Jalur jadwal. Kosong berarti jalur reguler; "trial" adalah sesi per 2 jam
+  // yang disimpan di folder "<Plant> Trial" dan TIDAK dihitung sebagai cakupan
+  // sesi reguler walau label jamnya sama (02.00, 08.00, 14.00, 20.00).
+  captureTrack: z.enum(["regular", "trial"]).nullable().optional(),
   station: z.string().trim().nullable().optional(),
   fileName: z.string().trim().min(1, "Nama file wajib diisi"),
   filePath: z.string().trim().min(1, "Path file wajib diisi"),
@@ -188,6 +192,7 @@ export type CaptureRecordView = {
   plant: string | null;
   captureBin: string | null;
   captureSession: string | null;
+  captureTrack: "regular" | "trial";
   capturedBy: string | null;
   station: string | null;
   fileName: string;
@@ -368,6 +373,7 @@ function parseCaptureRecordMetadata(raw: unknown): {
   // Record dari sebelum skema sesi dipakai tidak punya kunci ini, jadi nullable
   // bukan kelalaian -- Gallery menampilkannya sebagai "—" untuk capture lama.
   captureSession: string | null;
+  captureTrack: "regular" | "trial";
   // Record dari sebelum atribusi operator dipasang tidak punya kunci ini.
   capturedBy: string | null;
   capturedByUserId: number | null;
@@ -396,6 +402,7 @@ function parseCaptureRecordMetadata(raw: unknown): {
     plant: typeof parsed.plant === "string" ? parsed.plant : null,
     captureBin: typeof parsed.captureBin === "string" ? parsed.captureBin : null,
     captureSession: typeof parsed.captureSession === "string" ? parsed.captureSession : null,
+    captureTrack: parsed.captureTrack === "trial" ? "trial" : "regular",
     capturedBy: typeof parsed.capturedBy === "string" ? parsed.capturedBy : null,
     capturedByUserId: typeof parsed.capturedByUserId === "number" ? parsed.capturedByUserId : null,
     station: typeof parsed.station === "string" ? parsed.station : null,
@@ -417,6 +424,7 @@ export function mapCaptureRecordRow(row: Record<string, unknown>): CaptureRecord
     plant: metadata.plant ?? (typeof row.plant === "string" ? row.plant : null),
     captureBin: metadata.captureBin,
     captureSession: metadata.captureSession,
+    captureTrack: metadata.captureTrack,
     capturedBy: metadata.capturedBy,
     station: metadata.station ?? (typeof row.station === "string" ? row.station : null),
     fileName: String(row.file_name ?? ""),

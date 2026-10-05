@@ -9,6 +9,9 @@ import {
   plantToday,
   zonedClock,
   validateCaptureContext,
+  hasTrialTrack,
+  versionsForTrack,
+  type CaptureTrack,
   type ScheduleSnapshot,
   type ScheduleVersion,
 } from "../capture-schedule";
@@ -101,9 +104,15 @@ export async function checkScheduledCapture(
     captureSession?: string;
     recovery?: boolean;
   },
+  track: CaptureTrack = "regular",
 ) {
   if (!(PLANTS as readonly string[]).includes(plant))
     throw new Error("INVALID_SESSION: Plant tidak valid.");
+  if (track === "trial") {
+    if (!hasTrialTrack(plant))
+      throw new Error("INVALID_SESSION: Jalur trial tidak tersedia untuk plant ini.");
+    return validateCaptureContext(versionsForTrack([], plant, track), plant, Date.now(), input);
+  }
   const snapshot = await readScheduleSnapshot();
   return validateCaptureContext(snapshot.versions, plant, Date.now(), input);
 }

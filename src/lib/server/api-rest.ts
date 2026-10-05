@@ -1889,9 +1889,13 @@ async function handleSessions(url: URL): Promise<Response> {
       WHERE (@plant IS NULL OR ${CAPTURE_PLANT_SQL} = @plant) AND cr.captured_at >= @from AND cr.captured_at < @to
       ORDER BY cr.captured_at ASC, cr.id ASC;`);
 
-  const records = result.recordset.map((row: unknown) =>
-    toCoverageRecord(mapCaptureRecordRow(row as Record<string, unknown>)),
-  );
+  // Capture jalur trial berbagi plant dan label jam dengan jalur reguler
+  // (02.00, 08.00, ...), jadi harus disisihkan sebelum cakupan dihitung --
+  // kalau tidak, foto trial akan menutup sesi reguler yang sebenarnya kosong.
+  const records = result.recordset
+    .map((row: unknown) => mapCaptureRecordRow(row as Record<string, unknown>))
+    .filter((view: CaptureRecordView) => view.captureTrack !== "trial")
+    .map(toCoverageRecord);
 
   const coverage = buildSessionCoverage({ date, plants, records, versions: snapshot.versions });
   return json({ date, serverNow: Date.now(), ...coverage });

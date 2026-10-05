@@ -63,6 +63,38 @@ export function defaultSchedule(plant: string): ScheduleVersion {
     createdBy: null,
   };
 }
+// Jalur capture. "regular" memakai jadwal plant yang diatur admin; "trial"
+// berjalan berdampingan di plant yang sama dengan jadwal tetap per 2 jam
+// (00.00, 02.00, 04.00, ...) dan folder simpannya sendiri. Kamera, operator
+// dan slot Train/Bin tetap milik plant asalnya -- yang berbeda hanya jadwal
+// dan tujuan berkas.
+export const CAPTURE_TRACKS = ["regular", "trial"] as const;
+export type CaptureTrack = (typeof CAPTURE_TRACKS)[number];
+export const TRIAL_PLANTS: readonly string[] = ["Acid Plant"];
+export function hasTrialTrack(plant: string): boolean {
+  return TRIAL_PLANTS.includes(plant);
+}
+export function trialSchedule(plant: string): ScheduleVersion {
+  return {
+    ...defaultSchedule(plant),
+    id: `trial-${plant}`,
+    startHour: 0,
+    intervalHours: 2,
+    windowMinutes: 120,
+  };
+}
+/** Versi jadwal yang berlaku untuk sebuah jalur. Trial tidak ikut versi admin. */
+export function versionsForTrack(
+  versions: ScheduleVersion[],
+  plant: string,
+  track: CaptureTrack,
+): ScheduleVersion[] {
+  return track === "trial" ? [trialSchedule(plant)] : versions;
+}
+/** Folder pertama di bawah NETWORK_SAVE_ROOT: "Acid Plant" atau "Acid Plant Trial". */
+export function trackFolder(plant: string, track: CaptureTrack): string {
+  return track === "trial" ? `${plant} Trial` : plant;
+}
 export function scheduleForDate(versions: ScheduleVersion[], plant: string, date: string) {
   return versions.reduce(
     (best, v) =>

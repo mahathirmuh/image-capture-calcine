@@ -8,6 +8,10 @@ import {
   validateCaptureContext,
   scheduleValidation,
   plantToday,
+  trialSchedule,
+  hasTrialTrack,
+  trackFolder,
+  versionsForTrack,
   type ScheduleVersion,
 } from "./capture-schedule";
 import { buildSessionCoverage } from "./session-coverage";
@@ -121,5 +125,44 @@ describe("versioned plant schedules", () => {
         records: [],
       }).summary.expected,
     ).toBe(16);
+  });
+});
+describe("trial capture track", () => {
+  const at = (iso: string) => Date.parse(iso);
+  it("runs every 2 hours from 00.00 beside the regular 3-hour schedule", () => {
+    expect(scheduleHours(trialSchedule(plant))).toEqual([
+      0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22,
+    ]);
+    expect(scheduleHours(legacy)).toEqual([2, 5, 8, 11, 14, 17, 20, 23]);
+  });
+  it("is offered only for Acid Plant and saves to its own folder", () => {
+    expect(hasTrialTrack("Acid Plant")).toBe(true);
+    expect(hasTrialTrack("Chloride Plant")).toBe(false);
+    expect(trackFolder(plant, "trial")).toBe("Acid Plant Trial");
+    expect(trackFolder(plant, "regular")).toBe("Acid Plant");
+  });
+  it("ignores admin schedule versions and always has an open session", () => {
+    const versions = versionsForTrack([version], plant, "trial");
+    // 04:30 WITA: no regular window (02.00 closed at 04.00), trial 04.00 is open.
+    const now = at("2026-10-06T04:30:00+08:00");
+    expect(activeScheduledContext([legacy], plant, now)).toBeNull();
+    expect(activeScheduledContext(versions, plant, now)?.label).toBe("04.00");
+    expect(versionsForTrack([version], plant, "regular")).toEqual([version]);
+  });
+  it("rejects a regular-only session label on the trial track", () => {
+    const versions = versionsForTrack([], plant, "trial");
+    const now = at("2026-10-06T05:10:00+08:00");
+    expect(() =>
+      validateCaptureContext(versions, plant, now, {
+        sessionDate: "2026-10-06",
+        captureSession: "05.00",
+      }),
+    ).toThrow(/INVALID_SESSION/);
+    expect(
+      validateCaptureContext(versions, plant, now, {
+        sessionDate: "2026-10-06",
+        captureSession: "04.00",
+      }).label,
+    ).toBe("04.00");
   });
 });
