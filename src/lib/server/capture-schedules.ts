@@ -124,6 +124,9 @@ type Receipt = {
   captureSession: string;
   capturedAt: number;
   jobId: string;
+  // Jalur jadwal saat perintah diberikan. Receipt lama tidak punya kunci ini
+  // dan dibaca sebagai jalur reguler.
+  track?: CaptureTrack;
 };
 function signature(body: string) {
   const secret = getServerEnv().SESSION_SECRET;

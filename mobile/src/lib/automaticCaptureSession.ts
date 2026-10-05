@@ -1,20 +1,33 @@
-import { activeScheduledContext, type ScheduleSnapshot } from "../../../src/lib/capture-schedule";
+import {
+  activeScheduledContext,
+  hasTrialTrack,
+  versionsForTrack,
+  type CaptureTrack,
+  type ScheduleSnapshot,
+} from "../../../src/lib/capture-schedule";
 import { localDateKey, type TodaySessionItem } from "./sessionCoverage";
 
 const SESSION_HOURS = [2, 5, 8, 11, 14, 17, 20, 23] as const;
 
-/** Device-local two-hour windows; 23:00 continues until 00:59 the next day. */
+/** Open session for a track. The no-snapshot branch is a legacy device-clock fallback. */
 export function resolveAutomaticCaptureSession(
   plant: string | null | undefined,
   now = new Date(),
   snapshot?: ScheduleSnapshot | null,
+  track: CaptureTrack = "regular",
 ): TodaySessionItem | null {
   if (!plant || plant === "ALL") return null;
+  if (track === "trial" && !hasTrialTrack(plant)) return null;
   if (snapshot) {
-    const context = activeScheduledContext(snapshot.versions, plant, now.getTime());
+    const context = activeScheduledContext(
+      versionsForTrack(snapshot.versions, plant, track),
+      plant,
+      now.getTime(),
+    );
     if (!context) return null;
     return {
-      key: `auto-${plant}-${context.date}-${context.hour}-${context.scheduleId}`,
+      key: `auto-${track}-${plant}-${context.date}-${context.hour}-${context.scheduleId}`,
+      track,
       plant,
       session: context.label,
       hour: context.hour,
@@ -31,7 +44,7 @@ export function resolveAutomaticCaptureSession(
     };
   }
   const minutes = now.getHours() * 60 + now.getMinutes();
-  const hour = SESSION_HOURS.find((start) => (minutes - start * 60 + 1440) % 1440 < 120);
+  const hour = SESSION_HOURS.find((start) => (minutes - start * 60 + 1440) % 1440 < 180);
   if (hour === undefined) return null;
   const startDate = new Date(now);
   if (minutes < hour * 60) startDate.setDate(startDate.getDate() - 1);

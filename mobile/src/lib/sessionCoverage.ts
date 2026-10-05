@@ -1,4 +1,5 @@
 import { requestWithSession, type AuthSession } from "./auth";
+import type { CaptureTrack } from "../../../src/lib/capture-schedule";
 
 export type SessionCoverageResponse = {
   date: string;
@@ -57,6 +58,8 @@ export type TodaySessionItem = {
   startsAt?: number;
   endsAt?: number;
   scheduleId?: string;
+  /** Schedule track; absent means the regular plant schedule. */
+  track?: CaptureTrack;
 };
 
 export type TodaySessionsView = {
@@ -71,10 +74,11 @@ export type TodaySessionsView = {
   items: TodaySessionItem[];
 };
 
-function buildQuery(params: { date?: string; plant?: string | null }) {
+function buildQuery(params: { date?: string; plant?: string | null; track?: CaptureTrack }) {
   const query = new URLSearchParams();
   if (params.date) query.set("date", params.date);
   if (params.plant && params.plant !== "ALL") query.set("plant", params.plant);
+  if (params.track === "trial") query.set("track", "trial");
   const rendered = query.toString();
   return rendered ? `?${rendered}` : "";
 }
@@ -112,7 +116,10 @@ function inferStatus(date: string, hour: number, captured: boolean): TodaySessio
   return currentMinutes >= sessionMinutes ? "missing" : "upcoming";
 }
 
-export function mapSessionCoverageToView(payload: SessionCoverageResponse): TodaySessionsView {
+export function mapSessionCoverageToView(
+  payload: SessionCoverageResponse,
+  track: CaptureTrack = "regular",
+): TodaySessionsView {
   const items = payload.plants
     .flatMap((plantCoverage) =>
       plantCoverage.sessions.flatMap((sessionCoverage) =>
@@ -134,7 +141,8 @@ export function mapSessionCoverageToView(payload: SessionCoverageResponse): Toda
               : slotCoverage.label;
 
           return {
-            key: `${plantCoverage.plant}-${payload.date}-${sessionCoverage.session}-${slotCoverage.slot}`,
+            key: `${track}-${plantCoverage.plant}-${payload.date}-${sessionCoverage.session}-${slotCoverage.slot}`,
+            track,
             sessionDate: sessionCoverage.sessionDate ?? payload.date,
             startsAt: sessionCoverage.startsAt,
             endsAt: sessionCoverage.endsAt,
@@ -180,7 +188,7 @@ export function mapSessionCoverageToView(payload: SessionCoverageResponse): Toda
 
 export async function getSessionCoverage(
   session: AuthSession,
-  options: { date?: string; plant?: string | null } = {},
+  options: { date?: string; plant?: string | null; track?: CaptureTrack } = {},
 ): Promise<{ session: AuthSession; data: SessionCoverageResponse }> {
   return requestWithSession<SessionCoverageResponse>(session, `/sessions${buildQuery(options)}`, {
     method: "GET",

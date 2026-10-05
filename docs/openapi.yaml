@@ -632,9 +632,16 @@ paths:
           in: query
           description: Batasi ke satu plant. Bawaan semua plant.
           schema: { $ref: "#/components/schemas/PlantName" }
+        - name: track
+          in: query
+          description: |
+            Jalur jadwal. `trial` menjawab cakupan sesi trial per 2 jam, hanya
+            untuk plant yang menjalankannya (Acid Plant), dan hanya menghitung
+            capture ber-`captureTrack: trial`. Bawaan `regular`.
+          schema: { type: string, enum: [regular, trial], default: regular }
       responses:
         "200":
-          description: Cakupan sesi.
+          description: Cakupan sesi. Jawaban memuat `track` yang dipakai.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/SessionCoverage" }
@@ -1152,6 +1159,14 @@ paths:
                     description: Tanggal awal sesi dalam timezone plant; kirim bersama captureSession.,
                   }
                 captureSession: { $ref: "#/components/schemas/SessionLabel" }
+                track:
+                  type: string
+                  enum: [regular, trial]
+                  default: regular
+                  description: |
+                    Jalur jadwal untuk validasi jendela sesi. Ikut ditandatangani
+                    di `receipt`, dan menentukan folder simpan saat finalize
+                    (`Acid Plant Trial` untuk `trial`). Hanya Acid Plant.
                 recovery:
                   {
                     type: boolean,

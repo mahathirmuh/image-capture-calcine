@@ -27,7 +27,14 @@ import {
   issueCaptureReceipt,
   verifyCaptureReceipt,
 } from "./capture-schedules";
-import { plantToday, validDate } from "../capture-schedule";
+import {
+  plantToday,
+  validDate,
+  hasTrialTrack,
+  trackFolder,
+  trialSchedule,
+  type CaptureTrack,
+} from "../capture-schedule";
 import { canViewGalleryPlant } from "../gallery-access";
 import { CAPTURE_PLANT_SQL, requireGalleryUserAccess } from "./gallery-access";
 
@@ -725,17 +732,21 @@ async function handleCaptureFinalize(principal: ApiPrincipal, request: Request):
       "CAPTURE_CONTEXT_MISMATCH",
       "Capture context tidak cocok dengan perintah kamera.",
     );
+  // Folder mengikuti jalur yang DITANDATANGANI di receipt, bukan isi body:
+  // klien tidak bisa memindahkan foto reguler ke folder trial atau sebaliknya.
+  const captureTrack: CaptureTrack = receipt.track === "trial" ? "trial" : "regular";
+  const folder = trackFolder(plant, captureTrack);
   const fileName = `${receipt.captureSession} ${toBinTitle(plant, slot)}.jpg`;
   const pathResult = {
     ok:
       validDate(receipt.sessionDate) &&
       !!normalizeRelativeSegments(
-        `${plant}/${receipt.sessionDate.replaceAll("-", "/")}/${fileName}`,
+        `${folder}/${receipt.sessionDate.replaceAll("-", "/")}/${fileName}`,
       ),
     code: "INVALID_RELATIVE_PATH",
     message: "Path sesi capture tidak valid.",
     fileName,
-    relativePath: `${plant}/${receipt.sessionDate.replaceAll("-", "/")}/${fileName}`,
+    relativePath: `${folder}/${receipt.sessionDate.replaceAll("-", "/")}/${fileName}`,
   };
   if (!pathResult.ok) {
     return apiError(400, pathResult.code, pathResult.message);
@@ -803,6 +814,7 @@ async function handleCaptureFinalize(principal: ApiPrincipal, request: Request):
       plant,
       captureBin: toBinLabel(plant, slot),
       captureSession,
+      captureTrack,
       station: target.station ?? null,
       fileName: saved.filename,
       filePath: saved.savedTo,
@@ -834,6 +846,7 @@ async function handleCaptureFinalize(principal: ApiPrincipal, request: Request):
       deviceCode: target.deviceCode,
       plant,
       captureSession,
+      captureTrack,
       captureBin: toBinLabel(plant, slot),
       capturedAt: new Date(capturedAt).toISOString(),
     },
@@ -1787,14 +1800,19 @@ async function handleCameraCommand(
   if (!target.ok) return edgeFailure(target);
 
   let captureContext;
+  const captureTrack: CaptureTrack = body.track === "trial" ? "trial" : "regular";
   const commandAt = Date.now();
   if (kind === "capture") {
     try {
-      captureContext = await checkScheduledCapture(target.plant ?? text(body.plant), {
-        sessionDate: typeof body.sessionDate === "string" ? body.sessionDate : undefined,
-        captureSession: typeof body.captureSession === "string" ? body.captureSession : undefined,
-        recovery: body.recovery === true,
-      });
+      captureContext = await checkScheduledCapture(
+        target.plant ?? text(body.plant),
+        {
+          sessionDate: typeof body.sessionDate === "string" ? body.sessionDate : undefined,
+          captureSession: typeof body.captureSession === "string" ? body.captureSession : undefined,
+          recovery: body.recovery === true,
+        },
+        captureTrack,
+      );
     } catch (error) {
       return apiError(409, "CAPTURE_SCHEDULE_REJECTED", (error as Error).message);
     }
@@ -1843,6 +1861,7 @@ async function handleCameraCommand(
           captureSession: captureContext.label,
           capturedAt: commandAt,
           jobId: job.jobId,
+          track: captureTrack,
         })
       : undefined;
   return json({ deviceCode: target.deviceCode, job, ...(receipt ? { receipt } : {}) }, 202);
@@ -1862,7 +1881,16 @@ async function handleSessions(url: URL): Promise<Response> {
   if (requestedPlant !== null && !(PLANTS as readonly string[]).includes(requestedPlant)) {
     return apiError(400, "INVALID_PARAM", `plant tidak dikenal: ${requestedPlant}`);
   }
-  const plants = requestedPlant ? [requestedPlant] : [...PLANTS];
+  // Jalur trial punya jadwal dan cakupannya sendiri, hanya untuk plant yang
+  // memang menjalankannya. Tanpa parameter, yang dijawab jalur reguler.
+  const rawTrack = url.searchParams.get("track");
+  if (rawTrack !== null && rawTrack !== "regular" && rawTrack !== "trial") {
+    return apiError(400, "INVALID_PARAM", `track harus regular atau trial, bukan: ${rawTrack}`);
+  }
+  const track: CaptureTrack = rawTrack === "trial" ? "trial" : "regular";
+  const plants = (requestedPlant ? [requestedPlant] : [...PLANTS]).filter(
+    (plant) => track === "regular" || hasTrialTrack(plant),
+  );
 
   // Jendela ambil sengaja lebih lebar dari satu hari: sesi 23.00 di-capture
   // setelah tengah malam (hari berikutnya menurut jam dinding), dan
@@ -1894,11 +1922,13 @@ async function handleSessions(url: URL): Promise<Response> {
   // kalau tidak, foto trial akan menutup sesi reguler yang sebenarnya kosong.
   const records = result.recordset
     .map((row: unknown) => mapCaptureRecordRow(row as Record<string, unknown>))
-    .filter((view: CaptureRecordView) => view.captureTrack !== "trial")
+    .filter((view: CaptureRecordView) => view.captureTrack === track)
     .map(toCoverageRecord);
 
-  const coverage = buildSessionCoverage({ date, plants, records, versions: snapshot.versions });
-  return json({ date, serverNow: Date.now(), ...coverage });
+  const versions =
+    track === "trial" ? plants.map((plant) => trialSchedule(plant)) : snapshot.versions;
+  const coverage = buildSessionCoverage({ date, plants, records, versions });
+  return json({ date, track, serverNow: Date.now(), ...coverage });
 }
 
 // --- pengarah -----------------------------------------------------------------

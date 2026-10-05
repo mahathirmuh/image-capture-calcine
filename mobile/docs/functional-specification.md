@@ -103,3 +103,11 @@ Explicit account scope `ALL` allows selecting a scheduled session from any plant
 - Today Sessions uses backend plant-local date, session timestamps and historical schedule versions. Status is Upcoming/Open/Completed/Missing; upcoming sessions cannot be selected. Explicit selection permits recovery for a started session today or yesterday; server rechecks it.
 - The capture command is validated server-side. Its signed receipt pins command time, user, device, job and session date; finalize verifies the receipt and asset/job association, allowing an in-flight capture to save after window expiry. Rebuilt mobile APK is required for this finalize contract.
 - Session date determines storage path; capture time remains distinct. Retake file naming is unchanged in this feature.
+
+
+## Trial track and session range — 2026-10-05
+
+- A default session is a range: it stays open until the next session starts (180-minute window on the 3-hour schedule), so direct capture is no longer blocked between sessions.
+- Acid Plant has a second, fixed track: 2-hour sessions from 00.00. Today Sessions and direct Capture show `3-Hour Sessions` / `2-Hour Trial` tabs for Acid Plant operators; ALL accounts get the tabs on Today Sessions.
+- Trial captures use the same camera and Train slots, are saved under `Acid Plant Trial/`, and are counted only in trial coverage. The backend decides the folder from the signed receipt.
+- APK 1.2.0 is required for the trial tab; 1.1.0 continues to work for regular sessions.

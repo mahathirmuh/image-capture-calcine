@@ -20,7 +20,9 @@ Trial records keep `plant = Acid Plant` and carry `captureTrack: "trial"` in `me
 
 The spool's "forwarded" marker now matches on the destination path as well as file name, because `02.00 Train 1.jpg` exists in both folders.
 
-Not included: mobile (REST capture/finalize remain regular-only), other plants, and a Gallery filter for the track.
+Mobile (APK 1.2.0 / versionCode 3) has the same two tabs on Today Sessions and on direct Capture, in English (`3-Hour Sessions` / `2-Hour Trial`). REST: `POST /camera/capture` accepts `track`, the signed receipt carries it, and `POST /captures/finalize` derives the folder from the receipt, never from the request body; `GET /sessions?track=trial` returns trial coverage. Requests without `track` behave as before, so APK 1.1.0 keeps working for regular sessions. Switching tabs in direct Capture releases and re-acquires the camera lease.
+
+Not included: other plants, and a Gallery/History filter for the track.
 
 ## Default window is the full interval (2026-10-05)
 

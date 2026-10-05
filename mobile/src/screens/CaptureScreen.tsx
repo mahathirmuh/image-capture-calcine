@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { AppLogo } from "../components/AppLogo";
 import type { AuthSession } from "../lib/auth";
@@ -24,7 +24,12 @@ import {
 } from "../lib/captures";
 import type { TodaySessionItem } from "../lib/sessionCoverage";
 import { requestWithSession } from "../lib/auth";
-import type { ScheduleSnapshot } from "../../../src/lib/capture-schedule";
+import {
+  hasTrialTrack,
+  type CaptureTrack,
+  type ScheduleSnapshot,
+} from "../../../src/lib/capture-schedule";
+import { TrackTabs } from "../components/TrackTabs";
 import { resolveAutomaticCaptureSession } from "../lib/automaticCaptureSession";
 
 type CaptureScreenProps = {
@@ -168,6 +173,12 @@ function CaptureContext(props: CaptureScreenProps) {
   const [schedule, setSchedule] = useState<ScheduleSnapshot | null>(null);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
+  // Direct capture can follow either schedule track; a session picked in Today
+  // Sessions already carries its own track.
+  const [track, setTrack] = useState<CaptureTrack>("regular");
+  const [captureBusy, setCaptureBusy] = useState(false);
+  const trialAvailable = !props.selectedSession && hasTrialTrack(props.session.user.plant ?? "");
+  const activeTrack: CaptureTrack = trialAvailable ? track : "regular";
   const clockOffset = useRef(0);
   const currentAuth = useRef(props.session);
   useEffect(() => {
@@ -223,13 +234,15 @@ function CaptureContext(props: CaptureScreenProps) {
           props.session.user.plant,
           new Date(Date.now() + clockOffset.current),
           schedule,
+          activeTrack,
         )
       : null;
     setAutomaticSession((previous) => (previous?.key === next?.key ? previous : next));
-  }, [props.session.user.plant, schedule]);
+  }, [activeTrack, props.session.user.plant, schedule]);
   const onCaptureBusyChange = useCallback(
     (busy: boolean) => {
       captureBusyRef.current = busy;
+      setCaptureBusy(busy);
       if (!busy) refreshContext();
     },
     [refreshContext],
@@ -287,6 +300,11 @@ function CaptureContext(props: CaptureScreenProps) {
       clockOffset={clockOffset.current}
       schedule={schedule}
       onCaptureBusyChange={onCaptureBusyChange}
+      trackTabs={
+        trialAvailable ? (
+          <TrackTabs track={activeTrack} onChange={setTrack} disabled={captureBusy} />
+        ) : null
+      }
     />
   );
 }
@@ -302,11 +320,13 @@ function CaptureWorkflow({
   clockOffset,
   schedule,
   onCaptureBusyChange,
+  trackTabs,
 }: CaptureScreenProps & {
   automatic: boolean;
   clockOffset: number;
   schedule: ScheduleSnapshot | null;
   onCaptureBusyChange: (busy: boolean) => void;
+  trackTabs: ReactNode;
 }) {
   const [lease, setLease] = useState<CameraLease | null>(null);
   const [job, setJob] = useState<CameraJob | null>(null);
@@ -344,7 +364,7 @@ function CaptureWorkflow({
     ? (currentSlotLabel ?? selectedSession.location)
     : "Session not available";
   const contextMeta = hasSelectedSession
-    ? `${selectedSession.plant} • ${automatic ? "Auto session " : ""}${selectedSession.displayTime} • ${currentSlotLabel}`
+    ? `${selectedSession.plant}${selectedSession.track === "trial" ? " Trial" : ""} • ${automatic ? "Auto session " : ""}${selectedSession.displayTime} • ${currentSlotLabel}`
     : blockedMessage;
   const headerTitle = hasSelectedSession
     ? `${selectedSession.plant} | ${selectedSession.displayTime}`
@@ -378,6 +398,7 @@ function CaptureWorkflow({
           session.user.plant,
           new Date(Date.now() + clockOffset),
           schedule,
+          selectedSession?.track ?? "regular",
         )?.key === selectedSession?.key)
     );
   }
@@ -562,6 +583,7 @@ function CaptureWorkflow({
 
       const requestId = ++historyRequestRef.current;
       const expectedBin = slotLabelUpper(selectedSession.plant, slot).trim().toLowerCase();
+      const expectedTrack = selectedSession.track ?? "regular";
 
       const response = await listCaptures(currentSession, {
         plant: selectedSession.plant,
@@ -572,8 +594,11 @@ function CaptureWorkflow({
       if (!mountedRef.current || requestId !== historyRequestRef.current) return response.session;
       onSessionUpdate(response.session);
       const matchedRecord =
-        response.data.items.find((item) => item.captureBin?.trim().toLowerCase() === expectedBin) ??
-        null;
+        response.data.items.find(
+          (item) =>
+            item.captureBin?.trim().toLowerCase() === expectedBin &&
+            (item.captureTrack ?? "regular") === expectedTrack,
+        ) ?? null;
 
       setLatestCapture(matchedRecord ? mapCaptureRecordToHistoryItem(matchedRecord) : null);
       return response.session;
@@ -688,6 +713,7 @@ function CaptureWorkflow({
         sessionDate: selectedSession.sessionDate,
         captureSession: selectedSession.session,
         recovery: !automatic,
+        track: selectedSession.track ?? "regular",
       });
 
       if (!isCurrent()) return;
@@ -786,6 +812,8 @@ function CaptureWorkflow({
           </span>
           <span>{contextMeta}</span>
         </div>
+
+        {trackTabs}
 
         {hasSelectedSession ? (
           <div className="capture-slot-selector" role="group" aria-label="Capture target slot">

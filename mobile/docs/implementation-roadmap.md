@@ -498,3 +498,16 @@ Web/backend change; mobile scope and M0–M5 status unchanged. Details: `docs/fl
 - [ ] Physical capture on both tabs with files confirmed in both share folders.
 
 Verification: 43 suites / 378 tests pass locally (4 new trial-track tests); 4 suites cannot load on this workstation because `react-test-renderer` and `mobile/node_modules` are not installed (pre-existing). Changed sources pass Prettier (line endings ignored); the dev server compiles the Capture route with the tabs. No production build, browser click-through, camera capture or share write was performed.
+
+## Post-M5 — Trial track on mobile and full-interval default window (2026-10-05)
+
+Sources: functional specification, technical plan, product principles, root OpenAPI, `docs/flexible-schedules.md`. Operator-only scope and English UI retained.
+
+- [x] Default schedule window is the full interval (180 minutes): a session stays open until the next one starts.
+- [x] REST: `track` on `POST /camera/capture`, carried in the signed receipt; finalize derives the `Acid Plant Trial` folder and `captureTrack` from the receipt; `GET /sessions?track=trial`.
+- [x] Mobile: `3-Hour Sessions` / `2-Hour Trial` tabs on Today Sessions and direct Capture for Acid Plant (and ALL accounts on Today Sessions); latest-result lookup filtered by track. Version 1.2.0 / versionCode 3.
+- [x] OpenAPI updated for the new parameter, body field and record field.
+- [ ] Re-run `automatic-capture-session` and `mobile-capture-lifecycle` suites after `npm install` (root and mobile).
+- [ ] Build and install APK 1.2.0; physical capture on both tabs with files confirmed in both share folders.
+
+Verification: 43 suites / 378 tests pass; the two mobile suites above plus two web hook suites cannot load on this workstation (missing `react-test-renderer`, no `mobile/node_modules`) and are therefore unverified against this change. Root and mobile `tsc` report no new errors in the touched files (mobile checked without installed dependencies). Changed sources pass Prettier with line endings ignored. No mobile build, APK, browser run, camera capture or share write was performed.

@@ -27,6 +27,7 @@ export type ApiCaptureRecord = {
   plant: string | null;
   captureBin: string | null;
   captureSession: string | null;
+  captureTrack?: "regular" | "trial";
   capturedBy: string | null;
   station: string | null;
   fileName: string;
