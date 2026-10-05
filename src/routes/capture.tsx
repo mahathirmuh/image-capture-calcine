@@ -1555,7 +1555,16 @@ function CapturePage() {
                     Jadi keadaan beku di sini justru berarti berkasnya belum
                     tentu sampai ke folder jaringan, dan menandainya hijau
                     "Tersimpan" akan berbohong. */}
-                {showFrozen && <span className="text-amber-600">Belum masuk folder jaringan</span>}
+                {/* Selama simpan masih berjalan, hasilnya belum diketahui: yang
+                    jujur dikatakan saat itu adalah "sedang menyimpan", bukan
+                    "belum masuk". Peringatan baru muncul kalau simpan sudah
+                    selesai dan berkasnya memang tidak sampai ke folder jaringan. */}
+                {showFrozen &&
+                  (isSaving ? (
+                    <span className="text-muted-foreground">Menyimpan ke folder jaringan…</span>
+                  ) : (
+                    <span className="text-amber-600">Belum masuk folder jaringan</span>
+                  ))}
               </div>
 
               <div className="mt-3 flex flex-wrap gap-2">
