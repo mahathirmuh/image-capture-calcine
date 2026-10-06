@@ -64,11 +64,18 @@ export function ShareSyncDialog({
   open,
   onOpenChange,
   onImported,
+  canManage,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Dipanggil setelah ada berkas yang terdaftar, supaya Gallery memuat ulang. */
   onImported: () => void;
+  /**
+   * Pemakainya bisa Hapus/Ubah nama di Gallery (Super Admin). Peran lain bisa
+   * mendaftarkan tetapi tidak bisa membatalkannya sendiri, dan itu perlu
+   * dikatakan sebelum tombolnya ditekan.
+   */
+  canManage: boolean;
 }) {
   const t = useT();
   const locale = useLocale();
@@ -247,7 +254,9 @@ export function ShareSyncDialog({
                     {t(m.moreRows, { count: report.candidateCount - report.candidates.length })}
                   </p>
                 )}
-                <p className="mt-2 text-xs text-muted-foreground">{t(m.consequence)}</p>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {canManage ? t(m.consequence) : t(m.consequenceNoManage)}
+                </p>
               </section>
             )}
 
@@ -307,7 +316,9 @@ export function ShareSyncDialog({
                 <h3 className="mb-1 text-xs font-semibold text-muted-foreground">
                   {t(m.missingTitle, { count: report.missingCount })}
                 </h3>
-                <p className="mb-1 text-xs text-muted-foreground">{t(m.missingHint)}</p>
+                <p className="mb-1 text-xs text-muted-foreground">
+                  {canManage ? t(m.missingHint) : t(m.missingHintNoManage)}
+                </p>
                 <ul className="max-h-24 space-y-1 overflow-auto rounded-md border p-2 font-mono text-xs">
                   {report.missing.map((item) => (
                     <li key={item.recordId} className="break-all">

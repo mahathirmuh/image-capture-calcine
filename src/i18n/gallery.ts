@@ -686,6 +686,11 @@ export const shareSyncMessages = defineMessages({
     en: "Once registered, Delete and Rename in Gallery act on the original file in the network folder.",
     zh: "登记后，图库中的“删除”和“重命名”将作用于网络文件夹中的原始文件。",
   },
+  consequenceNoManage: {
+    id: "Berkas yang sudah terdaftar hanya bisa dihapus atau diubah namanya dari Gallery oleh Super Admin. Periksa daftarnya sebelum mendaftarkan.",
+    en: "Once registered, a file can only be deleted or renamed from Gallery by a Super Admin. Check the list before registering.",
+    zh: "文件登记后，只有超级管理员才能在图库中删除或重命名。登记前请核对列表。",
+  },
   skippedTitle: { id: "Dilewati ({count})", en: "Skipped ({count})", zh: "已跳过（{count}）" },
   reasonUnsupportedType: {
     id: "bukan JPG, PNG, atau WebP",
@@ -721,6 +726,11 @@ export const shareSyncMessages = defineMessages({
     id: "Baris ini tetap tampil di Gallery. Hapus dari Gallery kalau berkasnya memang sudah dibuang.",
     en: "These rows still appear in Gallery. Delete them from Gallery if the files were removed on purpose.",
     zh: "这些记录仍会显示在图库中。如果文件确实已被移除，请在图库中删除它们。",
+  },
+  missingHintNoManage: {
+    id: "Baris ini tetap tampil di Gallery. Minta Super Admin menghapusnya kalau berkasnya memang sudah dibuang.",
+    en: "These rows still appear in Gallery. Ask a Super Admin to delete them if the files were removed on purpose.",
+    zh: "这些记录仍会显示在图库中。如果文件确实已被移除，请让超级管理员删除它们。",
   },
   foldersMissing: {
     id: "Folder plant yang tidak ditemukan di folder jaringan: {folders}",

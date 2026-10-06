@@ -35,3 +35,47 @@ it("rejects missing session and missing plant", async () => {
   mock.user.mockResolvedValue({ isActive: true, role: "operator", plant: null });
   expect((await requireGalleryAccess()).ok).toBe(false);
 });
+
+// "Sinkronkan folder" terbuka untuk semua peran, tapi tetap terkunci ke plant akunnya.
+it.each(["admin", "operator", "viewer"])(
+  "lets an active %s act within the gallery scope of the account",
+  async (role) => {
+    const { requireGalleryActor } = await import("./gallery-access");
+    mock.user.mockResolvedValue({
+      id: 9,
+      username: "budi",
+      isActive: true,
+      role,
+      plant: "Acid Plant",
+    });
+    expect(await requireGalleryActor()).toEqual({
+      ok: true,
+      scope:
+        role === "admin"
+          ? { allPlants: true, plant: null }
+          : { allPlants: false, plant: "Acid Plant" },
+      actor: { id: 9, username: "budi" },
+    });
+  },
+);
+it("refuses the actor gate for disabled accounts, missing sessions and accounts without a plant", async () => {
+  const { requireGalleryActor } = await import("./gallery-access");
+  mock.user.mockResolvedValue({
+    id: 9,
+    username: "budi",
+    isActive: false,
+    role: "viewer",
+    plant: "ALL",
+  });
+  expect((await requireGalleryActor()).ok).toBe(false);
+  mock.user.mockResolvedValue({
+    id: 9,
+    username: "budi",
+    isActive: true,
+    role: "viewer",
+    plant: null,
+  });
+  expect((await requireGalleryActor()).ok).toBe(false);
+  mock.session.mockRejectedValue(new Error("expired"));
+  expect((await requireGalleryActor()).ok).toBe(false);
+});

@@ -14,6 +14,7 @@ import sql from "mssql";
 
 import { getCardDbPool, getCardDbSchema, isCardDbConfigured } from "../carddb";
 import { getServerEnv } from "../env";
+import { canViewGalleryPlant, type GalleryScope } from "../gallery-access";
 import { isPlatformMismatchedRoot, joinNetworkPath } from "../network-path";
 import {
   SHARE_SYNC_MAX_NEW_FILES,
@@ -92,6 +93,8 @@ export async function listShareFiles(
   root: string,
   from: string,
   to: string,
+  /** Plant yang boleh dipindai; tanpa ini semua plant. */
+  canScanPlant: (plant: string) => boolean = () => true,
 ): Promise<ShareListing> {
   const listing: ShareListing = {
     folders: [],
@@ -112,7 +115,7 @@ export async function listShareFiles(
     }
   };
 
-  for (const home of sharePlantFolders()) {
+  for (const home of sharePlantFolders().filter((entry) => canScanPlant(entry.plant))) {
     // Nama di disk dipakai apa adanya; pencocokannya saja yang longgar.
     const onDisk = rootEntries.find(
       (entry) => entry.isDirectory && entry.name.toLowerCase() === home.folder.toLowerCase(),
@@ -388,6 +391,8 @@ export async function runShareSync(input: {
   to: string;
   apply: boolean;
   actor: { id: number; username: string };
+  /** Cakupan galeri pemanggil: folder plant di luar cakupan ini tidak disentuh. */
+  scope: GalleryScope;
 }): Promise<ShareSyncResult> {
   if (!isCardDbConfigured()) {
     return failure("CARDDB_NOT_CONFIGURED", "Konfigurasi CARDDB belum lengkap di server aplikasi.");
@@ -417,7 +422,9 @@ export async function runShareSync(input: {
       );
     }
 
-    const listing = await listShareFiles(root, input.from, input.to);
+    const listing = await listShareFiles(root, input.from, input.to, (plant) =>
+      canViewGalleryPlant(input.scope, plant),
+    );
     const known = await loadKnownRecords(root);
     const diff = diffShareListing(root, listing, known);
 

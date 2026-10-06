@@ -9,7 +9,9 @@ dari aplikasi.
 
 ## Cara kerja
 
-Tombol **Sinkronkan folder** di halaman Gallery (hanya Super Admin) membuka dialog dua langkah:
+Tombol **Sinkronkan folder** di halaman Gallery membuka dialog dua langkah. Tombolnya tersedia
+untuk **semua peran** — Super Admin, Operator, dan Viewer (keputusan pemilik, 2026-10-06; rilis
+pertamanya hanya untuk Super Admin).
 
 1. **Periksa folder** — memindai folder jaringan dan menampilkan apa yang ditemukan. Tidak menulis
    apa pun.
@@ -19,6 +21,19 @@ Tombol **Sinkronkan folder** di halaman Gallery (hanya Super Admin) membuka dial
 
 Pemindaian hanya **membaca** folder jaringan. Tidak ada berkas yang dipindah, diubah nama, atau
 dihapus oleh sinkronisasi.
+
+### Siapa boleh memindai apa
+
+Pemindaian dibatasi ke plant yang boleh dilihat akunnya di Gallery, dibaca ulang dari database pada
+setiap permintaan (bukan dari cookie sesi):
+
+| Akun | Folder yang dipindai dan didaftarkan |
+| --- | --- |
+| Super Admin, atau akun ber-plant `ALL` | Semua folder plant |
+| Operator / Viewer satu plant | Folder plant itu saja (untuk Acid Plant termasuk `Acid Plant Trial`) |
+| Akun tanpa plant, nonaktif, atau tanpa sesi | Ditolak |
+
+Folder plant lain tidak dibaca dan tidak muncul di laporan.
 
 ### Folder yang dibaca
 
@@ -81,7 +96,11 @@ besar-kecil dan arah pemisah, dan `INSERT`-nya memakai `WHERE NOT EXISTS` pada `
   tanggal, sesi, dan Train/Bin-nya terbaca. Menaruh `08.00 Train 1.jpg` di folder tanggal hari ini
   membuat sesi 08.00 Train 1 tampak terisi.
 - Setelah terdaftar, **Hapus** dan **Ubah nama** di Gallery berlaku pada berkas aslinya di folder
-  jaringan.
+  jaringan. Kedua tombol itu tetap khusus Super Admin: Operator dan Viewer bisa mendaftarkan, tetapi
+  tidak bisa membatalkannya sendiri. Dialognya mengatakan itu sebelum tombol Daftarkan ditekan.
+- Viewer tidak lagi murni baca-saja: ia bisa menambah baris registry (untuk plant-nya), dan baris itu
+  bisa mengisi cakupan sesi. Yang mendaftarkan selalu tercatat (`metadata_json.importedBy` dan jejak
+  aktivitas `capture.imported`).
 - Di Gallery fotonya bertanda **Manual**, kolom Metode berisi "Ditambahkan manual", dan operator,
   kamera, serta Mini PC kosong.
 - Berkas yang dihapus orang dari folder tidak membuat barisnya hilang. Laporan menyebutnya di
@@ -93,20 +112,23 @@ besar-kecil dan arah pemisah, dan `INSERT`-nya memakai `WHERE NOT EXISTS` pada `
 | --- | --- |
 | `src/lib/share-import.ts` | Aturan membaca path, bentuk laporan, serverFn `syncShareFolder` |
 | `src/lib/server/share-scan.ts` | Membaca folder, membandingkan dengan registry, menulis baris |
-| `src/lib/server/capture-admin.ts` | Penjaga Super Admin (dipakai juga oleh ubah nama dan hapus) |
+| `src/lib/server/gallery-access.ts` | `requireGalleryActor()` — penjaga sinkronisasi: akun aktif + cakupan plant |
+| `src/lib/server/capture-admin.ts` | Penjaga Super Admin untuk ubah nama dan hapus (tidak dipakai sinkronisasi) |
 | `src/components/share-sync-dialog.tsx` | Dialog di Gallery |
 
 ## Verifikasi (2026-10-06)
 
-- 52 suite / 453 test lulus (26 baru: pembacaan path, penyaring berkas, waktu capture, rentang,
-  pemindaian folder sementara, perbandingan dengan registry, bentuk metadata).
+- 52 suite / 458 test lulus (31 baru: pembacaan path, penyaring berkas, waktu capture, rentang,
+  pemindaian folder sementara, pembatasan per plant, perbandingan dengan registry, bentuk metadata,
+  penjaga untuk ketiga peran).
 - Pratinjau (`apply: false`) dijalankan terhadap registry sungguhan dengan folder jaringan diganti
   folder sementara lokal: kueri record, device per plant, dan klasifikasi berjalan; jumlah baris
   `capture_records` sama sebelum dan sesudah (614). Pernyataan `INSERT` dikompilasi SQL Server
   dengan `SET NOEXEC ON` terhadap tabel sungguhan, tanpa dieksekusi.
 - Dialog diperiksa di Chrome headless pada server dev terisolasi (tanpa database, sesi admin buatan
   lokal, jawaban serverFn diganti laporan contoh) dalam bahasa Indonesia, English, dan 中文: tidak
-  ada error konsol; tombolnya tidak tampil untuk Operator dan Viewer.
+  ada error konsol. Tombol dan dialognya tampil untuk Super Admin, Operator, dan Viewer, dengan
+  catatan konsekuensi yang berbeda untuk peran yang tidak bisa menghapus.
 - Build produksi berhasil; tidak ada modul server yang terbawa ke bundle browser.
 - **Belum diverifikasi:** pemindaian folder jaringan sungguhan (mount CIFS di app server) dan
   pendaftaran berkas sungguhan — `apply` belum pernah dijalankan terhadap registry.

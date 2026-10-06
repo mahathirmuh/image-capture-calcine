@@ -84,6 +84,23 @@ describe("listShareFiles", () => {
     ]);
   });
 
+  it("stays inside the plants the caller may see", async () => {
+    await put("Chloride Plant", "2026", "10", "05", "08.00 Bin 1.jpg");
+    const listing = await listShareFiles(
+      root,
+      "2026-10-01",
+      "2026-10-06",
+      (plant) => plant === "Chloride Plant",
+    );
+    expect(listing.files.map((segments) => segments.join("/"))).toEqual([
+      "Chloride Plant/2026/10/05/08.00 Bin 1.jpg",
+    ]);
+    // Folder plant lain bahkan tidak dilaporkan, apalagi dibaca.
+    expect(listing.folders.map((entry) => entry.folder)).toEqual(["Chloride Plant"]);
+    expect(listing.otherFolders).toEqual([]);
+    await rm(join(root, "Chloride Plant"), { recursive: true, force: true });
+  });
+
   it("returns an empty listing for a root that cannot be read", async () => {
     const listing = await listShareFiles(join(root, "tidak-ada"), "2026-10-01", "2026-10-06");
     expect(listing.files).toEqual([]);

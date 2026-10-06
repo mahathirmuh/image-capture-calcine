@@ -1632,8 +1632,9 @@ components:
           description: |
             Dari mana barisnya berasal. `capture` = dibuat aplikasi saat
             capture. `share-import` = berkasnya ditaruh orang langsung di
-            folder jaringan lalu didaftarkan Super Admin lewat "Sinkronkan
-            folder" di halaman Gallery. Record seperti itu ber-`capturedBy`,
+            folder jaringan lalu didaftarkan seorang pengguna (peran apa
+            pun, dalam plant akunnya) lewat "Sinkronkan folder" di halaman
+            Gallery. Record seperti itu ber-`capturedBy`,
             `deviceCode`, dan `deviceName` `null`; `captureSession` dan
             `captureBin` terisi hanya kalau terbaca dari nama berkasnya, dan
             ia ikut dihitung di `/sessions` seperti record lain. Lihat

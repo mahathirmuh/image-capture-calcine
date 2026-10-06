@@ -230,9 +230,10 @@ const shareSyncSchema = z.object({
 /**
  * Pindai folder jaringan dan, kalau diminta, daftarkan berkas barunya.
  *
- * Khusus Super Admin: tindakan ini menulis baris ke registry atas nama orang
- * yang tidak pernah menekan Capture, dan sesudahnya tombol Hapus/Ubah nama di
- * Gallery berlaku pada berkas aslinya di share.
+ * Terbuka untuk semua peran -- Super Admin, Operator, dan Viewer -- tetapi
+ * dibatasi ke plant yang boleh dilihat akunnya di Gallery: akun Acid Plant
+ * hanya memindai dan mendaftarkan isi folder Acid Plant. Siapa yang
+ * mendaftarkan dicatat di baris registry dan di jejak aktivitas.
  */
 export const syncShareFolder = createServerFn({ method: "POST" })
   .validator(shareSyncSchema)
@@ -240,10 +241,10 @@ export const syncShareFolder = createServerFn({ method: "POST" })
     const invalid = validateShareSyncRange(data.from, data.to);
     if (invalid) return { ok: false, code: "INVALID_RANGE", message: invalid };
 
-    const { requireCaptureAdmin } = await import("./server/capture-admin");
-    let gate: Awaited<ReturnType<typeof requireCaptureAdmin>>;
+    const { requireGalleryActor } = await import("./server/gallery-access");
+    let gate: Awaited<ReturnType<typeof requireGalleryActor>>;
     try {
-      gate = await requireCaptureAdmin();
+      gate = await requireGalleryActor();
     } catch {
       // Penjaganya membaca akun dari database; kalau itu yang gagal, sebabnya
       // disebut apa adanya alih-alih muncul sebagai "permintaan gagal".
@@ -256,5 +257,11 @@ export const syncShareFolder = createServerFn({ method: "POST" })
     if (!gate.ok) return { ok: false, code: gate.code, message: gate.message };
 
     const { runShareSync } = await import("./server/share-scan");
-    return runShareSync({ from: data.from, to: data.to, apply: data.apply, actor: gate.actor });
+    return runShareSync({
+      from: data.from,
+      to: data.to,
+      apply: data.apply,
+      actor: gate.actor,
+      scope: gate.scope,
+    });
   });

@@ -1,9 +1,10 @@
-// Penjaga untuk tindakan yang mengubah registry capture: ubah nama, hapus, dan
-// "Sinkronkan folder".
+// Penjaga untuk tindakan yang mengubah atau menghapus capture: ubah nama dan
+// hapus. ("Sinkronkan folder" terbuka untuk semua peran dan memakai
+// requireGalleryActor() di gallery-access.ts.)
 //
-// Modul khusus server. Pemanggilnya (capture-records.ts, share-import.ts) ikut
-// ter-bundle ke browser, jadi mereka memuat modul ini dengan `await import()`
-// dari DALAM handler serverFn -- bukan impor di kepala berkas.
+// Modul khusus server. Pemanggilnya (capture-records.ts) ikut ter-bundle ke
+// browser, jadi ia memuat modul ini dengan `await import()` dari DALAM handler
+// serverFn -- bukan impor di kepala berkas.
 import { guardCaptureManagementUser } from "../capture-records";
 import { getAppSession, isSessionConfigured } from "./session";
 import { findUserById } from "./users";

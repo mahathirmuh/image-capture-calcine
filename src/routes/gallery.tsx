@@ -1665,15 +1665,14 @@ function GalleryContent() {
             >
               <Download className="h-4 w-4" /> {bulkDownloading ? t(m.preparing) : t(m.download)}
             </button>
-            {/* Mendaftarkan berkas menulis ke registry, jadi hanya Super Admin. */}
-            {isAdmin && (
-              <button
-                onClick={() => setShareSyncOpen(true)}
-                className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent"
-              >
-                <FolderSync className="h-4 w-4" /> {t(sm.button)}
-              </button>
-            )}
+            {/* Untuk semua peran. Server membatasi pemindaian ke plant yang
+                boleh dilihat akunnya, sama seperti isi galeri ini. */}
+            <button
+              onClick={() => setShareSyncOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent"
+            >
+              <FolderSync className="h-4 w-4" /> {t(sm.button)}
+            </button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="rounded-md border border-input bg-background p-2 hover:bg-accent">
@@ -2971,13 +2970,12 @@ ${storage.path ?? "—"}`}
         </aside>
       )}
 
-      {isAdmin && (
-        <ShareSyncDialog
-          open={shareSyncOpen}
-          onOpenChange={setShareSyncOpen}
-          onImported={() => void reloadCaptureRecords()}
-        />
-      )}
+      <ShareSyncDialog
+        open={shareSyncOpen}
+        onOpenChange={setShareSyncOpen}
+        onImported={() => void reloadCaptureRecords()}
+        canManage={isAdmin}
+      />
 
       {/* Fullscreen viewer */}
       {fullscreenUrl && (
