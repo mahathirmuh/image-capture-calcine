@@ -39,6 +39,9 @@ export const ACTIVITY_ACTIONS = [
   // warning, karena yang kedua menyisakan pekerjaan manual.
   "capture.created",
   "storage.flush_manual",
+  // Berkas yang ditaruh langsung di folder jaringan lalu didaftarkan lewat
+  // "Sinkronkan folder". Satu baris per kali jalan, bukan per berkas.
+  "capture.imported",
 ] as const;
 
 export type ActivityAction = (typeof ACTIVITY_ACTIONS)[number];
@@ -65,6 +68,7 @@ export const ACTION_LABELS: Record<ActivityAction, Message> = {
   "camera.settings_applied": m.actionCameraSettingsApplied,
   "capture.created": m.actionCaptureCreated,
   "storage.flush_manual": m.actionStorageFlushManual,
+  "capture.imported": m.actionCaptureImported,
 };
 
 export type ActivityEntry = {

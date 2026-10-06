@@ -544,6 +544,18 @@ Verification: 49 suites / 417 tests pass (8 new: dictionary completeness and pla
 APK 1.3.0 / versionCode 4 (debug) built on 2026-10-06 against the production HTTPS API: Gradle BUILD SUCCESSFUL, v1/v2 signatures verified, bundle contains both dictionaries. SHA256 `FA4285F04E47F40F40B09995C9EFCFAB88AB9B928B15516982C9D7FBC2ED123C`. Same workstation debug key as APK 1.2.0. Not installed or run on a device.
 
 
+## Post-M5 Maintenance — Sync files placed directly in the network folder (2026-10-06)
+
+Web/backend change; no mobile source touched, APK stays 1.3.0. Details: docs/share-folder-sync.md.
+
+- [x] Gallery "Sinkronkan folder" (Super Admin only): preview, then register image files found in the plant folders of `NETWORK_SAVE_ROOT` that have no registry row. Date folders within a chosen range (92 days at most) plus loose files in the plant/year/month folders; other subfolders are reported, not scanned.
+- [x] Plant and track from the first folder, session date from `YYYY/MM/DD`, session and Train/Bin from the file name; freely named files are registered with the plant only.
+- [x] Imported rows carry `metadata_json.source = "share-import"` (record field `origin`), no operator and no device code; shown in Gallery with a "Manual" badge. One `capture.imported` activity row per run.
+- [x] OpenAPI: `CaptureRecord.origin` added (additive); no new route. Imported rows count toward `/sessions` coverage when date, session and slot are readable.
+- [ ] Run against the real share mount on the app server (preview, then register) after deployment.
+
+Verification: 52 suites / 453 tests pass (26 new). Preview run against the real registry with a temporary local folder as the share: queries and classification work, `capture_records` row count unchanged (614); the INSERT statement compiled by SQL Server under `SET NOEXEC ON`, never executed. Dialog checked in headless Chrome on an isolated dev server in Indonesian, English and Chinese with a stubbed reply: no console errors, button absent for Operator and Viewer. Production build succeeds. Not verified: scanning the real CIFS mount and an actual registration. The browser check caught one defect before delivery — an exported admin gate pulled server modules into the client bundle; the gate now lives in `src/lib/server/capture-admin.ts`.
+
 ## Post-M5 Maintenance — Web interface languages (2026-10-06)
 
 Web/backend change; mobile scope and M0–M5 status unchanged, no mobile source touched. Details, rules and limits: docs/web-i18n.md.

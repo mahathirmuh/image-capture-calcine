@@ -185,6 +185,9 @@ const deviceEventPresetCountsSchema = z.object({
   searchQuery: z.string().trim().max(200).default(""),
 });
 
+export const CAPTURE_RECORD_ORIGINS = ["capture", "share-import"] as const;
+export type CaptureRecordOrigin = (typeof CAPTURE_RECORD_ORIGINS)[number];
+
 export type CaptureRecordView = {
   id: number;
   deviceCode: string | null;
@@ -203,6 +206,12 @@ export type CaptureRecordView = {
   checksumSha256: string | null;
   saveMethod: CaptureSaveMethod | null;
   assetId: string | null;
+  /**
+   * Dari mana barisnya berasal. `share-import` = berkasnya ditaruh orang
+   * langsung di folder jaringan lalu didaftarkan lewat "Sinkronkan folder";
+   * tidak ada yang menekan Capture, jadi operator dan device-nya kosong.
+   */
+  origin: CaptureRecordOrigin;
   createdAt: string;
 };
 
@@ -380,6 +389,7 @@ function parseCaptureRecordMetadata(raw: unknown): {
   station: string | null;
   saveMethod: CaptureSaveMethod | null;
   assetId: string | null;
+  origin: CaptureRecordOrigin;
 } {
   let parsed: Record<string, unknown> = {};
   if (typeof raw === "string" && raw.trim() !== "") {
@@ -408,6 +418,7 @@ function parseCaptureRecordMetadata(raw: unknown): {
     station: typeof parsed.station === "string" ? parsed.station : null,
     saveMethod,
     assetId: typeof parsed.assetId === "string" ? parsed.assetId : null,
+    origin: parsed.source === "share-import" ? "share-import" : "capture",
   };
 }
 
@@ -440,6 +451,7 @@ export function mapCaptureRecordRow(row: Record<string, unknown>): CaptureRecord
     checksumSha256: typeof row.checksum_sha256 === "string" ? row.checksum_sha256 : null,
     saveMethod: metadata.saveMethod,
     assetId: metadata.assetId,
+    origin: metadata.origin,
     createdAt: new Date(String(row.created_at ?? new Date().toISOString())).toISOString(),
   };
 }
@@ -657,48 +669,13 @@ async function resolveCaptureRecordId(
   return result.recordset[0] ? Number(result.recordset[0].id) : null;
 }
 
-async function requireCaptureManagementActor(): Promise<
-  | { ok: true; actor: { id: number; username: string } }
-  | { ok: false; code: "UNAUTHENTICATED" | "FORBIDDEN"; message: string }
-> {
-  const { getAppSession, isSessionConfigured } = await import("./server/session");
-  if (!isSessionConfigured()) {
-    return {
-      ok: false,
-      code: "UNAUTHENTICATED",
-      message: "Sesi login belum aktif.",
-    };
-  }
-
-  let sessionUserId: number | undefined;
-  try {
-    sessionUserId = (await getAppSession()).data.user?.id;
-  } catch {
-    sessionUserId = undefined;
-  }
-  if (sessionUserId === undefined) {
-    return {
-      ok: false,
-      code: "UNAUTHENTICATED",
-      message: "Sesi Anda sudah berakhir. Masuk ulang untuk melanjutkan.",
-    };
-  }
-
-  const { findUserById } = await import("./server/users");
-  const current = await findUserById(sessionUserId);
-  const blocked = guardCaptureManagementUser(current);
-  if (!current || blocked) {
-    return {
-      ok: false,
-      code: current?.isActive ? "FORBIDDEN" : "UNAUTHENTICATED",
-      message: blocked ?? "Akun Anda sudah tidak aktif.",
-    };
-  }
-
-  return {
-    ok: true,
-    actor: { id: current.id, username: current.username },
-  };
+// Penjaganya sendiri tinggal di modul khusus server. Fungsi ini SENGAJA tidak
+// diekspor: berkas ini ikut ter-bundle ke browser, dan fungsi yang diekspor
+// tidak dibuang saat handler serverFn dipisah -- impor modul server di dalamnya
+// lalu terbawa ke klien dan ditolak import-protection.
+async function requireCaptureManagementActor() {
+  const { requireCaptureAdmin } = await import("./server/capture-admin");
+  return requireCaptureAdmin();
 }
 
 async function resolveDeviceId(

@@ -71,6 +71,7 @@ Aturan penting:
 - Pemilihan sesi secara eksplisit mempertahankan alur recovery yang didokumentasikan; jangan menganggap pembatasannya sama dengan direct capture.
 - API key digunakan untuk akses baca/inisialisasi login sesuai kontrak. Kendali kamera dan finalize membutuhkan token pengguna.
 - Tinjau kontrak untuk perbedaan izin baca galeri dan izin kendali kamera.
+- Gallery membaca registry, bukan isi folder jaringan. Foto yang disalin langsung ke share tidak tampil sampai Super Admin menjalankan **Sinkronkan folder** di halaman Gallery; setelah terdaftar, foto itu ikut dihitung di cakupan sesi dan tombol Hapus/Ubah nama berlaku pada berkas aslinya. Lihat [share-folder-sync.md](share-folder-sync.md).
 
 **Skenario demo operasional:** [ISI plant, akun uji, sesi, kamera, hasil yang diharapkan, izin mengambil foto uji].
 
@@ -230,6 +231,7 @@ Pada pembacaan awal 10 September, `docker-compose.yml` memiliki perubahan lokal 
 - [CI/CD](../CI_CD.md): referensi pipeline; konfirmasi terhadap lingkungan aktual.
 - [Integrasi kamera](../CAMERA_API_INTEGRATION.md) dan [preview polling](../CAMERA_PREVIEW_POLLING.md).
 - [Laporan edge camera 01](edge-camera-01-functional-2026-09-09.md): hasil dan batasan pengujian terakhir yang dibaca.
+- [Sinkronkan folder](share-folder-sync.md): cara foto yang ditaruh langsung di folder jaringan didaftarkan ke registry supaya tampil di Gallery (tombol Super Admin di halaman Gallery), aturan pembacaan path, dan konsekuensinya.
 
 Aturan kerja: baca sumber dokumentasi sebelum implementasi, review OpenAPI untuk perubahan backend, catat bukti verifikasi, dan sinkronkan roadmap/dokumen terkait. Hindari menulis ulang riwayat Git yang sudah dipublikasikan karena keterhubungan Lovable yang dicatat pada mobile/AGENTS.md.
 

@@ -14,6 +14,7 @@ import {
   CloudOff,
   Cpu,
   CloudUpload,
+  FolderSync,
   HardDrive,
   PenLine,
   ShieldAlert,
@@ -102,6 +103,7 @@ const ACTION_ICONS: Record<ActivityAction, LucideIcon> = {
   "camera.settings_applied": SlidersHorizontal,
   "capture.created": Camera,
   "storage.flush_manual": CloudUpload,
+  "capture.imported": FolderSync,
 };
 
 const SEMUA = "__semua__";

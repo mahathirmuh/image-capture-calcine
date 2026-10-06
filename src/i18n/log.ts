@@ -145,6 +145,11 @@ export const logMessages = defineMessages({
     zh: "相机设置已应用",
   },
   actionCaptureCreated: { id: "Capture dibuat", en: "Capture created", zh: "拍摄已创建" },
+  actionCaptureImported: {
+    id: "Berkas folder didaftarkan",
+    en: "Folder files registered",
+    zh: "已登记文件夹中的文件",
+  },
   actionStorageFlushManual: {
     id: "Antrean dikirim manual",
     en: "Send queue sent manually",

@@ -177,6 +177,13 @@ export const galleryMessages = defineMessages({
   waitingSend: { id: "Menunggu kirim", en: "Waiting to send", zh: "等待发送" },
   notKnownYet: { id: "Belum diketahui", en: "Not known yet", zh: "尚不清楚" },
   methodAppNetwork: { id: "App -> network", en: "App -> network", zh: "应用 -> 网络" },
+  methodShareImport: { id: "Ditambahkan manual", en: "Added manually", zh: "手动添加" },
+  badgeManual: { id: "Manual", en: "Manual", zh: "手动" },
+  badgeManualTitle: {
+    id: "Ditaruh langsung di folder jaringan, bukan hasil capture",
+    en: "Placed directly in the network folder, not captured by the app",
+    zh: "直接放入网络文件夹，并非通过应用拍摄",
+  },
   methodEdgeNetwork: { id: "Edge -> network", en: "Edge -> network", zh: "Edge -> 网络" },
   methodBrowserFolder: {
     id: "Browser -> folder",
@@ -608,4 +615,132 @@ export const datePickerMessages = defineMessages({
     zh: "清除日期筛选",
   },
   today: { id: "Hari ini", en: "Today", zh: "今天" },
+});
+
+// Dialog "Sinkronkan folder": mendaftarkan foto yang ditaruh langsung di folder
+// jaringan supaya tampil di Gallery.
+export const shareSyncMessages = defineMessages({
+  button: { id: "Sinkronkan folder", en: "Sync folder", zh: "同步文件夹" },
+  title: {
+    id: "Sinkronkan folder jaringan",
+    en: "Sync the network folder",
+    zh: "同步网络文件夹",
+  },
+  intro: {
+    id: "Foto yang ditaruh langsung di folder jaringan belum tampil di Gallery sampai didaftarkan. Periksa dulu, lalu daftarkan berkas yang ditemukan.",
+    en: "Photos placed directly in the network folder do not appear in Gallery until they are registered. Check first, then register the files that were found.",
+    zh: "直接放入网络文件夹的照片在登记之前不会显示在图库中。请先检查，再登记找到的文件。",
+  },
+  from: { id: "Dari tanggal", en: "From date", zh: "开始日期" },
+  to: { id: "Sampai tanggal", en: "To date", zh: "结束日期" },
+  rangeHint: {
+    id: "Rentang berlaku untuk folder tanggal (tahun/bulan/hari), paling panjang {max} hari. Foto yang ditaruh langsung di folder plant selalu ikut diperiksa.",
+    en: "The range applies to date folders (year/month/day), {max} days at most. Photos placed directly in a plant folder are always checked.",
+    zh: "范围适用于日期文件夹（年/月/日），最长 {max} 天。直接放在工厂文件夹中的照片始终会被检查。",
+  },
+  rangeInvalid: {
+    id: "Isi kedua tanggal. Tanggal awal tidak boleh melewati tanggal akhir, dan rentangnya paling panjang {max} hari.",
+    en: "Fill in both dates. The start date cannot be after the end date, and the range can be {max} days at most.",
+    zh: "请填写两个日期。开始日期不能晚于结束日期，范围最长 {max} 天。",
+  },
+  check: { id: "Periksa folder", en: "Check folder", zh: "检查文件夹" },
+  checking: { id: "Memeriksa...", en: "Checking...", zh: "正在检查…" },
+  register: {
+    id: "Daftarkan {count} berkas",
+    en: "Register {count} files",
+    zh: "登记 {count} 个文件",
+  },
+  registering: { id: "Mendaftarkan...", en: "Registering...", zh: "正在登记…" },
+  close: { id: "Tutup", en: "Close", zh: "关闭" },
+  summarySeen: {
+    id: "{seen} foto ditemukan di {folders} folder plant.",
+    en: "{seen} photos found in {folders} plant folders.",
+    zh: "在 {folders} 个工厂文件夹中找到 {seen} 张照片。",
+  },
+  statNew: { id: "Baru", en: "New", zh: "新文件" },
+  statRegistered: { id: "Sudah terdaftar", en: "Already registered", zh: "已登记" },
+  statSkipped: { id: "Dilewati", en: "Skipped", zh: "已跳过" },
+  statMissing: { id: "Berkas hilang", en: "Missing files", zh: "文件缺失" },
+  nothingNew: {
+    id: "Tidak ada berkas baru. Semua foto yang ditemukan sudah terdaftar.",
+    en: "No new files. Every photo that was found is already registered.",
+    zh: "没有新文件。找到的照片均已登记。",
+  },
+  newFilesTitle: {
+    id: "Berkas yang akan didaftarkan",
+    en: "Files to be registered",
+    zh: "将要登记的文件",
+  },
+  colFile: { id: "Berkas", en: "File", zh: "文件" },
+  colSession: { id: "Sesi", en: "Session", zh: "场次" },
+  colSlot: { id: "Train/Bin", en: "Train/Bin", zh: "Train/Bin" },
+  colTime: { id: "Dicatat sebagai", en: "Recorded as", zh: "记录时间" },
+  moreRows: { id: "dan {count} lainnya", en: "and {count} more", zh: "另有 {count} 项" },
+  truncated: {
+    id: "Berkas baru lebih dari {max}. Sekali jalan hanya memproses {max}; jalankan lagi untuk sisanya.",
+    en: "There are more than {max} new files. One run handles {max}; run it again for the rest.",
+    zh: "新文件超过 {max} 个。每次只处理 {max} 个，请再次运行以处理其余文件。",
+  },
+  consequence: {
+    id: "Setelah terdaftar, Hapus dan Ubah nama di Gallery berlaku pada berkas aslinya di folder jaringan.",
+    en: "Once registered, Delete and Rename in Gallery act on the original file in the network folder.",
+    zh: "登记后，图库中的“删除”和“重命名”将作用于网络文件夹中的原始文件。",
+  },
+  skippedTitle: { id: "Dilewati ({count})", en: "Skipped ({count})", zh: "已跳过（{count}）" },
+  reasonUnsupportedType: {
+    id: "bukan JPG, PNG, atau WebP",
+    en: "not a JPG, PNG or WebP",
+    zh: "不是 JPG、PNG 或 WebP",
+  },
+  reasonNoDevice: {
+    id: "plant ini belum punya device di registry",
+    en: "this plant has no device in the registry yet",
+    zh: "该工厂在登记表中尚无设备",
+  },
+  reasonPathTooLong: {
+    id: "path atau nama berkas terlalu panjang",
+    en: "the path or file name is too long",
+    zh: "路径或文件名过长",
+  },
+  otherFoldersTitle: {
+    id: "Subfolder yang tidak diperiksa ({count})",
+    en: "Subfolders that were not checked ({count})",
+    zh: "未检查的子文件夹（{count}）",
+  },
+  otherFoldersHint: {
+    id: "Hanya folder tanggal (tahun/bulan/hari) yang dibaca. Pindahkan fotonya ke folder tanggal atau langsung ke folder plant.",
+    en: "Only date folders (year/month/day) are read. Move the photos into a date folder or straight into the plant folder.",
+    zh: "只读取日期文件夹（年/月/日）。请将照片移到日期文件夹或直接放入工厂文件夹。",
+  },
+  missingTitle: {
+    id: "Tercatat tetapi berkasnya tidak ada ({count})",
+    en: "Registered but the file is gone ({count})",
+    zh: "已登记但文件不存在（{count}）",
+  },
+  missingHint: {
+    id: "Baris ini tetap tampil di Gallery. Hapus dari Gallery kalau berkasnya memang sudah dibuang.",
+    en: "These rows still appear in Gallery. Delete them from Gallery if the files were removed on purpose.",
+    zh: "这些记录仍会显示在图库中。如果文件确实已被移除，请在图库中删除它们。",
+  },
+  foldersMissing: {
+    id: "Folder plant yang tidak ditemukan di folder jaringan: {folders}",
+    en: "Plant folders not found in the network folder: {folders}",
+    zh: "网络文件夹中未找到的工厂文件夹：{folders}",
+  },
+  doneImported: {
+    id: "{count} berkas terdaftar dan sekarang tampil di Gallery.",
+    en: "{count} files registered and now shown in Gallery.",
+    zh: "已登记 {count} 个文件，现已显示在图库中。",
+  },
+  doneNone: {
+    id: "Tidak ada berkas yang didaftarkan.",
+    en: "No files were registered.",
+    zh: "没有登记任何文件。",
+  },
+  failedTitle: { id: "Gagal ({count})", en: "Failed ({count})", zh: "失败（{count}）" },
+  requestFailed: {
+    id: "Permintaan ke server gagal. Coba lagi.",
+    en: "The request to the server failed. Try again.",
+    zh: "向服务器发送请求失败，请重试。",
+  },
 });

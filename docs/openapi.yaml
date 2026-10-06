@@ -1616,12 +1616,28 @@ components:
         capturedAt:
           type: string
           format: date-time
-          description: Waktu sebenarnya tombol Capture ditekan, UTC.
+          description: |
+            Waktu sebenarnya tombol Capture ditekan, UTC. Untuk record
+            `origin: share-import` tidak ada yang menekan tombol: nilainya awal
+            sesi kalau tanggal dan sesinya terbaca dari path, selain itu waktu
+            modifikasi berkas.
         status: { $ref: "#/components/schemas/CaptureStatus" }
         fileSizeBytes: { type: integer, format: int64, nullable: true }
         checksumSha256: { type: string, nullable: true }
         saveMethod: { $ref: "#/components/schemas/SaveMethod" }
         assetId: { type: string, nullable: true, description: Id media di edge API. }
+        origin:
+          type: string
+          enum: [capture, share-import]
+          description: |
+            Dari mana barisnya berasal. `capture` = dibuat aplikasi saat
+            capture. `share-import` = berkasnya ditaruh orang langsung di
+            folder jaringan lalu didaftarkan Super Admin lewat "Sinkronkan
+            folder" di halaman Gallery. Record seperti itu ber-`capturedBy`,
+            `deviceCode`, dan `deviceName` `null`; `captureSession` dan
+            `captureBin` terisi hanya kalau terbaca dari nama berkasnya, dan
+            ia ikut dihitung di `/sessions` seperti record lain. Lihat
+            docs/share-folder-sync.md.
         createdAt:
           type: string
           format: date-time

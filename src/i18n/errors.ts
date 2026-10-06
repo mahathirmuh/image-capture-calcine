@@ -174,6 +174,21 @@ export const errorMessages = defineMessages({
     en: "The send queue is full. Contact a Super Admin before capturing again.",
     zh: "发送队列已满，请联系超级管理员后再拍摄。",
   },
+  INVALID_RANGE: {
+    id: "Rentang tanggal tidak valid.",
+    en: "The date range is not valid.",
+    zh: "日期范围无效。",
+  },
+  PLATFORM_MISMATCH: {
+    id: "Alamat folder jaringan di server berbentuk Windows, padahal servernya bukan Windows.",
+    en: "The network folder address on the server is in Windows form, but the server is not Windows.",
+    zh: "服务器上的网络文件夹地址为 Windows 形式，但服务器并非 Windows。",
+  },
+  SHARE_SYNC_FAILED: {
+    id: "Gagal memindai folder jaringan.",
+    en: "The network folder could not be scanned.",
+    zh: "无法扫描网络文件夹。",
+  },
   CAPTURE_RECORD_FAILED: {
     id: "Gagal menyimpan metadata capture ke registry.",
     en: "The capture metadata could not be saved to the registry.",

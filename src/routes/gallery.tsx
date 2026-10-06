@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Columns2,
   Download,
+  FolderSync,
   HardDrive,
   ImageOff,
   LayoutGrid,
@@ -71,10 +72,15 @@ import { getImageDimensions, computeHistogram, type Histogram } from "@/lib/imag
 import { AppDatePicker } from "@/components/app-date-picker";
 import { AppSelect } from "@/components/app-select";
 import { PageTitle } from "@/components/page-shell";
+import { ShareSyncDialog } from "@/components/share-sync-dialog";
 import { commonMessages as c } from "@/i18n/common";
 import { failureText } from "@/i18n/errors";
 import { deviceStatusText } from "@/i18n/device-status";
-import { galleryMessages as m, gallerySavedViewMessages as sv } from "@/i18n/gallery";
+import {
+  galleryMessages as m,
+  gallerySavedViewMessages as sv,
+  shareSyncMessages as sm,
+} from "@/i18n/gallery";
 import { useLocale, useRichT, useT, type Translator } from "@/lib/i18n";
 import { useIsAdmin, useSessionUser } from "@/lib/use-session-user";
 import {
@@ -212,6 +218,8 @@ type GalleryCard = {
   bin?: string;
   /** Label sesi sampling dari registry; null untuk capture lama atau salinan lokal tanpa record. */
   session: string | null;
+  /** Ditaruh langsung di folder jaringan lalu didaftarkan, bukan hasil capture. */
+  imported: boolean;
   createdAt: number;
   captureRecordId: number | null;
   persistedPath: string | null;
@@ -289,7 +297,13 @@ function describeStorage(
   return { label: t(m.storageBrowserFolder), path: rawPath, network: false };
 }
 
-function formatSaveMethodLabel(method: CaptureRecordView["saveMethod"], t: Translator): string {
+function formatSaveMethodLabel(
+  method: CaptureRecordView["saveMethod"],
+  t: Translator,
+  origin?: CaptureRecordView["origin"],
+): string {
+  // Berkasnya memang di folder jaringan, tapi bukan aplikasi yang menaruhnya.
+  if (origin === "share-import") return t(m.methodShareImport);
   return method === "spooled"
     ? t(m.waitingToBeSent)
     : method === "app-network"
@@ -301,6 +315,19 @@ function formatSaveMethodLabel(method: CaptureRecordView["saveMethod"], t: Trans
           : method === "browser-download"
             ? t(m.methodBrowserDownload)
             : "—";
+}
+
+/** Penanda foto yang ditaruh langsung di folder jaringan lalu didaftarkan. */
+function ManualBadge() {
+  const t = useT();
+  return (
+    <span
+      className="shrink-0 rounded-full bg-sky-500/15 px-1.5 py-0.5 text-[9px] font-medium text-sky-700"
+      title={t(m.badgeManualTitle)}
+    >
+      {t(m.badgeManual)}
+    </span>
+  );
 }
 
 function HistogramChart({ histogram }: { histogram: Histogram }) {
@@ -486,6 +513,7 @@ function GalleryContent() {
   // Kartu yang unduhannya sedang disiapkan dari folder jaringan.
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [bulkDownloading, setBulkDownloading] = useState(false);
+  const [shareSyncOpen, setShareSyncOpen] = useState(false);
 
   // Konfirmasi hapus & ubah nama dipegang di state, bukan lewat confirm()/
   // prompt() bawaan browser. Dialog bawaan itu menempel di tepi atas jendela,
@@ -892,6 +920,20 @@ function GalleryContent() {
     }
   }
 
+  // Dipanggil setelah "Sinkronkan folder" mendaftarkan berkas: baris barunya
+  // harus langsung tampil tanpa memuat ulang halaman.
+  async function reloadCaptureRecords() {
+    try {
+      const result = await listCaptureRecords({ data: { limit: RECORD_FETCH_LIMIT } });
+      if (!result.ok) return;
+      setCaptureRecordsError(null);
+      setGalleryScope(result.scope);
+      setCaptureRecords(result.records);
+    } catch {
+      // Daftar lama tetap tampil; memuat ulang halaman akan mengambil yang baru.
+    }
+  }
+
   function downloadItem(item: GalleryItem) {
     const a = document.createElement("a");
     a.href = item.url;
@@ -1080,6 +1122,7 @@ function GalleryContent() {
           folder: record.plant ?? "",
           bin: record.captureBin ?? undefined,
           session: record.captureSession,
+          imported: record.origin === "share-import",
           createdAt: Date.parse(record.capturedAt),
           captureRecordId: record.id,
           persistedPath: record.filePath,
@@ -1101,6 +1144,7 @@ function GalleryContent() {
         folder: item.folder,
         bin: item.bin,
         session: null,
+        imported: false,
         createdAt: item.createdAt,
         captureRecordId: item.captureRecordId ?? null,
         persistedPath: item.persistedPath ?? null,
@@ -1621,6 +1665,15 @@ function GalleryContent() {
             >
               <Download className="h-4 w-4" /> {bulkDownloading ? t(m.preparing) : t(m.download)}
             </button>
+            {/* Mendaftarkan berkas menulis ke registry, jadi hanya Super Admin. */}
+            {isAdmin && (
+              <button
+                onClick={() => setShareSyncOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent"
+              >
+                <FolderSync className="h-4 w-4" /> {t(sm.button)}
+              </button>
+            )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="rounded-md border border-input bg-background p-2 hover:bg-accent">
@@ -1835,7 +1888,7 @@ function GalleryContent() {
                         {formatCaptureRecordStatus(record.status, t)}
                       </td>
                       <td className="p-2 text-xs text-muted-foreground">
-                        {formatSaveMethodLabel(record.saveMethod, t)}
+                        {formatSaveMethodLabel(record.saveMethod, t, record.origin)}
                       </td>
                       <td className="max-w-sm p-2 text-xs text-muted-foreground">
                         {(() => {
@@ -2364,8 +2417,11 @@ ${storage.path ?? "—"}`}
                   <div className="mb-1 flex items-center gap-1 text-[10px] text-muted-foreground">
                     <Calendar className="h-2.5 w-2.5" /> {formatDateTime(item.createdAt, locale)}
                   </div>
-                  <div className="truncate text-xs font-medium" title={item.name}>
-                    {item.name}
+                  <div className="flex items-center gap-1">
+                    <div className="min-w-0 truncate text-xs font-medium" title={item.name}>
+                      {item.name}
+                    </div>
+                    {item.imported && <ManualBadge />}
                   </div>
                   <div className="mt-1 space-y-0.5 text-[10px] text-muted-foreground">
                     <div className="flex items-center gap-1">
@@ -2503,7 +2559,12 @@ ${storage.path ?? "—"}`}
                         />
                       </button>
                     </td>
-                    <td className="max-w-xs truncate p-2 font-medium">{item.name}</td>
+                    <td className="max-w-xs p-2 font-medium">
+                      <div className="flex items-center gap-1">
+                        <span className="min-w-0 truncate">{item.name}</span>
+                        {item.imported && <ManualBadge />}
+                      </div>
+                    </td>
                     <td className="p-2 text-xs text-muted-foreground">
                       {formatDateTime(item.createdAt, locale)}
                     </td>
@@ -2747,16 +2808,24 @@ ${storage.path ?? "—"}`}
               </dd>
               <dt className="text-muted-foreground">{t(m.saveMethod)}</dt>
               <dd className="text-right font-medium">
-                {detailRecord ? formatSaveMethodLabel(detailRecord.saveMethod, t) : "—"}
+                {detailRecord
+                  ? formatSaveMethodLabel(detailRecord.saveMethod, t, detailRecord.origin)
+                  : "—"}
               </dd>
               <dt className="text-muted-foreground">{t(m.camera)}</dt>
-              <dd className="text-right font-medium">{deviceStatus?.camera?.model ?? "—"}</dd>
+              <dd className="text-right font-medium">
+                {/* Foto yang ditaruh manual tidak diambil kamera mana pun; mengisi
+                    kolom ini dari device yang sedang dipilih akan mengaku sebaliknya. */}
+                {detailItem.imported ? "—" : (deviceStatus?.camera?.model ?? "—")}
+              </dd>
               <dt className="text-muted-foreground">{t(m.miniPc)}</dt>
               <dd className="text-right font-medium">
-                {detailRecord?.deviceName ??
-                  detailRecord?.deviceCode ??
-                  deviceStatus?.deviceId ??
-                  "—"}
+                {detailItem.imported
+                  ? "—"
+                  : (detailRecord?.deviceName ??
+                    detailRecord?.deviceCode ??
+                    deviceStatus?.deviceId ??
+                    "—")}
               </dd>
               <dt className="text-muted-foreground">{t(m.fileSize)}</dt>
               <dd className="text-right font-medium">
@@ -2900,6 +2969,14 @@ ${storage.path ?? "—"}`}
             )}
           </div>
         </aside>
+      )}
+
+      {isAdmin && (
+        <ShareSyncDialog
+          open={shareSyncOpen}
+          onOpenChange={setShareSyncOpen}
+          onImported={() => void reloadCaptureRecords()}
+        />
       )}
 
       {/* Fullscreen viewer */}
