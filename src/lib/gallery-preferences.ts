@@ -67,6 +67,9 @@ export type GalleryViewState = {
   filterBin: "" | "BIN1" | "BIN2";
   // Label sesi sampling ("02.00"), kosong berarti semua sesi.
   filterSession: string;
+  // Jalur jadwal: "regular" = sesi per 3 jam, "trial" = sesi per 2 jam yang
+  // disimpan di folder "<Plant> Trial". Kosong berarti keduanya.
+  filterTrack: "" | "regular" | "trial";
 };
 
 export const DEFAULT_GALLERY_VIEW_STATE: GalleryViewState = {
@@ -78,6 +81,7 @@ export const DEFAULT_GALLERY_VIEW_STATE: GalleryViewState = {
   filterLocation: "",
   filterBin: "",
   filterSession: "",
+  filterTrack: "",
 };
 
 export const GALLERY_SAVED_VIEW_OPTIONS = [
@@ -160,6 +164,7 @@ const galleryViewStateSchema = z.object({
   // Bawaan kosong: preferensi yang tersimpan sebelum filter sesi ada tidak
   // punya kunci ini, dan tidak boleh gugur seluruhnya hanya karena itu.
   filterSession: z.string().default(""),
+  filterTrack: z.enum(["", "regular", "trial"]).default(""),
 });
 
 const gallerySavedViewSchema = z.enum(GALLERY_SAVED_VIEW_OPTIONS);

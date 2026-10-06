@@ -218,6 +218,8 @@ type GalleryCard = {
   bin?: string;
   /** Label sesi sampling dari registry; null untuk capture lama atau salinan lokal tanpa record. */
   session: string | null;
+  /** Jalur jadwal: sesi per 3 jam ("regular") atau sesi per 2 jam ("trial"). */
+  track: CaptureRecordView["captureTrack"];
   /** Ditaruh langsung di folder jaringan lalu didaftarkan, bukan hasil capture. */
   imported: boolean;
   createdAt: number;
@@ -536,6 +538,7 @@ function GalleryContent() {
   const [filterLocation, setFilterLocation] = useState("");
   const [filterBin, setFilterBin] = useState<GalleryViewState["filterBin"]>("");
   const [filterSession, setFilterSession] = useState("");
+  const [filterTrack, setFilterTrack] = useState<GalleryViewState["filterTrack"]>("");
   const [savedViewPreference, setSavedViewPreference] =
     useState<GallerySavedViewPreference>("all-images");
   const [galleryViewLoaded, setGalleryViewLoaded] = useState(false);
@@ -544,7 +547,7 @@ function GalleryContent() {
   // akan menghasilkan bug yang hanya muncul lewat satu filter tertentu.
   useEffect(() => {
     setRecordPage(1);
-  }, [searchQuery, filterDate, filterLocation, filterBin, filterSession]);
+  }, [searchQuery, filterDate, filterLocation, filterBin, filterSession, filterTrack]);
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [compareOpen, setCompareOpen] = useState(false);
@@ -569,6 +572,7 @@ function GalleryContent() {
     setFilterLocation(savedViewState.filterLocation);
     setFilterBin(savedViewState.filterBin);
     setFilterSession(savedViewState.filterSession);
+    setFilterTrack(savedViewState.filterTrack);
     setSavedViewPreference(savedView);
     setImageQuality(loadGalleryImageQuality());
     setGalleryViewLoaded(true);
@@ -623,12 +627,14 @@ function GalleryContent() {
       filterLocation,
       filterBin,
       filterSession,
+      filterTrack,
     }),
     [
       filterBin,
       filterDate,
       filterLocation,
       filterSession,
+      filterTrack,
       pageSize,
       searchQuery,
       sortOption,
@@ -1059,6 +1065,7 @@ function GalleryContent() {
     setFilterLocation("");
     setFilterBin("");
     setFilterSession("");
+    setFilterTrack("");
     setPage(1);
   }
 
@@ -1071,6 +1078,7 @@ function GalleryContent() {
     setFilterLocation(viewState.filterLocation);
     setFilterBin(viewState.filterBin);
     setFilterSession(viewState.filterSession);
+    setFilterTrack(viewState.filterTrack);
     setPage(1);
   }
 
@@ -1122,6 +1130,7 @@ function GalleryContent() {
           folder: record.plant ?? "",
           bin: record.captureBin ?? undefined,
           session: record.captureSession,
+          track: record.captureTrack,
           imported: record.origin === "share-import",
           createdAt: Date.parse(record.capturedAt),
           captureRecordId: record.id,
@@ -1144,6 +1153,9 @@ function GalleryContent() {
         folder: item.folder,
         bin: item.bin,
         session: null,
+        // Salinan lokal tanpa record tidak membawa jalurnya; jalur reguler
+        // adalah bawaan, sama seperti cara record lama dibaca.
+        track: "regular",
         imported: false,
         createdAt: item.createdAt,
         captureRecordId: item.captureRecordId ?? null,
@@ -1184,11 +1196,18 @@ function GalleryContent() {
   // tiap plant berbeda dan bisa berubah, sedangkan yang ingin dicari orang
   // adalah sesi yang memang punya foto. Sesi yang sedang dipilih tetap ikut
   // walau recordnya tidak termuat, supaya pilihannya tidak tampil kosong.
+  //
+  // Kalau jenis sesinya dipilih, daftarnya ikut menyempit: sesi per 2 jam punya
+  // jam yang tidak ada di sesi per 3 jam (00.00, 04.00, ...), dan menawarkannya
+  // di bawah "Sesi per 3 jam" hanya menghasilkan pilihan yang selalu kosong.
   const sessionOptions = Array.from(
     new Set(
-      [...captureRecords.map((record) => record.captureSession), filterSession].filter(
-        (session): session is string => !!session,
-      ),
+      [
+        ...captureRecords
+          .filter((record) => filterTrack === "" || record.captureTrack === filterTrack)
+          .map((record) => record.captureSession),
+        filterSession,
+      ].filter((session): session is string => !!session),
     ),
   ).sort();
 
@@ -1201,7 +1220,15 @@ function GalleryContent() {
     const matchesLocation = filterLocation === "" || item.folder === filterLocation;
     const matchesBin = filterBin === "" || toBinSlot(item.bin) === toBinSlot(filterBin);
     const matchesSession = filterSession === "" || item.session === filterSession;
-    return matchesSearch && matchesDate && matchesLocation && matchesBin && matchesSession;
+    const matchesTrack = filterTrack === "" || item.track === filterTrack;
+    return (
+      matchesSearch &&
+      matchesDate &&
+      matchesLocation &&
+      matchesBin &&
+      matchesSession &&
+      matchesTrack
+    );
   });
   const filteredCaptureRecords = captureRecords.filter((item) => {
     const matchesSearch =
@@ -1214,7 +1241,15 @@ function GalleryContent() {
     // tersimpan sebagai "BIN 1" dari sebelum istilahnya ditukar.
     const matchesBin = filterBin === "" || toBinSlot(item.captureBin) === toBinSlot(filterBin);
     const matchesSession = filterSession === "" || item.captureSession === filterSession;
-    return matchesSearch && matchesDate && matchesLocation && matchesBin && matchesSession;
+    const matchesTrack = filterTrack === "" || item.captureTrack === filterTrack;
+    return (
+      matchesSearch &&
+      matchesDate &&
+      matchesLocation &&
+      matchesBin &&
+      matchesSession &&
+      matchesTrack
+    );
   });
   // Sebelumnya `slice(0, 8)`: sisanya tidak bisa dijangkau sama sekali,
   // sementara badge di sebelahnya tetap mengumumkan "18 record cocok filter".
@@ -1577,6 +1612,15 @@ function GalleryContent() {
           clear: () => setFilterBin(""),
         }
       : null,
+    filterTrack
+      ? {
+          key: "track",
+          label: t(m.chipTrack, {
+            value: t(filterTrack === "trial" ? m.trackTrial : m.trackRegular),
+          }),
+          clear: () => setFilterTrack(""),
+        }
+      : null,
     filterSession
       ? {
           key: "session",
@@ -1879,6 +1923,11 @@ function GalleryContent() {
                       </td>
                       <td className="p-2 text-xs text-muted-foreground">
                         {record.captureSession ?? "—"}
+                        {record.captureTrack === "trial" && (
+                          <span className="ml-1 rounded bg-amber-500/15 px-1 py-0.5 text-[10px] font-medium text-amber-700">
+                            {t(m.trackTrialShort)}
+                          </span>
+                        )}
                       </td>
                       <td className="p-2 text-xs text-muted-foreground">
                         {record.capturedBy ?? "—"}
@@ -2071,6 +2120,24 @@ ${storage.path ?? "—"}`}
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">
+              {t(m.sessionType)}
+            </label>
+            <AppSelect
+              value={filterTrack}
+              onValueChange={(value) => {
+                setFilterTrack(value as GalleryViewState["filterTrack"]);
+                setPage(1);
+              }}
+              options={[
+                { value: "", label: t(m.allSessionTypes) },
+                { value: "regular", label: t(m.trackRegular) },
+                { value: "trial", label: t(m.trackTrial) },
+              ]}
+              ariaLabel={t(m.filterTrackAria)}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">
               {t(m.colSession)}
             </label>
             <AppSelect
@@ -2137,7 +2204,7 @@ ${storage.path ?? "—"}`}
               ariaLabel={t(m.imageQuality)}
             />
           </div>
-          <div className="sm:col-span-2 lg:col-span-4">
+          <div className="sm:col-span-2 lg:col-span-3">
             <label className="mb-1 block text-xs font-medium text-muted-foreground">
               {t(m.searchFileName)}
             </label>

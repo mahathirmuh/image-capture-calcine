@@ -46,6 +46,7 @@ describe("gallery-preferences", () => {
       filterLocation: "Acid Plant",
       filterBin: "BIN1",
       filterSession: "02.00",
+      filterTrack: "trial",
     });
 
     expect(loadGalleryViewState()).toEqual({
@@ -57,6 +58,7 @@ describe("gallery-preferences", () => {
       filterLocation: "Acid Plant",
       filterBin: "BIN1",
       filterSession: "02.00",
+      filterTrack: "trial",
     });
   });
 
@@ -83,6 +85,7 @@ describe("gallery-preferences", () => {
       viewMode: "list",
       filterBin: "BIN2",
       filterSession: "",
+      filterTrack: "",
     });
   });
 
@@ -135,6 +138,7 @@ describe("gallery-preferences", () => {
           filterLocation: "",
           filterBin: "",
           filterSession: "",
+          filterTrack: "",
         },
         "compact-audit",
       ),
@@ -151,6 +155,7 @@ describe("gallery-preferences", () => {
           filterLocation: "",
           filterBin: "",
           filterSession: "",
+          filterTrack: "",
         },
         "compact-audit",
       ),
