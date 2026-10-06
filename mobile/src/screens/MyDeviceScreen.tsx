@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AppLogo } from "../components/AppLogo";
 import type { AuthSession, AuthUser } from "../lib/auth";
-import { MobileAuthError } from "../lib/auth";
+import { dateLocale, describeError, roleLabel, translate, useT } from "../lib/i18n";
 import { canAccessCapturePlant } from "../lib/camera";
 import {
   getDeviceStatus,
@@ -21,19 +21,11 @@ type MyDeviceScreenProps = {
   onSignOut: () => void | Promise<void>;
 };
 
-function errorMessageOf(error: unknown) {
-  if (error instanceof MobileAuthError) return error.message;
-  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
-    return error.message;
-  }
-  return "Unable to load device status.";
-}
-
 function formatDateTime(iso: string | null) {
-  if (!iso) return "No capture yet";
+  if (!iso) return translate("device.noCapture");
   const value = new Date(iso);
   if (Number.isNaN(value.getTime())) return iso;
-  return new Intl.DateTimeFormat("en-US", {
+  return new Intl.DateTimeFormat(dateLocale(), {
     month: "short",
     day: "2-digit",
     year: "numeric",
@@ -43,7 +35,12 @@ function formatDateTime(iso: string | null) {
 }
 
 function inferHealthState(device: DeviceListItem | null, status: DeviceStatusResponse | null) {
-  if (!device) return { label: "Unavailable", reachability: "No Device", alert: "No eligible device was resolved for this operator scope." };
+  if (!device)
+    return {
+      label: translate("common.unavailable"),
+      reachability: translate("device.reach.noDevice"),
+      alert: translate("device.alert.noDevice"),
+    };
 
   const edge = status?.edge ?? {};
   const connected = edge.connected;
@@ -51,18 +48,38 @@ function inferHealthState(device: DeviceListItem | null, status: DeviceStatusRes
   const online = connected === true || connectionState === "ready";
 
   if (online) {
-    return { label: "Online", reachability: "Excellent", alert: null };
+    return {
+      label: translate("device.health.online"),
+      reachability: translate("device.reach.excellent"),
+      alert: null,
+    };
   }
 
   if (device.isActive) {
-    return { label: "Degraded", reachability: "Limited", alert: "Device is registered but the live edge state is not ready." };
+    return {
+      label: translate("device.health.degraded"),
+      reachability: translate("device.reach.limited"),
+      alert: translate("device.alert.notReady"),
+    };
   }
 
-  return { label: "Offline", reachability: "Unavailable", alert: "Device is inactive in the registry." };
+  return {
+    label: translate("device.health.offline"),
+    reachability: translate("common.unavailable"),
+    alert: translate("device.alert.inactive"),
+  };
 }
 
-export function MyDeviceScreen({ session, user, selectedPlant, onOpenSessions, onSessionUpdate, onSignOut }: MyDeviceScreenProps) {
-  const devicePlant = user.plant === "ALL" ? selectedPlant ?? null : user.plant ?? null;
+export function MyDeviceScreen({
+  session,
+  user,
+  selectedPlant,
+  onOpenSessions,
+  onSessionUpdate,
+  onSignOut,
+}: MyDeviceScreenProps) {
+  const t = useT();
+  const devicePlant = user.plant === "ALL" ? (selectedPlant ?? null) : (user.plant ?? null);
   const needsSelection = user.plant === "ALL" && !canAccessCapturePlant(user.plant, devicePlant);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -115,7 +132,7 @@ export function MyDeviceScreen({ session, user, selectedPlant, onOpenSessions, o
         setLastUpdatedAt(new Date().toISOString());
       } catch (loadError) {
         if (mountedRef.current && requestId === requestRef.current) {
-          setError(errorMessageOf(loadError));
+          setError(describeError(loadError, "device.loadError"));
         }
       } finally {
         if (mountedRef.current && requestId === requestRef.current) {
@@ -141,24 +158,24 @@ export function MyDeviceScreen({ session, user, selectedPlant, onOpenSessions, o
       ? edge.signal
       : typeof edge.uplink === "string"
         ? edge.uplink
-        : "Not Reported";
+        : t("device.notReported");
 
   return (
     <main className="app-page-shell app-page-shell--with-nav my-device-screen">
       <header className="top-app-bar">
         <div className="top-app-bar__side">
           <AppLogo className="app-logo--topbar" alt="" />
-          <span className="top-app-bar__label">{devicePlant ?? "Operator Device"}</span>
+          <span className="top-app-bar__label">{devicePlant ?? t("device.operatorDevice")}</span>
         </div>
 
         <div className="top-app-bar__title">
-          {device?.name ?? "Assigned Device"} | {device?.code ?? "Unavailable"}
+          {device?.name ?? t("device.assigned")} | {device?.code ?? t("common.unavailable")}
         </div>
 
         <button
           className="icon-button"
           type="button"
-          aria-label="Refresh device status"
+          aria-label={t("device.refreshAria")}
           onClick={() => void loadDeviceState("refresh")}
           disabled={loading || refreshing}
         >
@@ -169,46 +186,48 @@ export function MyDeviceScreen({ session, user, selectedPlant, onOpenSessions, o
       </header>
 
       {needsSelection ? (
-        <section className="device-alert-card" aria-label="Select device plant">
+        <section className="device-alert-card" aria-label={t("device.selectAria")}>
           <div>
-            <strong>Select a session first</strong>
-            <p>Your account can access all plants. Choose a session in Today Sessions to view its assigned camera.</p>
-            <button type="button" className="btn btn-primary" onClick={onOpenSessions}>Open Today Sessions</button>
+            <strong>{t("device.selectTitle")}</strong>
+            <p>{t("device.selectBody")}</p>
+            <button type="button" className="btn btn-primary" onClick={onOpenSessions}>
+              {t("device.openSessions")}
+            </button>
           </div>
         </section>
       ) : null}
 
       {loading ? (
-        <section className="device-alert-card" aria-label="Device loading state">
+        <section className="device-alert-card" aria-label={t("device.loadingAria")}>
           <span className="material-symbols-outlined" aria-hidden="true">
             hourglass_top
           </span>
           <div>
-            <strong>Loading device status</strong>
-            <p>Resolving the primary device and fetching live edge status.</p>
+            <strong>{t("device.loadingTitle")}</strong>
+            <p>{t("device.loadingBody")}</p>
           </div>
         </section>
       ) : null}
 
       {error ? (
-        <section className="device-alert-card" aria-label="Device error state">
+        <section className="device-alert-card" aria-label={t("device.errorAria")}>
           <span className="material-symbols-outlined" aria-hidden="true">
             warning
           </span>
           <div>
-            <strong>System Alert</strong>
+            <strong>{t("device.systemAlert")}</strong>
             <p>{error}</p>
           </div>
         </section>
       ) : null}
 
       {!needsSelection && !loading && !error && health.alert ? (
-        <section className="device-alert-card" aria-label="System alert">
+        <section className="device-alert-card" aria-label={t("device.alertAria")}>
           <span className="material-symbols-outlined" aria-hidden="true">
             warning
           </span>
           <div>
-            <strong>System Alert</strong>
+            <strong>{t("device.systemAlert")}</strong>
             <p>{health.alert}</p>
           </div>
         </section>
@@ -216,14 +235,18 @@ export function MyDeviceScreen({ session, user, selectedPlant, onOpenSessions, o
 
       <section className="device-card">
         <div className="device-card__header">
-          <h1>Core Telemetry</h1>
-          <span>{refreshing ? "Refreshing..." : `ID: ${device?.code ?? "Unavailable"}`}</span>
+          <h1>{t("device.telemetry")}</h1>
+          <span>
+            {refreshing
+              ? t("common.refreshing")
+              : t("device.id", { code: device?.code ?? t("common.unavailable") })}
+          </span>
         </div>
 
         <div className="device-card__body">
           <div className="device-card__summary">
             <div>
-              <span className="device-card__label">Health State</span>
+              <span className="device-card__label">{t("device.healthState")}</span>
               <div className="device-card__state">
                 <span className="device-card__pip" aria-hidden="true"></span>
                 <strong>{health.label}</strong>
@@ -231,19 +254,19 @@ export function MyDeviceScreen({ session, user, selectedPlant, onOpenSessions, o
             </div>
 
             <div className="device-card__metric device-card__metric--right">
-              <span className="device-card__label">Reachability</span>
+              <span className="device-card__label">{t("device.reachability")}</span>
               <strong>{health.reachability}</strong>
             </div>
           </div>
 
           <div className="device-card__split">
             <div className="device-card__metric">
-              <span className="device-card__label">Last Capture</span>
+              <span className="device-card__label">{t("device.lastCapture")}</span>
               <strong>{formatDateTime(device?.lastCapturedAt ?? null)}</strong>
             </div>
 
             <div className="device-card__metric device-card__metric--right">
-              <span className="device-card__label">Uplink</span>
+              <span className="device-card__label">{t("device.uplink")}</span>
               <strong>{uplink}</strong>
             </div>
           </div>
@@ -253,18 +276,15 @@ export function MyDeviceScreen({ session, user, selectedPlant, onOpenSessions, o
       <section className="device-diagnostics-card">
         <div className="device-diagnostics-card__header">
           <div>
-            <p className="device-diagnostics-card__kicker">Diagnostics</p>
-            <h2 className="device-diagnostics-card__title">Read-only operator view</h2>
+            <p className="device-diagnostics-card__kicker">{t("device.diagnostics")}</p>
+            <h2 className="device-diagnostics-card__title">{t("device.readOnly")}</h2>
           </div>
           <span className="device-diagnostics-card__badge">
-            {lastUpdatedAt ? formatDateTime(lastUpdatedAt) : "Waiting"}
+            {lastUpdatedAt ? formatDateTime(lastUpdatedAt) : t("device.waiting")}
           </span>
         </div>
 
-        <p className="device-diagnostics-card__body">
-          Mobile operators can review health state, uplink, and last capture from this screen.
-          Remote diagnostics and repair actions stay on the admin workflow in this phase.
-        </p>
+        <p className="device-diagnostics-card__body">{t("device.diagnosticsBody")}</p>
 
         <button
           className="btn btn-primary device-diagnostics-button"
@@ -275,7 +295,7 @@ export function MyDeviceScreen({ session, user, selectedPlant, onOpenSessions, o
           <span className="material-symbols-outlined" aria-hidden="true">
             refresh
           </span>
-          {refreshing ? "Refreshing..." : "Refresh Status"}
+          {refreshing ? t("common.refreshing") : t("device.refreshStatus")}
         </button>
       </section>
 
@@ -288,7 +308,8 @@ export function MyDeviceScreen({ session, user, selectedPlant, onOpenSessions, o
           <div>
             <strong>{user.username}</strong>
             <p>
-              Auth Level: {user.role} {device?.plant ? `• ${device.plant}` : user.plant ? `• ${user.plant}` : ""}
+              {t("device.authLevel", { role: roleLabel(user.role) })}{" "}
+              {device?.plant ? `• ${device.plant}` : user.plant ? `• ${user.plant}` : ""}
             </p>
           </div>
         </div>
@@ -298,7 +319,7 @@ export function MyDeviceScreen({ session, user, selectedPlant, onOpenSessions, o
           type="button"
           onClick={() => void onSignOut()}
         >
-          Sign Out
+          {t("common.signOut")}
         </button>
       </section>
     </main>

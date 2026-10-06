@@ -1,3 +1,4 @@
+import { translate } from "./i18n";
 import { requestResponseWithSession, requestWithSession, type AuthSession } from "./auth";
 
 export type CameraLease = {
@@ -67,10 +68,10 @@ export async function ensureCameraSession(
   plant: string,
 ): Promise<{ session: AuthSession; data: CameraLease }> {
   if (!canAccessCapturePlant(session.user.plant, plant)) {
-    throw new Error("Select a session in a plant your account can access.");
+    throw new Error(translate("camera.plantForbidden"));
   }
   if (lease && (lease.plant !== plant || lease.ownerId !== session.user.username)) {
-    throw new Error("Camera assignment changed. Restart the camera session.");
+    throw new Error(translate("camera.assignmentChanged"));
   }
   if (sessionValid(lease)) {
     return { session, data: lease as CameraLease };
@@ -83,7 +84,7 @@ export async function ensureCameraSession(
     response.data.ownerId !== session.user.username
   ) {
     await releaseCameraSession(response.session, response.data).catch(() => undefined);
-    throw new Error("The camera response does not match the selected plant.");
+    throw new Error(translate("camera.plantMismatch"));
   }
   return response;
 }
@@ -224,7 +225,7 @@ export async function getJob(
 
 function cameraTargetQuery(lease: CameraLease) {
   if (!Number.isInteger(lease.deviceId) || lease.deviceId < 1 || !lease.plant) {
-    throw new Error("Camera assignment is unavailable. Restart the camera session.");
+    throw new Error(translate("camera.assignmentUnavailable"));
   }
   return new URLSearchParams({ deviceId: String(lease.deviceId), plant: lease.plant }).toString();
 }

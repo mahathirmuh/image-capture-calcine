@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 
 import { AppLogo } from "../components/AppLogo";
+import { LanguageSwitch } from "../components/LanguageSwitch";
+import { useT, type Language } from "../lib/i18n";
 
 type FormState = {
   identifier: string;
@@ -9,11 +11,18 @@ type FormState = {
 
 type LoginScreenProps = {
   onSignIn?: (credentials: FormState) => Promise<void> | void;
+  onChangeLanguage?: (language: Language) => void;
   submitting?: boolean;
   errorMessage?: string | null;
 };
 
-export function LoginScreen({ onSignIn, submitting = false, errorMessage }: LoginScreenProps) {
+export function LoginScreen({
+  onSignIn,
+  onChangeLanguage,
+  submitting = false,
+  errorMessage,
+}: LoginScreenProps) {
+  const t = useT();
   const [form, setForm] = useState<FormState>({ identifier: "", password: "" });
   const [showPassword, setShowPassword] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -21,10 +30,10 @@ export function LoginScreen({ onSignIn, submitting = false, errorMessage }: Logi
   const validationMessage = useMemo(() => {
     if (!submitted) return null;
     if (!form.identifier.trim() || !form.password.trim()) {
-      return "Username or password is required.";
+      return t("login.required");
     }
     return null;
-  }, [form.identifier, form.password, submitted]);
+  }, [form.identifier, form.password, submitted, t]);
 
   function updateField<K extends keyof FormState>(field: K, value: FormState[K]) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -44,30 +53,34 @@ export function LoginScreen({ onSignIn, submitting = false, errorMessage }: Logi
 
   return (
     <main className="app-shell">
-      <section className="login-screen" aria-label="Operator sign in">
+      <section className="login-screen" aria-label={t("login.aria")}>
         <section className="card login-card">
+          {onChangeLanguage ? (
+            <div className="login-language">
+              <LanguageSwitch onChange={onChangeLanguage} disabled={submitting} />
+            </div>
+          ) : null}
+
           <header className="login-hero">
             <div className="login-hero__top">
               <div className="brand-mark" aria-hidden="true">
                 <AppLogo className="app-logo--brand" alt="" />
               </div>
               <div>
-                <p className="brand-kicker">Calcine Sampling Operator Tool</p>
+                <p className="brand-kicker">{t("login.kicker")}</p>
                 <h1 className="brand-title">Capture Calcine</h1>
-                <p className="brand-subtitle login-hero__copy">
-                  Sign in to continue your assigned sampling session and capture workflow.
-                </p>
+                <p className="brand-subtitle login-hero__copy">{t("login.subtitle")}</p>
               </div>
             </div>
 
             <div className="status-row">
               <div className="status-chip">
                 <span className="status-dot"></span>
-                Zone 04
+                {t("login.zone")}
               </div>
               <div className="status-chip secure">
                 <span className="status-dot"></span>
-                Network Secure
+                {t("login.networkSecure")}
               </div>
             </div>
           </header>
@@ -76,7 +89,7 @@ export function LoginScreen({ onSignIn, submitting = false, errorMessage }: Logi
 
           <form className="form-grid" onSubmit={handleSubmit}>
             <div className="field">
-              <label htmlFor="identifier">Username or Email</label>
+              <label htmlFor="identifier">{t("login.identifier")}</label>
               <div className="input-shell">
                 <span className="material-symbols-outlined" aria-hidden="true">
                   badge
@@ -86,7 +99,7 @@ export function LoginScreen({ onSignIn, submitting = false, errorMessage }: Logi
                   name="identifier"
                   type="text"
                   autoComplete="username"
-                  placeholder="Enter username or email"
+                  placeholder={t("login.identifierPlaceholder")}
                   value={form.identifier}
                   onChange={(event) => updateField("identifier", event.target.value)}
                 />
@@ -94,7 +107,7 @@ export function LoginScreen({ onSignIn, submitting = false, errorMessage }: Logi
             </div>
 
             <div className="field">
-              <label htmlFor="password">Password</label>
+              <label htmlFor="password">{t("login.password")}</label>
               <div className="input-shell">
                 <span className="material-symbols-outlined" aria-hidden="true">
                   lock
@@ -104,14 +117,14 @@ export function LoginScreen({ onSignIn, submitting = false, errorMessage }: Logi
                   name="password"
                   type={showPassword ? "text" : "password"}
                   autoComplete="current-password"
-                  placeholder="Enter password"
+                  placeholder={t("login.passwordPlaceholder")}
                   value={form.password}
                   onChange={(event) => updateField("password", event.target.value)}
                 />
                 <button
                   className="password-toggle"
                   type="button"
-                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  aria-label={showPassword ? t("login.hidePassword") : t("login.showPassword")}
                   onClick={() => setShowPassword((current) => !current)}
                 >
                   <span className="material-symbols-outlined" aria-hidden="true">
@@ -119,7 +132,7 @@ export function LoginScreen({ onSignIn, submitting = false, errorMessage }: Logi
                   </span>
                 </button>
               </div>
-              {validationMessage ?? errorMessage ? (
+              {(validationMessage ?? errorMessage) ? (
                 <div className="helper-row error" role="status" aria-live="polite">
                   <span className="material-symbols-outlined" aria-hidden="true">
                     error
@@ -131,14 +144,14 @@ export function LoginScreen({ onSignIn, submitting = false, errorMessage }: Logi
                   <span className="material-symbols-outlined" aria-hidden="true">
                     info
                   </span>
-                  <span>Sign in with your operator account credentials.</span>
+                  <span>{t("login.helper")}</span>
                 </div>
               )}
             </div>
 
             <div className="actions">
               <button className="btn btn-primary" type="submit" disabled={submitting}>
-                <span>{submitting ? "Signing In..." : "Sign In"}</span>
+                <span>{submitting ? t("login.signingIn") : t("login.signIn")}</span>
                 <span className="material-symbols-outlined" aria-hidden="true">
                   login
                 </span>
@@ -148,21 +161,18 @@ export function LoginScreen({ onSignIn, submitting = false, errorMessage }: Logi
                 <span className="material-symbols-outlined" aria-hidden="true">
                   help
                 </span>
-                <span>Help / Support</span>
+                <span>{t("login.help")}</span>
               </button>
             </div>
           </form>
 
-          <aside className="support-card support-card--compact" aria-label="Support information">
+          <aside className="support-card support-card--compact" aria-label={t("login.supportAria")}>
             <span className="material-symbols-outlined" aria-hidden="true">
               shield
             </span>
             <div>
-              <strong>Shift note</strong>
-              <p>
-                If access fails repeatedly, contact the shift supervisor or application admin to
-                verify your operator account status.
-              </p>
+              <strong>{t("login.shiftNote")}</strong>
+              <p>{t("login.shiftNoteBody")}</p>
             </div>
           </aside>
         </section>

@@ -31,6 +31,7 @@ import {
 } from "../../../src/lib/capture-schedule";
 import { TrackTabs } from "../components/TrackTabs";
 import { resolveAutomaticCaptureSession } from "../lib/automaticCaptureSession";
+import { describeError, translate, useT } from "../lib/i18n";
 
 type CaptureScreenProps = {
   session: AuthSession;
@@ -46,30 +47,30 @@ type BusyAction = "session" | "capture" | null;
 function sessionStatusCopy(status: TodaySessionItem["status"] | null) {
   switch (status) {
     case "completed":
-      return "Completed in coverage";
+      return translate("capture.status.completed");
     case "missing":
-      return "Ready for recovery";
+      return translate("capture.status.missing");
     case "open":
-      return "Session open";
+      return translate("capture.status.open");
     case "upcoming":
-      return "Ready for schedule";
+      return translate("capture.status.upcoming");
     default:
-      return "Awaiting selection";
+      return translate("capture.status.none");
   }
 }
 
 function jobStatusLabel(status: CameraJob["status"] | null) {
   switch (status) {
     case "queued":
-      return "Queued";
+      return translate("job.queued");
     case "running":
-      return "Running";
+      return translate("job.running");
     case "succeeded":
-      return "Succeeded";
+      return translate("job.succeeded");
     case "failed":
-      return "Failed";
+      return translate("job.failed");
     default:
-      return "Idle";
+      return translate("job.idle");
   }
 }
 
@@ -93,29 +94,20 @@ function captureProcessLabel(status: CameraJob["status"] | null, busyAction: Bus
 
   switch (status) {
     case "queued":
-      return "Capture request sent to the camera.";
+      return translate("capture.process.queued");
     case "running":
-      return "Camera is capturing and saving the image.";
+      return translate("capture.process.running");
     case "succeeded":
-      return "Finalizing captured image...";
+      return translate("capture.process.succeeded");
     case "failed":
-      return "Capture failed.";
+      return translate("capture.process.failed");
     default:
-      return "Keep this screen open while capture is in progress.";
+      return translate("capture.process.default");
   }
 }
 
 function errorMessageOf(error: unknown) {
-  if (error instanceof MobileAuthError) return error.message;
-  if (
-    error &&
-    typeof error === "object" &&
-    "message" in error &&
-    typeof error.message === "string"
-  ) {
-    return error.message;
-  }
-  return "Unable to complete the camera action.";
+  return describeError(error, "capture.actionError");
 }
 
 function wait(ms: number) {
@@ -148,9 +140,9 @@ async function waitForJobCompletion(
   let latestSession = currentSession;
 
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    if (!isCurrent()) throw new Error("Camera operation cancelled.");
+    if (!isCurrent()) throw new Error(translate("capture.cancelled"));
     const response = await getJob(latestSession, jobId, lease);
-    if (!isCurrent()) throw new Error("Camera operation cancelled.");
+    if (!isCurrent()) throw new Error(translate("capture.cancelled"));
     latestSession = response.session;
     onSessionUpdate(response.session);
     onTick(response.data);
@@ -162,7 +154,7 @@ async function waitForJobCompletion(
     await new Promise((resolve) => window.setTimeout(resolve, 1500));
   }
 
-  throw new Error("Camera job did not finish before the mobile polling timeout.");
+  throw new Error(translate("capture.pollTimeout"));
 }
 
 export function CaptureScreen(props: CaptureScreenProps) {
@@ -170,6 +162,7 @@ export function CaptureScreen(props: CaptureScreenProps) {
 }
 
 function CaptureContext(props: CaptureScreenProps) {
+  const t = useT();
   const [schedule, setSchedule] = useState<ScheduleSnapshot | null>(null);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
@@ -199,14 +192,14 @@ function CaptureContext(props: CaptureScreenProps) {
         );
         if (cancelled || captureBusyRef.current) return;
         if (!Array.isArray(response.data.versions) || !Number.isFinite(response.data.serverNow))
-          throw new Error("Invalid schedule response.");
+          throw new Error(translate("capture.invalidSchedule"));
         clockOffset.current = response.data.serverNow - (start + Date.now()) / 2;
         setSchedule(response.data);
         setScheduleError(null);
       } catch (error) {
         if (!cancelled && !captureBusyRef.current) {
           setSchedule(null);
-          setScheduleError((error as Error).message);
+          setScheduleError(describeError(error, "common.unknownError"));
         }
       }
       if (!cancelled) timer = window.setTimeout(load, 60000);
@@ -273,16 +266,16 @@ function CaptureContext(props: CaptureScreenProps) {
         <section className="data-state-card" role={scheduleError ? "alert" : "status"}>
           <div>
             <strong>
-              {scheduleError ? "Unable to load capture schedule" : "Loading capture schedule"}
+              {scheduleError ? t("capture.scheduleErrorTitle") : t("capture.scheduleLoadingTitle")}
             </strong>
-            <p>{scheduleError ?? "Checking the plant schedule with the backend."}</p>
+            <p>{scheduleError ?? t("capture.scheduleLoadingBody")}</p>
             {scheduleError && (
               <button
                 type="button"
                 className="capture-session-bar__button"
                 onClick={() => setRetry((x) => x + 1)}
               >
-                Retry
+                {t("common.retry")}
               </button>
             )}
           </div>
@@ -328,6 +321,7 @@ function CaptureWorkflow({
   onCaptureBusyChange: (busy: boolean) => void;
   trackTabs: ReactNode;
 }) {
+  const t = useT();
   const [lease, setLease] = useState<CameraLease | null>(null);
   const [job, setJob] = useState<CameraJob | null>(null);
   const [latestCapture, setLatestCapture] = useState<CaptureHistoryItem | null>(null);
@@ -356,19 +350,19 @@ function CaptureWorkflow({
   const hasSelectedSession = !!selectedSession;
   const blockedMessage =
     automatic && session.user.plant && session.user.plant !== "ALL"
-      ? "Session not available, please take sample at defined sessions."
-      : "Select a session from Today Sessions to define plant context first.";
+      ? t("capture.blockedAutomatic")
+      : t("capture.blockedSelect");
   const currentPlant = selectedSession?.plant ?? session.user.plant ?? "";
   const currentSlotLabel = hasSelectedSession ? slotLabel(currentPlant, activeSlot) : null;
   const contextTitle = hasSelectedSession
     ? (currentSlotLabel ?? selectedSession.location)
-    : "Session not available";
+    : t("capture.notAvailable");
   const contextMeta = hasSelectedSession
-    ? `${selectedSession.plant}${selectedSession.track === "trial" ? " Trial" : ""} • ${automatic ? "Auto session " : ""}${selectedSession.displayTime} • ${currentSlotLabel}`
+    ? `${selectedSession.plant}${selectedSession.track === "trial" ? ` ${t("capture.trialTag")}` : ""} • ${automatic ? `${t("capture.autoSession")} ` : ""}${selectedSession.displayTime} • ${currentSlotLabel}`
     : blockedMessage;
   const headerTitle = hasSelectedSession
     ? `${selectedSession.plant} | ${selectedSession.displayTime}`
-    : "Capture Workflow";
+    : t("capture.headerDefault");
   const jobLabel = useMemo(() => jobStatusLabel(job?.status ?? null), [job]);
   const progress = useMemo(() => jobProgress(job?.status ?? null), [job]);
   const contextValid = !!selectedSession && canAccessCapturePlant(session.user.plant, currentPlant);
@@ -616,7 +610,7 @@ function CaptureWorkflow({
   async function handleStartSession() {
     if (!selectedSession || !withinAutomaticWindow()) return;
     if (!contextValid) {
-      setError("Select a scheduled session in a plant your account can access.");
+      setError(t("capture.invalidContext"));
       return;
     }
     const generation = ++generationRef.current;
@@ -656,8 +650,8 @@ function CaptureWorkflow({
           setSessionConflict(true);
           setCaptureNotice({
             tone: "warning",
-            title: "Camera already in use",
-            body: "Camera is currently in use on another device. Wait until that session is released, then try again.",
+            title: t("capture.conflictTitle"),
+            body: t("capture.conflictBody"),
           });
         } else setError(errorMessageOf(actionError));
       }
@@ -704,8 +698,8 @@ function CaptureWorkflow({
     setError(null);
     setCaptureNotice({
       tone: "info",
-      title: "Process capturing",
-      body: "Please wait. The camera is taking the image and saving the result.",
+      title: t("capture.processing"),
+      body: t("capture.notice.capturingBody"),
     });
 
     try {
@@ -735,7 +729,7 @@ function CaptureWorkflow({
       if (result.job.status === "succeeded") {
         const assetId = extractAssetId(result.job);
         if (!assetId) {
-          throw new Error("Capture succeeded but the edge did not return an asset id for saving.");
+          throw new Error(t("capture.noAsset"));
         }
 
         const finalized = await finalizeCaptureResult(latestSession, {
@@ -754,15 +748,15 @@ function CaptureWorkflow({
           setPreviewError(null);
           setCaptureNotice({
             tone: "success",
-            title: "Capture complete",
-            body: "Image saved successfully and ready in history.",
+            title: t("capture.notice.completeTitle"),
+            body: t("capture.notice.completeBody"),
           });
         } else {
-          setPreviewError(`Saved on app server queue (${finalized.data.pending} pending).`);
+          setPreviewError(t("capture.savedOnQueue", { pending: finalized.data.pending }));
           setCaptureNotice({
             tone: "success",
-            title: "Capture queued",
-            body: `Image reached the app server queue (${finalized.data.pending} pending).`,
+            title: t("capture.notice.queuedTitle"),
+            body: t("capture.notice.queuedBody", { pending: finalized.data.pending }),
           });
         }
 
@@ -794,7 +788,7 @@ function CaptureWorkflow({
         <button
           className="icon-button"
           type="button"
-          aria-label="Open today sessions"
+          aria-label={t("capture.openSessionsAria")}
           onClick={onOpenSessions}
         >
           <span className="material-symbols-outlined" aria-hidden="true">
@@ -804,7 +798,7 @@ function CaptureWorkflow({
       </header>
 
       <section className="capture-context-card">
-        <p className="capture-context-card__kicker">Session Context</p>
+        <p className="capture-context-card__kicker">{t("capture.contextKicker")}</p>
         <h1 className="capture-context-card__title">{contextTitle}</h1>
         <div className="capture-context-card__meta">
           <span className="material-symbols-outlined" aria-hidden="true">
@@ -816,7 +810,7 @@ function CaptureWorkflow({
         {trackTabs}
 
         {hasSelectedSession ? (
-          <div className="capture-slot-selector" role="group" aria-label="Capture target slot">
+          <div className="capture-slot-selector" role="group" aria-label={t("capture.slotAria")}>
             {[1, 2].map((slot) => (
               <button
                 key={slot}
@@ -839,9 +833,9 @@ function CaptureWorkflow({
           <span className="capture-session-bar__pulse" aria-hidden="true"></span>
           <span>
             {cameraReady
-              ? `Camera ready • ${lease?.deviceCode}`
+              ? t("capture.cameraReady", { device: lease?.deviceCode ?? "" })
               : sessionReady
-                ? "Session active • waiting for camera preview"
+                ? t("capture.waitingPreview")
                 : sessionStatusCopy(selectedSession?.status ?? null)}
           </span>
         </div>
@@ -852,8 +846,8 @@ function CaptureWorkflow({
             type="button"
             onClick={() => void runJob("capture")}
             disabled={!contextValid || busyAction !== null || !cameraReady}
-            aria-label={captureBusy ? "Capturing image" : "Capture image"}
-            title={captureBusy ? "Capturing image" : "Capture image"}
+            aria-label={captureBusy ? t("capture.capturingAria") : t("capture.captureAria")}
+            title={captureBusy ? t("capture.capturingAria") : t("capture.captureAria")}
           >
             <span
               className={`material-symbols-outlined ${
@@ -876,29 +870,39 @@ function CaptureWorkflow({
           >
             {busyAction === "session"
               ? sessionReady
-                ? "Stopping..."
-                : "Starting..."
+                ? t("capture.stopping")
+                : t("capture.starting")
               : sessionReady
-                ? "Stop Session"
-                : "Start Session"}
+                ? t("capture.stopSession")
+                : t("capture.startSession")}
           </button>
         </div>
       </section>
 
-      <section className="camera-feed-card" aria-label="Camera feed preview">
+      <section className="camera-feed-card" aria-label={t("capture.feedAria")}>
         <div className="camera-feed-card__header">
           <div>
-            <p className="camera-feed-card__eyebrow">Live View</p>
-            <h2 className="camera-feed-card__title">{currentSlotLabel ?? "Camera preview"}</h2>
+            <p className="camera-feed-card__eyebrow">{t("capture.liveView")}</p>
+            <h2 className="camera-feed-card__title">
+              {currentSlotLabel ?? t("capture.cameraPreview")}
+            </h2>
           </div>
           <div className="camera-feed-card__header-badge">
-            {sessionReady ? (previewBusy ? "Refreshing" : "Live") : "Standby"}
+            {sessionReady
+              ? previewBusy
+                ? t("capture.badge.refreshing")
+                : t("capture.badge.live")
+              : t("capture.badge.standby")}
           </div>
         </div>
 
         <div className="camera-feed-card__image">
           {previewUrl ? (
-            <img className="camera-feed-card__frame" src={previewUrl} alt="Live camera preview" />
+            <img
+              className="camera-feed-card__frame"
+              src={previewUrl}
+              alt={t("capture.previewAlt")}
+            />
           ) : null}
           <div className="camera-feed-card__crosshair">
             <span className="camera-feed-card__crosshair-dot"></span>
@@ -911,21 +915,21 @@ function CaptureWorkflow({
               >
                 progress_activity
               </span>
-              <strong>Process capturing</strong>
-              <span>{captureProcess ?? "Please wait while the capture is being processed."}</span>
+              <strong>{t("capture.processing")}</strong>
+              <span>{captureProcess ?? t("capture.processingWait")}</span>
             </div>
           ) : null}
         </div>
         <div className="camera-feed-card__status">
           {previewBusy
-            ? "Loading live preview..."
+            ? t("capture.preview.loading")
             : previewError
               ? previewError
               : previewUrl
-                ? "Live preview active"
+                ? t("capture.preview.active")
                 : sessionReady
-                  ? "Waiting for first frame..."
-                  : "Start session to load live preview."}
+                  ? t("capture.preview.waiting")
+                  : t("capture.preview.start")}
         </div>
       </section>
 
@@ -942,7 +946,7 @@ function CaptureWorkflow({
 
       {!selectedSession ? (
         <section className="capture-notice capture-notice--warning" role="status">
-          <strong>Session not available</strong>
+          <strong>{t("capture.notAvailable")}</strong>
           <span>{blockedMessage}</span>
         </section>
       ) : null}
@@ -959,18 +963,15 @@ function CaptureWorkflow({
             <span className="material-symbols-outlined">warning</span>
           </div>
           <div className="capture-dialog__content">
-            <strong id="capture-dialog-title">Camera already in use</strong>
-            <p id="capture-dialog-body">
-              Camera is currently in use on another device. Wait until that session is released,
-              then try again.
-            </p>
+            <strong id="capture-dialog-title">{t("capture.conflictTitle")}</strong>
+            <p id="capture-dialog-body">{t("capture.conflictBody")}</p>
           </div>
           <button
             className="capture-dialog__button"
             type="button"
             onClick={() => setSessionConflict(false)}
           >
-            OK
+            {t("common.ok")}
           </button>
         </dialog>
       ) : null}
@@ -979,7 +980,7 @@ function CaptureWorkflow({
         <button
           type="button"
           className="result-preview-card result-preview-card--button"
-          aria-label="Open latest capture detail"
+          aria-label={t("capture.latestAria")}
           onClick={() => {
             if (latestCapture && onOpenLatestCapture) {
               onOpenLatestCapture(latestCapture);
@@ -988,19 +989,19 @@ function CaptureWorkflow({
           disabled={!latestCapture || !onOpenLatestCapture}
         >
           <span className="result-preview-card__label">
-            {latestCapture ? "Latest Saved Result" : "Latest Result"}
+            {latestCapture ? t("capture.latestSaved") : t("capture.latest")}
           </span>
           <div className="result-preview-card__thumb">
             <div className="result-preview-card__badge">
-              {latestCapture?.statusLabel ?? lease?.deviceCode ?? "IDLE"}
+              {latestCapture?.statusLabel ?? lease?.deviceCode ?? t("capture.idle")}
             </div>
           </div>
           <div className="result-preview-card__content">
-            <strong>{latestCapture?.title ?? "Awaiting capture result"}</strong>
+            <strong>{latestCapture?.title ?? t("capture.awaitingResult")}</strong>
             <span>
               {latestCapture
                 ? `${latestCapture.plant} • ${latestCapture.capturedTime}`
-                : "After capture completes, the newest saved image will appear here."}
+                : t("capture.awaitingResultBody")}
             </span>
           </div>
         </button>
@@ -1013,7 +1014,7 @@ function CaptureWorkflow({
               error
             </span>
             <div>
-              <strong>Camera action failed</strong>
+              <strong>{t("capture.failedTitle")}</strong>
               <p>{error}</p>
             </div>
           </div>
@@ -1021,7 +1022,7 @@ function CaptureWorkflow({
       ) : null}
 
       <section className="capture-actions-stack">
-        <article className="job-progress-card" aria-label="Capture job progress">
+        <article className="job-progress-card" aria-label={t("capture.jobAria")}>
           <div className="job-progress-card__header">
             <div className="job-progress-card__meta">
               <span
@@ -1030,7 +1031,7 @@ function CaptureWorkflow({
               >
                 settings
               </span>
-              <span>JOB_ID: {job?.jobId ?? "—"}</span>
+              <span>{t("capture.jobId", { id: job?.jobId ?? "—" })}</span>
             </div>
             <span className="job-progress-card__status">{jobLabel}</span>
           </div>
@@ -1044,10 +1045,7 @@ function CaptureWorkflow({
           >
             <span className="job-progress-card__bar-fill" style={{ width: `${progress}%` }}></span>
           </div>
-          <p className="job-progress-card__helper">
-            {captureProcess ??
-              "Wait for the camera preview, then use Capture to save the image for the selected slot."}
-          </p>
+          <p className="job-progress-card__helper">{captureProcess ?? t("capture.helper")}</p>
         </article>
       </section>
     </main>

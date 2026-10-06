@@ -1,7 +1,16 @@
 import { useMemo, useState } from "react";
 
 import { AppLogo } from "../components/AppLogo";
+import { LanguageSwitch } from "../components/LanguageSwitch";
 import { getConfiguredApiBaseUrl, type AuthSession } from "../lib/auth";
+import {
+  dateLocale,
+  describeError,
+  plantLabel,
+  roleLabel,
+  useT,
+  type TranslationKey,
+} from "../lib/i18n";
 import type { MobilePreferences } from "../lib/preferences";
 
 type SettingsScreenProps = {
@@ -11,38 +20,40 @@ type SettingsScreenProps = {
   onSignOut: () => void | Promise<void>;
 };
 
+type TogglePreference = "lightMode" | "highContrastMode" | "historyWarmupEnabled";
+
 type PreferenceItem = {
-  id: keyof MobilePreferences;
+  id: TogglePreference;
   icon: string;
-  label: string;
-  description: string;
+  label: TranslationKey;
+  description: TranslationKey;
 };
 
 const PREFERENCE_ITEMS: PreferenceItem[] = [
   {
     id: "lightMode",
     icon: "light_mode",
-    label: "Light Mode",
-    description: "Switch the operator interface to a brighter theme and save it on this device.",
+    label: "pref.lightMode",
+    description: "pref.lightModeDescription",
   },
   {
     id: "highContrastMode",
     icon: "contrast",
-    label: "High-Contrast Mode",
-    description: "Boost interface contrast for better visibility on the plant floor.",
+    label: "pref.highContrast",
+    description: "pref.highContrastDescription",
   },
   {
     id: "historyWarmupEnabled",
     icon: "imagesmode",
-    label: "History Warm-Up",
-    description: "Preload recent thumbnails in the background after login or session restore.",
+    label: "pref.warmup",
+    description: "pref.warmupDescription",
   },
 ];
 
 function formatDateTime(iso: string) {
   const value = new Date(iso);
   if (Number.isNaN(value.getTime())) return iso;
-  return new Intl.DateTimeFormat("en-US", {
+  return new Intl.DateTimeFormat(dateLocale(), {
     month: "short",
     day: "2-digit",
     year: "numeric",
@@ -51,30 +62,11 @@ function formatDateTime(iso: string) {
   }).format(value);
 }
 
-function errorMessageOf(error: unknown) {
-  if (
-    error &&
-    typeof error === "object" &&
-    "message" in error &&
-    typeof error.message === "string"
-  ) {
-    return error.message;
-  }
-  return "Unable to save the updated mobile preference.";
-}
-
-function apiSnapshot() {
-  const baseUrl = getConfiguredApiBaseUrl();
-
+function apiPath(): string | null {
   try {
-    const parsed = new URL(baseUrl);
-    return {
-      path: parsed.pathname || "/",
-    };
+    return new URL(getConfiguredApiBaseUrl()).pathname || "/";
   } catch {
-    return {
-      path: "Custom URL",
-    };
+    return null;
   }
 }
 
@@ -84,21 +76,19 @@ export function SettingsScreen({
   onUpdatePreferences,
   onSignOut,
 }: SettingsScreenProps) {
+  const t = useT();
   const [pendingPreference, setPendingPreference] = useState<keyof MobilePreferences | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const runtime = useMemo(() => apiSnapshot(), []);
+  const runtimePath = useMemo(() => apiPath(), []);
 
-  async function handlePreferenceChange(
-    key: keyof MobilePreferences,
-    value: MobilePreferences[keyof MobilePreferences],
-  ) {
-    setPendingPreference(key);
+  async function handlePreferenceChange(patch: Partial<MobilePreferences>) {
+    setPendingPreference(Object.keys(patch)[0] as keyof MobilePreferences);
     setSaveError(null);
 
     try {
-      await onUpdatePreferences({ [key]: value });
+      await onUpdatePreferences(patch);
     } catch (error) {
-      setSaveError(errorMessageOf(error));
+      setSaveError(describeError(error, "settings.saveError"));
     } finally {
       setPendingPreference(null);
     }
@@ -109,17 +99,17 @@ export function SettingsScreen({
       <header className="top-app-bar top-app-bar--detail">
         <div className="top-app-bar__side">
           <AppLogo className="app-logo--topbar" alt="" />
-          <span className="top-app-bar__detail-title">Settings</span>
+          <span className="top-app-bar__detail-title">{t("settings.title")}</span>
         </div>
 
         <div className="top-app-bar__title">
-          {session.user.plant ?? "ALL"} | {session.user.role}
+          {plantLabel(session.user.plant)} | {roleLabel(session.user.role)}
         </div>
 
         <button
           className="icon-button"
           type="button"
-          aria-label="Logout"
+          aria-label={t("settings.logoutAria")}
           onClick={() => void onSignOut()}
         >
           <span className="material-symbols-outlined" aria-hidden="true">
@@ -141,13 +131,13 @@ export function SettingsScreen({
               </span>
             </div>
             <div>
-              <p className="settings-info-card__kicker">Operator</p>
+              <p className="settings-info-card__kicker">{t("settings.operator")}</p>
               <h1 className="settings-info-card__title">{session.user.fullName}</h1>
             </div>
           </div>
 
           <div className="settings-info-card__foot">
-            <span>Identity</span>
+            <span>{t("settings.identity")}</span>
             <strong>{session.user.username}</strong>
           </div>
         </article>
@@ -164,14 +154,14 @@ export function SettingsScreen({
               </span>
             </div>
             <div>
-              <p className="settings-info-card__kicker">Assignment</p>
-              <h2 className="settings-info-card__title">{session.user.plant ?? "ALL"}</h2>
+              <p className="settings-info-card__kicker">{t("settings.assignment")}</p>
+              <h2 className="settings-info-card__title">{plantLabel(session.user.plant)}</h2>
             </div>
           </div>
 
           <div className="settings-info-card__foot">
-            <span>Account</span>
-            <strong>{session.user.email ?? "No email registered"}</strong>
+            <span>{t("settings.account")}</span>
+            <strong>{session.user.email ?? t("settings.noEmail")}</strong>
           </div>
         </article>
       </section>
@@ -182,7 +172,7 @@ export function SettingsScreen({
             warning
           </span>
           <div>
-            <strong>Preference update failed</strong>
+            <strong>{t("settings.saveFailedTitle")}</strong>
             <p>{saveError}</p>
           </div>
         </section>
@@ -190,10 +180,29 @@ export function SettingsScreen({
 
       <section className="settings-section">
         <h2 className="settings-section__title settings-section__title--primary">
-          Operator Preferences
+          {t("settings.preferences")}
         </h2>
 
         <div className="settings-list-card">
+          <div className="settings-row">
+            <div className="settings-row__content">
+              <div className="settings-row__label">
+                <span className="material-symbols-outlined" aria-hidden="true">
+                  translate
+                </span>
+                <span>{t("language.label")}</span>
+              </div>
+              <p className="settings-row__meta">{t("language.description")}</p>
+            </div>
+
+            <LanguageSwitch
+              disabled={pendingPreference === "language"}
+              onChange={(language) => {
+                if (language !== preferences.language) void handlePreferenceChange({ language });
+              }}
+            />
+          </div>
+
           {PREFERENCE_ITEMS.map((item) => {
             const checked = preferences[item.id];
             const pending = pendingPreference === item.id;
@@ -205,18 +214,18 @@ export function SettingsScreen({
                     <span className="material-symbols-outlined" aria-hidden="true">
                       {item.icon}
                     </span>
-                    <span>{item.label}</span>
+                    <span>{t(item.label)}</span>
                   </div>
-                  <p className="settings-row__meta">{item.description}</p>
+                  <p className="settings-row__meta">{t(item.description)}</p>
                 </div>
 
-                <label className="settings-toggle" aria-label={item.label}>
+                <label className="settings-toggle" aria-label={t(item.label)}>
                   <input
                     type="checkbox"
                     checked={checked}
                     disabled={pending}
                     onChange={(event) => {
-                      void handlePreferenceChange(item.id, event.target.checked);
+                      void handlePreferenceChange({ [item.id]: event.target.checked });
                     }}
                   />
                   <span className="settings-toggle__slider"></span>
@@ -228,26 +237,26 @@ export function SettingsScreen({
       </section>
 
       <section className="settings-section">
-        <h2 className="settings-section__title">Runtime Snapshot</h2>
+        <h2 className="settings-section__title">{t("settings.runtime")}</h2>
 
         <div className="settings-runtime-grid">
           <article className="settings-runtime-card">
-            <span>App Version</span>
+            <span>{t("settings.appVersion")}</span>
             <strong>{__MOBILE_APP_VERSION__}</strong>
           </article>
 
           <article className="settings-runtime-card settings-runtime-card--wide">
-            <span>API Path</span>
-            <strong>{runtime.path}</strong>
+            <span>{t("settings.apiPath")}</span>
+            <strong>{runtimePath ?? t("settings.customUrl")}</strong>
           </article>
 
           <article className="settings-runtime-card settings-runtime-card--wide">
-            <span>Access Expires</span>
+            <span>{t("settings.accessExpires")}</span>
             <strong>{formatDateTime(session.accessExpiresAt)}</strong>
           </article>
 
           <article className="settings-runtime-card settings-runtime-card--wide">
-            <span>Refresh Expires</span>
+            <span>{t("settings.refreshExpires")}</span>
             <strong>{formatDateTime(session.refreshExpiresAt)}</strong>
           </article>
         </div>
@@ -257,7 +266,7 @@ export function SettingsScreen({
         <span className="material-symbols-outlined" aria-hidden="true">
           logout
         </span>
-        Sign Out
+        {t("common.signOut")}
       </button>
     </main>
   );

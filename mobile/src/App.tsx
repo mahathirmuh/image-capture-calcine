@@ -10,6 +10,7 @@ import {
   type AuthSession,
 } from "./lib/auth";
 import { prefetchCaptureThumbs, type CaptureHistoryItem } from "./lib/captures";
+import { describeError, setLanguage, useT, type Language } from "./lib/i18n";
 import {
   DEFAULT_MOBILE_PREFERENCES,
   readMobilePreferences,
@@ -26,29 +27,21 @@ import { SettingsScreen } from "./screens/SettingsScreen";
 import { TodaySessionsScreen } from "./screens/TodaySessionsScreen";
 
 function AuthBootstrapScreen() {
+  const t = useT();
+
   return (
     <main className="app-shell">
-      <section className="card login-card" aria-label="Restoring mobile session">
-        <p className="section-kicker">Mobile Session</p>
-        <h1 className="section-title">Restoring Access</h1>
-        <p className="section-copy">
-          Reconnecting your operator session and checking token validity.
-        </p>
+      <section className="card login-card" aria-label={t("boot.aria")}>
+        <p className="section-kicker">{t("boot.kicker")}</p>
+        <h1 className="section-title">{t("boot.title")}</h1>
+        <p className="section-copy">{t("boot.copy")}</p>
       </section>
     </main>
   );
 }
 
 function messageOf(error: unknown): string {
-  if (
-    error &&
-    typeof error === "object" &&
-    "message" in error &&
-    typeof error.message === "string"
-  ) {
-    return error.message;
-  }
-  return "Unable to complete the request.";
+  return describeError(error, "common.unknownError");
 }
 
 export default function App() {
@@ -96,6 +89,7 @@ export default function App() {
       ]);
       if (cancelled) return;
       setSession(restored);
+      setLanguage(storedPreferences.language);
       setPreferences(storedPreferences);
       setBooting(false);
     })();
@@ -180,8 +174,15 @@ export default function App() {
 
   const handlePreferencesChange = useCallback(async (patch: Partial<MobilePreferences>) => {
     const next = await updateMobilePreferences(patch);
+    setLanguage(next.language);
     setPreferences(next);
   }, []);
+
+  // A message already on screen was written in the previous language.
+  function handleLanguageChange(language: Language) {
+    setLoginError(null);
+    void handlePreferencesChange({ language });
+  }
 
   async function handleLogin(credentials: { identifier: string; password: string }) {
     setLoginPending(true);
@@ -205,7 +206,12 @@ export default function App() {
 
   if (!session) {
     return (
-      <LoginScreen onSignIn={handleLogin} submitting={loginPending} errorMessage={loginError} />
+      <LoginScreen
+        onSignIn={handleLogin}
+        onChangeLanguage={handleLanguageChange}
+        submitting={loginPending}
+        errorMessage={loginError}
+      />
     );
   }
 

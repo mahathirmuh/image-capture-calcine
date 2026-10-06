@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { AppLogo } from "../components/AppLogo";
 import type { AuthSession } from "../lib/auth";
-import { MobileAuthError } from "../lib/auth";
+import { dateLocale, describeError, plantLabel, useT, type TranslationKey } from "../lib/i18n";
 import {
   getSessionCoverage,
   mapSessionCoverageToView,
@@ -20,37 +20,28 @@ type TodaySessionsScreenProps = {
 function formatCoverageDate(isoDate: string) {
   const value = new Date(`${isoDate}T12:00:00`);
   if (Number.isNaN(value.getTime())) return isoDate;
-  return new Intl.DateTimeFormat("en-US", {
+  return new Intl.DateTimeFormat(dateLocale(), {
     month: "short",
     day: "2-digit",
     year: "numeric",
   }).format(value);
 }
 
-function statusMeta(status: TodaySessionItem["status"]) {
+function statusMeta(status: TodaySessionItem["status"]): {
+  label: TranslationKey;
+  icon: string;
+  tone: "upcoming" | "completed" | "missing";
+} {
   switch (status) {
     case "open":
-      return { label: "Open", icon: "photo_camera", tone: "upcoming" as const };
+      return { label: "status.open", icon: "photo_camera", tone: "upcoming" };
     case "completed":
-      return { label: "Completed", icon: "check_circle", tone: "completed" as const };
+      return { label: "status.completed", icon: "check_circle", tone: "completed" };
     case "missing":
-      return { label: "Missing", icon: "warning", tone: "missing" as const };
+      return { label: "status.missing", icon: "warning", tone: "missing" };
     case "upcoming":
-      return { label: "Upcoming", icon: "schedule", tone: "upcoming" as const };
+      return { label: "status.upcoming", icon: "schedule", tone: "upcoming" };
   }
-}
-
-function errorMessageOf(error: unknown) {
-  if (error instanceof MobileAuthError) return error.message;
-  if (
-    error &&
-    typeof error === "object" &&
-    "message" in error &&
-    typeof error.message === "string"
-  ) {
-    return error.message;
-  }
-  return "Unable to load today sessions.";
 }
 
 export function TodaySessionsScreen({
@@ -58,6 +49,7 @@ export function TodaySessionsScreen({
   onSessionUpdate,
   onSelectSession,
 }: TodaySessionsScreenProps) {
+  const t = useT();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<ReturnType<typeof mapSessionCoverageToView> | null>(null);
@@ -92,7 +84,7 @@ export function TodaySessionsScreen({
         setView(mapSessionCoverageToView(response.data, activeTrack));
       } catch (loadError) {
         if (cancelled) return;
-        setError(errorMessageOf(loadError));
+        setError(describeError(loadError, "sessions.loadError"));
       } finally {
         if (!cancelled) {
           setLoading(false);
@@ -108,12 +100,12 @@ export function TodaySessionsScreen({
   const summaryItems = useMemo(() => {
     if (!view) return [];
     return [
-      { label: "Open", count: view.summary.open, tone: "upcoming" as const },
-      { label: "Completed", count: view.summary.completed, tone: "completed" as const },
-      { label: "Missing", count: view.summary.missing, tone: "missing" as const },
-      { label: "Upcoming", count: view.summary.upcoming, tone: "upcoming" as const },
+      { label: t("status.open"), count: view.summary.open, tone: "upcoming" as const },
+      { label: t("status.completed"), count: view.summary.completed, tone: "completed" as const },
+      { label: t("status.missing"), count: view.summary.missing, tone: "missing" as const },
+      { label: t("status.upcoming"), count: view.summary.upcoming, tone: "upcoming" as const },
     ];
-  }, [view]);
+  }, [t, view]);
 
   return (
     <main className="app-page-shell app-page-shell--with-nav">
@@ -123,12 +115,14 @@ export function TodaySessionsScreen({
           <span className="top-app-bar__label">{session.user.fullName}</span>
         </div>
 
-        <div className="top-app-bar__title">{session.user.plant ?? "Operator Access"}</div>
+        <div className="top-app-bar__title">
+          {session.user.plant ? plantLabel(session.user.plant) : t("sessions.operatorAccess")}
+        </div>
 
         <button
           className="icon-button"
           type="button"
-          aria-label="Refresh today sessions"
+          aria-label={t("sessions.refreshAria")}
           onClick={() => setReloadToken((value) => value + 1)}
         >
           <span className="material-symbols-outlined" aria-hidden="true">
@@ -140,13 +134,17 @@ export function TodaySessionsScreen({
       <section className="page-card">
         <div className="page-header">
           <div>
-            <h1 className="page-title">Today Sessions</h1>
+            <h1 className="page-title">{t("sessions.title")}</h1>
             <div className="page-meta">
-              <span>{view ? formatCoverageDate(view.date) : "Loading..."}</span>
+              <span>{view ? formatCoverageDate(view.date) : t("sessions.loadingDate")}</span>
               <span className="page-meta__divider" aria-hidden="true">
                 |
               </span>
-              <span>Plant: {view?.plantLabel ?? session.user.plant ?? "Assigned"}</span>
+              <span>
+                {t("sessions.plant", {
+                  plant: view?.plantLabel ?? session.user.plant ?? t("sessions.assigned"),
+                })}
+              </span>
             </div>
           </div>
         </div>
@@ -159,8 +157,8 @@ export function TodaySessionsScreen({
               hourglass_top
             </span>
             <div>
-              <strong>Loading sessions</strong>
-              <p>Fetching today coverage from the backend.</p>
+              <strong>{t("sessions.loadingTitle")}</strong>
+              <p>{t("sessions.loadingBody")}</p>
             </div>
           </div>
         ) : null}
@@ -171,7 +169,7 @@ export function TodaySessionsScreen({
               error
             </span>
             <div>
-              <strong>Failed to load sessions</strong>
+              <strong>{t("sessions.failedTitle")}</strong>
               <p>{error}</p>
             </div>
           </div>
@@ -179,7 +177,7 @@ export function TodaySessionsScreen({
 
         {!loading && !error && view ? (
           <>
-            <div className="summary-chips" aria-label="Session summary">
+            <div className="summary-chips" aria-label={t("sessions.summaryAria")}>
               {summaryItems.map((item) => (
                 <span key={item.label} className={`summary-chip summary-chip--${item.tone}`}>
                   <span className="summary-chip__dot" aria-hidden="true">
@@ -191,7 +189,7 @@ export function TodaySessionsScreen({
             </div>
 
             {view.items.length ? (
-              <div className="session-list" aria-label="Today session checklist">
+              <div className="session-list" aria-label={t("sessions.listAria")}>
                 {view.items.map((item) => {
                   const meta = statusMeta(item.status);
 
@@ -202,7 +200,7 @@ export function TodaySessionsScreen({
                       className={`session-card session-card--${meta.tone}`}
                       onClick={() => onSelectSession(item)}
                       disabled={item.status === "upcoming"}
-                      aria-label={`${item.displayTime} ${item.location}: ${meta.label}`}
+                      aria-label={`${item.displayTime} ${item.location}: ${t(meta.label)}`}
                     >
                       <div className="session-card__body">
                         <span className="session-card__time">{item.displayTime}</span>
@@ -211,7 +209,7 @@ export function TodaySessionsScreen({
                           <span
                             className={`session-card__status session-card__status--${meta.tone}`}
                           >
-                            {meta.label}
+                            {t(meta.label)}
                           </span>
                         </div>
                       </div>
@@ -237,8 +235,8 @@ export function TodaySessionsScreen({
                   assignment_late
                 </span>
                 <div>
-                  <strong>No sessions available</strong>
-                  <p>No session coverage items were returned for the current operator scope.</p>
+                  <strong>{t("sessions.emptyTitle")}</strong>
+                  <p>{t("sessions.emptyBody")}</p>
                 </div>
               </div>
             )}

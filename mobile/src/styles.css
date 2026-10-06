@@ -951,6 +951,32 @@ input {
   color: var(--text);
 }
 
+.language-switch {
+  display: inline-grid;
+  grid-template-columns: repeat(2, auto);
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.language-switch__button {
+  min-height: 36px;
+  padding: 0 14px;
+  font-size: 13px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.language-switch__button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.login-language {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 14px;
+}
+
 .track-tabs {
   margin-bottom: 16px;
 }
@@ -2467,7 +2493,13 @@ body[data-mobile-theme="light"] .capture-session-bar__button:disabled {
     flex-direction: column;
   }
 
-  .settings-toggle {
+  .settings-row {
+    gap: 10px;
+    padding: 14px 16px;
+  }
+
+  .settings-toggle,
+  .settings-row .language-switch {
     align-self: flex-end;
   }
 

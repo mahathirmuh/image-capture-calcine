@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import type { AuthSession } from "../lib/auth";
-import { MobileAuthError } from "../lib/auth";
+import { describeError, useT } from "../lib/i18n";
 import {
   getCaptureThumb,
   listCaptures,
@@ -24,14 +24,6 @@ function statusLabel(capture: CaptureHistoryItem) {
     case "retake":
       return { text: capture.statusLabel, tone: "retake" as const, icon: "schedule" };
   }
-}
-
-function errorMessageOf(error: unknown) {
-  if (error instanceof MobileAuthError) return error.message;
-  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
-    return error.message;
-  }
-  return "Unable to load recent captures.";
 }
 
 function HistoryThumbnail({
@@ -83,6 +75,7 @@ export function RecentCapturesScreen({
   onSessionUpdate,
   onOpenDetail,
 }: RecentCapturesScreenProps) {
+  const t = useT();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [captures, setCaptures] = useState<CaptureHistoryItem[]>([]);
@@ -97,7 +90,8 @@ export function RecentCapturesScreen({
       setError(null);
 
       try {
-        const plant = session.user.plant && session.user.plant !== "ALL" ? session.user.plant : null;
+        const plant =
+          session.user.plant && session.user.plant !== "ALL" ? session.user.plant : null;
         const response = await listCaptures(session, { plant, limit: 20, offset: 0 });
         if (cancelled) return;
         onSessionUpdate(response.session);
@@ -105,7 +99,7 @@ export function RecentCapturesScreen({
         setTotal(response.data.pagination.total);
       } catch (loadError) {
         if (cancelled) return;
-        setError(errorMessageOf(loadError));
+        setError(describeError(loadError, "history.loadError"));
       } finally {
         if (!cancelled) {
           setLoading(false);
@@ -123,17 +117,15 @@ export function RecentCapturesScreen({
       <section className="page-card">
         <div className="page-header">
           <div>
-            <p className="section-kicker">Operator Archive</p>
-            <h1 className="page-title">Recent Captures</h1>
-            <p className="section-copy">
-              Review the latest capture results and open a record to inspect image metadata.
-            </p>
+            <p className="section-kicker">{t("history.kicker")}</p>
+            <h1 className="page-title">{t("history.title")}</h1>
+            <p className="section-copy">{t("history.copy")}</p>
           </div>
 
           <button
             className="icon-button"
             type="button"
-            aria-label="Refresh recent captures"
+            aria-label={t("history.refreshAria")}
             onClick={() => setReloadToken((value) => value + 1)}
           >
             <span className="material-symbols-outlined" aria-hidden="true">
@@ -144,11 +136,11 @@ export function RecentCapturesScreen({
 
         {!loading && !error && total !== null ? (
           <div className="page-meta">
-            <span>Showing latest {captures.length} records</span>
+            <span>{t("history.showing", { count: captures.length })}</span>
             <span className="page-meta__divider" aria-hidden="true">
               |
             </span>
-            <span>Total matches: {total}</span>
+            <span>{t("history.total", { total })}</span>
           </div>
         ) : null}
 
@@ -158,8 +150,8 @@ export function RecentCapturesScreen({
               hourglass_top
             </span>
             <div>
-              <strong>Loading recent captures</strong>
-              <p>Fetching the latest records from the backend.</p>
+              <strong>{t("history.loadingTitle")}</strong>
+              <p>{t("history.loadingBody")}</p>
             </div>
           </div>
         ) : null}
@@ -170,7 +162,7 @@ export function RecentCapturesScreen({
               error
             </span>
             <div>
-              <strong>Failed to load capture history</strong>
+              <strong>{t("history.failedTitle")}</strong>
               <p>{error}</p>
             </div>
           </div>
@@ -182,14 +174,14 @@ export function RecentCapturesScreen({
               image_not_supported
             </span>
             <div>
-              <strong>No captures found</strong>
-              <p>No recent capture records were returned for the current operator scope.</p>
+              <strong>{t("history.emptyTitle")}</strong>
+              <p>{t("history.emptyBody")}</p>
             </div>
           </div>
         ) : null}
 
         {!loading && !error && captures.length ? (
-          <div className="history-list" aria-label="Recent capture records">
+          <div className="history-list" aria-label={t("history.listAria")}>
             {captures.map((capture) => {
               const status = statusLabel(capture);
 
@@ -224,7 +216,10 @@ export function RecentCapturesScreen({
                     <p className="history-card__submeta">{capture.fileName}</p>
                   </div>
 
-                  <span className="material-symbols-outlined history-card__chevron" aria-hidden="true">
+                  <span
+                    className="material-symbols-outlined history-card__chevron"
+                    aria-hidden="true"
+                  >
                     chevron_right
                   </span>
                 </button>

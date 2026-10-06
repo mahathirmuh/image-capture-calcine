@@ -1,3 +1,4 @@
+import { translate } from "./i18n";
 import { requestWithSession, type AuthSession } from "./auth";
 
 export type DeviceListItem = {
@@ -32,11 +33,11 @@ export function pickPrimaryDevice(
   preferredPlant: string | null,
 ): DeviceListItem | null {
   if (!preferredPlant || preferredPlant === "ALL") {
-    throw new Error("Your account needs an assigned plant. Contact your administrator.");
+    throw new Error(translate("device.needPlant"));
   }
   const eligible = devices.filter((device) => device.isActive && device.plant === preferredPlant);
   if (eligible.length > 1) {
-    throw new Error("More than one active camera is assigned to your plant. Contact your administrator.");
+    throw new Error(translate("device.ambiguous"));
   }
   return eligible[0] ?? null;
 }
@@ -51,7 +52,11 @@ export async function getDeviceStatus(
   session: AuthSession,
   code: string,
 ): Promise<{ session: AuthSession; data: DeviceStatusResponse }> {
-  return requestWithSession<DeviceStatusResponse>(session, `/devices/${encodeURIComponent(code)}/status`, {
-    method: "GET",
-  });
+  return requestWithSession<DeviceStatusResponse>(
+    session,
+    `/devices/${encodeURIComponent(code)}/status`,
+    {
+      method: "GET",
+    },
+  );
 }

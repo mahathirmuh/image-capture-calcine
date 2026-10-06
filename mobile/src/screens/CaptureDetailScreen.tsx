@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import type { AuthSession } from "../lib/auth";
-import { MobileAuthError } from "../lib/auth";
+import { describeError, translate, useT } from "../lib/i18n";
 import {
   getCapture,
   getCaptureImage,
@@ -20,20 +20,12 @@ type CaptureDetailScreenProps = {
 function detailStatusMeta(status: ApiCaptureRecord["status"]) {
   switch (status) {
     case "downloaded":
-      return { label: "Downloaded", tone: "verified" as const };
+      return { label: translate("record.status.downloaded"), tone: "verified" as const };
     case "saved":
-      return { label: "Saved", tone: "succeeded" as const };
+      return { label: translate("record.status.saved"), tone: "succeeded" as const };
     case "pending":
-      return { label: "Pending", tone: "retake" as const };
+      return { label: translate("record.status.pending"), tone: "retake" as const };
   }
-}
-
-function errorMessageOf(error: unknown) {
-  if (error instanceof MobileAuthError) return error.message;
-  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
-    return error.message;
-  }
-  return "Unable to load capture detail.";
 }
 
 export function CaptureDetailScreen({
@@ -43,6 +35,7 @@ export function CaptureDetailScreen({
   onBack,
   onOpenCapture,
 }: CaptureDetailScreenProps) {
+  const t = useT();
   const [capture, setCapture] = useState<ApiCaptureRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -63,7 +56,7 @@ export function CaptureDetailScreen({
         setCapture(response.data);
       } catch (loadError) {
         if (cancelled) return;
-        setError(errorMessageOf(loadError));
+        setError(describeError(loadError, "detail.loadError"));
       } finally {
         if (!cancelled) {
           setLoading(false);
@@ -93,7 +86,7 @@ export function CaptureDetailScreen({
         setImageUrl(response.objectUrl);
       } catch (loadError) {
         if (cancelled) return;
-        setImageError(errorMessageOf(loadError));
+        setImageError(describeError(loadError, "detail.loadError"));
       }
     })();
 
@@ -112,12 +105,17 @@ export function CaptureDetailScreen({
       <main className="app-page-shell app-page-shell--with-nav capture-detail-screen">
         <header className="top-app-bar top-app-bar--detail">
           <div className="top-app-bar__side">
-            <button className="icon-button" type="button" aria-label="Go back" onClick={onBack}>
+            <button
+              className="icon-button"
+              type="button"
+              aria-label={t("common.goBack")}
+              onClick={onBack}
+            >
               <span className="material-symbols-outlined" aria-hidden="true">
                 arrow_back
               </span>
             </button>
-            <span className="top-app-bar__detail-title">Capture Detail</span>
+            <span className="top-app-bar__detail-title">{t("detail.title")}</span>
           </div>
         </header>
 
@@ -127,8 +125,8 @@ export function CaptureDetailScreen({
               hourglass_top
             </span>
             <div>
-              <strong>Loading capture detail</strong>
-              <p>Fetching the selected capture record from the backend.</p>
+              <strong>{t("detail.loadingTitle")}</strong>
+              <p>{t("detail.loadingBody")}</p>
             </div>
           </div>
         </section>
@@ -141,12 +139,17 @@ export function CaptureDetailScreen({
       <main className="app-page-shell app-page-shell--with-nav capture-detail-screen">
         <header className="top-app-bar top-app-bar--detail">
           <div className="top-app-bar__side">
-            <button className="icon-button" type="button" aria-label="Go back" onClick={onBack}>
+            <button
+              className="icon-button"
+              type="button"
+              aria-label={t("common.goBack")}
+              onClick={onBack}
+            >
               <span className="material-symbols-outlined" aria-hidden="true">
                 arrow_back
               </span>
             </button>
-            <span className="top-app-bar__detail-title">Capture Detail</span>
+            <span className="top-app-bar__detail-title">{t("detail.title")}</span>
           </div>
         </header>
 
@@ -156,8 +159,8 @@ export function CaptureDetailScreen({
               error
             </span>
             <div>
-              <strong>Failed to load capture detail</strong>
-              <p>{error ?? "The selected capture record is unavailable."}</p>
+              <strong>{t("detail.failedTitle")}</strong>
+              <p>{error ?? t("detail.unavailable")}</p>
             </div>
           </div>
         </section>
@@ -171,17 +174,27 @@ export function CaptureDetailScreen({
     <main className="app-page-shell app-page-shell--with-nav capture-detail-screen">
       <header className="top-app-bar top-app-bar--detail">
         <div className="top-app-bar__side">
-          <button className="icon-button" type="button" aria-label="Go back" onClick={onBack}>
+          <button
+            className="icon-button"
+            type="button"
+            aria-label={t("common.goBack")}
+            onClick={onBack}
+          >
             <span className="material-symbols-outlined" aria-hidden="true">
               arrow_back
             </span>
           </button>
-          <span className="top-app-bar__detail-title">Capture Detail</span>
+          <span className="top-app-bar__detail-title">{t("detail.title")}</span>
         </div>
 
         <div className="top-app-bar__title">{historyItem.plant}</div>
 
-        <button className="icon-button" type="button" aria-label="Open capture workflow" onClick={onOpenCapture}>
+        <button
+          className="icon-button"
+          type="button"
+          aria-label={t("detail.openWorkflowAria")}
+          onClick={onOpenCapture}
+        >
           <span className="material-symbols-outlined" aria-hidden="true">
             photo_camera
           </span>
@@ -190,7 +203,7 @@ export function CaptureDetailScreen({
 
       <section className="capture-detail-header">
         <div>
-          <p className="section-kicker">Capture Record</p>
+          <p className="section-kicker">{t("detail.kicker")}</p>
           <h1 className="capture-detail-header__title">{historyItem.title}</h1>
         </div>
 
@@ -200,7 +213,7 @@ export function CaptureDetailScreen({
         </span>
       </section>
 
-      <section className="capture-detail-image-card" aria-label="Captured image preview">
+      <section className="capture-detail-image-card" aria-label={t("detail.imageAria")}>
         <div className="capture-detail-image">
           {imageUrl ? (
             <img className="capture-detail-image__img" src={imageUrl} alt={historyItem.fileName} />
@@ -219,7 +232,7 @@ export function CaptureDetailScreen({
               image_not_supported
             </span>
             <div>
-              <strong>Preview unavailable</strong>
+              <strong>{t("detail.previewUnavailable")}</strong>
               <p>{imageError}</p>
             </div>
           </div>
@@ -227,42 +240,44 @@ export function CaptureDetailScreen({
       ) : null}
 
       <section className="capture-detail-meta-card">
-        <h2 className="capture-detail-meta-card__title">Metadata</h2>
+        <h2 className="capture-detail-meta-card__title">{t("detail.metadata")}</h2>
 
         <dl className="capture-detail-meta-list">
           <div className="capture-detail-meta-row">
-            <dt>Captured Time</dt>
+            <dt>{t("detail.capturedTime")}</dt>
             <dd>{historyItem.capturedDateTime}</dd>
           </div>
           <div className="capture-detail-meta-row">
-            <dt>Session</dt>
+            <dt>{t("detail.session")}</dt>
             <dd>{historyItem.session}</dd>
           </div>
           <div className="capture-detail-meta-row">
-            <dt>Plant</dt>
+            <dt>{t("detail.plant")}</dt>
             <dd>{historyItem.plant}</dd>
           </div>
           <div className="capture-detail-meta-row">
-            <dt>Station/Bin</dt>
+            <dt>{t("detail.stationBin")}</dt>
             <dd>{historyItem.stationBin}</dd>
           </div>
           <div className="capture-detail-meta-row">
-            <dt>Status</dt>
-            <dd className={`capture-detail-meta-row__status capture-detail-meta-row__status--${status.tone}`}>
+            <dt>{t("detail.status")}</dt>
+            <dd
+              className={`capture-detail-meta-row__status capture-detail-meta-row__status--${status.tone}`}
+            >
               {status.label.toUpperCase()}
             </dd>
           </div>
           <div className="capture-detail-meta-row">
-            <dt>File Name</dt>
+            <dt>{t("detail.fileName")}</dt>
             <dd>{capture.fileName}</dd>
           </div>
           <div className="capture-detail-meta-row">
-            <dt>Device</dt>
+            <dt>{t("detail.device")}</dt>
             <dd>{historyItem.device}</dd>
           </div>
           <div className="capture-detail-meta-row">
-            <dt>Captured By</dt>
-            <dd>{capture.capturedBy ?? "Unknown Operator"}</dd>
+            <dt>{t("detail.capturedBy")}</dt>
+            <dd>{capture.capturedBy ?? t("detail.unknownOperator")}</dd>
           </div>
         </dl>
       </section>
@@ -271,7 +286,7 @@ export function CaptureDetailScreen({
         <span className="material-symbols-outlined" aria-hidden="true">
           replay
         </span>
-        Open Capture
+        {t("detail.openCapture")}
       </button>
     </main>
   );

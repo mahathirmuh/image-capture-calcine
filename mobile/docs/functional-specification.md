@@ -66,7 +66,7 @@ Capture Calcine Mobile is an operator-only mobile application for daily sampling
 ## Non-Functional Requirements
 
 - mobile-first
-- English-only UI text
+- English and Simplified Chinese UI text, selectable on the device (see the 2026-10-06 section)
 - operator-focused navigation
 - resilient session persistence
 - backend contract alignment with `docs/openapi.yaml`
@@ -111,3 +111,12 @@ Explicit account scope `ALL` allows selecting a scheduled session from any plant
 - Acid Plant has a second, fixed track: 2-hour sessions from 00.00. Today Sessions and direct Capture show `3-Hour Sessions` / `2-Hour Trial` tabs for Acid Plant operators; ALL accounts get the tabs on Today Sessions.
 - Trial captures use the same camera and Train slots, are saved under `Acid Plant Trial/`, and are counted only in trial coverage. The backend decides the folder from the signed receipt.
 - APK 1.2.0 is required for the trial tab; 1.1.0 continues to work for regular sessions.
+
+
+## Language switch — 2026-10-06 (supersedes the English-only statements above)
+
+- The operator can switch the app between English and Simplified Chinese (`English` / `中文`) on the Login screen and in Settings. English is the default.
+- The choice is stored with the other device preferences and restored on the next start; switching applies immediately, without signing out.
+- All screens, navigation, status labels, dates and error messages follow the selected language. Backend errors are worded from their error code, so operators no longer see the server's Indonesian text for known codes; an unknown code falls back to the server message.
+- Plant names, slot labels (Train/Bin), file names, device codes and operator names are shown as stored.
+- No backend or API contract change. APK 1.3.0 (versionCode 4).

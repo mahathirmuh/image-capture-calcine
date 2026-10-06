@@ -24,7 +24,7 @@ Capture Calcine mendukung pengambilan foto sampling terjadwal untuk Acid Plant d
 
 - Web: capture, dashboard, gallery, perangkat, pengguna, penyimpanan, pengaturan, dan activity log; akses mengikuti otorisasi aplikasi.
 - Mobile: login persisten, Today Sessions, Capture, Recent Captures/Detail, My Device, dan Settings.
-- Mobile tetap operator-only dan menggunakan teks antarmuka berbahasa Inggris.
+- Mobile tetap operator-only. Antarmukanya tersedia dalam bahasa Inggris (bawaan) dan Mandarin (Simplified Chinese), dipilih operator di layar Login atau Settings.
 - Admin dan supervisor workflow pada mobile berada di luar cakupan saat ini.
 
 **Kebutuhan bisnis dan kriteria keberhasilan:** [ISI siapa menggunakan, kebutuhan operasional, serta hasil yang wajib tersedia].

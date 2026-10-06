@@ -524,3 +524,19 @@ Web/backend change; mobile remains operator-only and unchanged.
 
 Verification: 44 suites / 381 tests pass (3 new: page access per role, resolver denial); the same 4 suites cannot load on this workstation. Dev server compiles the changed route modules. Not exercised in a browser. Gallery plant scope for viewers follows the account plant as for operators. Page roles come from the session cookie, so a role change applies at the user's next login; the camera denial applies immediately.
 - APK 1.2.0 / versionCode 3 (debug) built on Windows on 2026-10-05 against the production HTTPS API: Gradle `BUILD SUCCESSFUL`, v1/v2 signatures verified, bundle contains the trial tab. SHA256 `8A0DAC1A4D3008871489B762AA5CFA078B3C23180B68E311EE5A740C960B730D`. Signed with this workstation's debug key, which differs from the key of APK 1.1.0, so devices must uninstall 1.1.0 before installing. Not installed or run on a device; the production backend had not been deployed with these changes at build time.
+
+
+## Post-M5 — English / Chinese language switch (2026-10-06)
+
+Sources: product principles (principle 2 revised in this change), functional specification, technical plan. Scope expanded by the user: the mobile UI is no longer English-only. Operator-only scope unchanged.
+
+- [x] Dictionaries for English and Simplified Chinese covering every screen, navigation, status label and known backend error code.
+- [x] Switch on Login and in Settings; choice persisted in device preferences and applied without restart.
+- [x] Screens show errors through `describeError()`; dates follow the language.
+- [x] Version 1.3.0 / versionCode 4.
+- [ ] Review of the Chinese wording by a native-speaking operator or supervisor.
+- [ ] Check on a physical Android device.
+
+Verification: 49 suites / 417 tests pass (8 new: dictionary completeness and placeholder parity, switching, component re-render, error wording). Mobile TypeScript passes; ESLint (formatter rule excluded) and Prettier pass on the changed files. Browser walkthrough in headless Chrome at 390 px against a local mock API (no production requests): Login, Today Sessions (both tabs), Capture including the camera-in-use dialog, History, Capture Detail, My Device and Settings were inspected in Chinese, the stored preference and `<html lang>` were checked, switching back to English was checked, and no element overflowed the viewport. `docs/openapi.yaml` reviewed: no backend or contract change. The Chinese text was written without review by a native speaker.
+
+APK 1.3.0 / versionCode 4 (debug) built on 2026-10-06 against the production HTTPS API: Gradle BUILD SUCCESSFUL, v1/v2 signatures verified, bundle contains both dictionaries. SHA256 `FA4285F04E47F40F40B09995C9EFCFAB88AB9B928B15516982C9D7FBC2ED123C`. Same workstation debug key as APK 1.2.0. Not installed or run on a device.

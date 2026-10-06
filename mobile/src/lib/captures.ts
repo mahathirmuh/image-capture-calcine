@@ -1,13 +1,6 @@
-import {
-  requestResponseWithSession,
-  requestWithSession,
-  type AuthSession,
-} from "./auth";
-import {
-  createThumbnailBlob,
-  getCachedMediaObjectUrl,
-  persistMediaBlob,
-} from "./mediaCache";
+import { requestResponseWithSession, requestWithSession, type AuthSession } from "./auth";
+import { createThumbnailBlob, getCachedMediaObjectUrl, persistMediaBlob } from "./mediaCache";
+import { dateLocale, timeLocale, translate } from "./i18n";
 
 type CachedMediaResult = {
   session: AuthSession;
@@ -88,11 +81,11 @@ function statusPresentation(status: ApiCaptureStatus): {
 } {
   switch (status) {
     case "downloaded":
-      return { label: "Downloaded", tone: "verified" };
+      return { label: translate("record.status.downloaded"), tone: "verified" };
     case "saved":
-      return { label: "Saved", tone: "succeeded" };
+      return { label: translate("record.status.saved"), tone: "succeeded" };
     case "pending":
-      return { label: "Pending", tone: "retake" };
+      return { label: translate("record.status.pending"), tone: "retake" };
   }
 }
 
@@ -103,12 +96,13 @@ function formatDateTime(iso: string) {
   }
 
   return {
-    time: new Intl.DateTimeFormat("en-GB", {
+    time: new Intl.DateTimeFormat(timeLocale(), {
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit",
+      hour12: false,
     }).format(value),
-    dateTime: new Intl.DateTimeFormat("en-US", {
+    dateTime: new Intl.DateTimeFormat(dateLocale(), {
       month: "short",
       day: "2-digit",
       year: "numeric",
@@ -121,23 +115,24 @@ function formatDateTime(iso: string) {
 export function mapCaptureRecordToHistoryItem(record: ApiCaptureRecord): CaptureHistoryItem {
   const formatted = formatDateTime(record.capturedAt);
   const presentation = statusPresentation(record.status);
-  const session = record.captureSession ?? "No Session";
-  const stationBin = record.captureBin ?? record.station ?? "Unassigned Slot";
+  const session = record.captureSession ?? translate("record.noSession");
+  const stationBin = record.captureBin ?? record.station ?? translate("record.unassignedSlot");
 
   return {
     id: record.id,
-    title: record.captureSession && record.captureBin
-      ? `${record.captureSession} • ${record.captureBin}`
-      : `Capture #${record.id}`,
+    title:
+      record.captureSession && record.captureBin
+        ? `${record.captureSession} • ${record.captureBin}`
+        : translate("record.title", { id: record.id }),
     capturedTime: formatted.time,
     capturedDateTime: formatted.dateTime,
     session,
-    plant: record.plant ?? "Unassigned Plant",
+    plant: record.plant ?? translate("record.unassignedPlant"),
     stationBin,
     statusLabel: presentation.label,
     statusTone: presentation.tone,
     fileName: record.fileName,
-    device: record.deviceName ?? record.deviceCode ?? "Unassigned Device",
+    device: record.deviceName ?? record.deviceCode ?? translate("record.unassignedDevice"),
   };
 }
 
@@ -150,11 +145,9 @@ export async function listCaptures(
     offset?: number;
   } = {},
 ): Promise<{ session: AuthSession; data: CapturesPageResponse }> {
-  return requestWithSession<CapturesPageResponse>(
-    session,
-    `/captures${buildQuery(options)}`,
-    { method: "GET" },
-  );
+  return requestWithSession<CapturesPageResponse>(session, `/captures${buildQuery(options)}`, {
+    method: "GET",
+  });
 }
 
 export async function getCapture(

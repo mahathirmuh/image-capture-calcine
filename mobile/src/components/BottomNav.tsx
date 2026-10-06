@@ -1,9 +1,11 @@
+import { useT } from "../lib/i18n";
+
 const TABS = [
-  { id: "sessions", label: "Sessions", icon: "assignment", filled: true },
-  { id: "capture", label: "Capture", icon: "photo_camera" },
-  { id: "history", label: "History", icon: "history" },
-  { id: "device", label: "Device", icon: "settings_input_component" },
-  { id: "settings", label: "Settings", icon: "settings" },
+  { id: "sessions", label: "nav.sessions", icon: "assignment", filled: true },
+  { id: "capture", label: "nav.capture", icon: "photo_camera" },
+  { id: "history", label: "nav.history", icon: "history" },
+  { id: "device", label: "nav.device", icon: "settings_input_component" },
+  { id: "settings", label: "nav.settings", icon: "settings" },
 ] as const;
 
 export type MobileTab = (typeof TABS)[number]["id"];
@@ -14,8 +16,10 @@ type BottomNavProps = {
 };
 
 export function BottomNav({ activeTab, onChange }: BottomNavProps) {
+  const t = useT();
+
   return (
-    <nav className="bottom-nav" aria-label="Operator navigation">
+    <nav className="bottom-nav" aria-label={t("nav.aria")}>
       {TABS.map((tab) => {
         const active = tab.id === activeTab;
 
@@ -38,7 +42,7 @@ export function BottomNav({ activeTab, onChange }: BottomNavProps) {
             >
               {tab.icon}
             </span>
-            <span>{tab.label}</span>
+            <span>{t(tab.label)}</span>
           </button>
         );
       })}

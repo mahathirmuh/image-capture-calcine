@@ -57,11 +57,10 @@ export class MobileAuthError extends Error {
 }
 
 function configuredApiBaseUrl(): string {
-  const raw =
-    import.meta.env.VITE_API_BASE_URL?.trim() || __MOBILE_DEFAULT_API_BASE_URL__?.trim();
+  const raw = import.meta.env.VITE_API_BASE_URL?.trim() || __MOBILE_DEFAULT_API_BASE_URL__?.trim();
   if (!raw) {
     throw new MobileAuthError(
-      "API base URL untuk mobile belum diisi. Set MOBILE_API_BASE_URL atau API_BASE_URL di root .env, atau override dengan VITE_API_BASE_URL di folder mobile.",
+      "The mobile API base URL is not set. Set MOBILE_API_BASE_URL or API_BASE_URL in the root .env, or VITE_API_BASE_URL in the mobile folder.",
       500,
       "MOBILE_API_URL_MISSING",
     );
@@ -78,7 +77,7 @@ function loginApiKey(): string {
   const key = import.meta.env.VITE_API_KEY?.trim() || __MOBILE_DEFAULT_API_KEY__?.trim();
   if (!key) {
     throw new MobileAuthError(
-      "API key untuk login mobile belum diisi. Set MOBILE_API_KEY di root .env, isi API_KEYS, atau override dengan VITE_API_KEY di folder mobile.",
+      "The mobile login API key is not set. Set MOBILE_API_KEY or API_KEYS in the root .env, or VITE_API_KEY in the mobile folder.",
       500,
       "MOBILE_API_KEY_MISSING",
     );
@@ -143,19 +142,13 @@ async function requestJson<T>(path: string, init: RequestInit): Promise<T> {
 
   if (!response.ok) {
     const message =
-      payload &&
-      typeof payload === "object" &&
-      "error" in payload &&
-      payload.error?.message
+      payload && typeof payload === "object" && "error" in payload && payload.error?.message
         ? payload.error.message
-        : `Request gagal dengan status ${response.status}.`;
+        : `Request failed with status ${response.status}.`;
     const code =
-      payload &&
-      typeof payload === "object" &&
-      "error" in payload &&
-      payload.error?.code
+      payload && typeof payload === "object" && "error" in payload && payload.error?.code
         ? payload.error.code
-        : null;
+        : "REQUEST_FAILED";
     throw new MobileAuthError(message, response.status, code);
   }
 
@@ -182,19 +175,13 @@ export async function requestResponseWithSession(
       ? ((await response.json()) as ApiErrorPayload)
       : null;
     const message =
-      payload &&
-      typeof payload === "object" &&
-      "error" in payload &&
-      payload.error?.message
+      payload && typeof payload === "object" && "error" in payload && payload.error?.message
         ? payload.error.message
         : `Request failed with status ${response.status}.`;
     const code =
-      payload &&
-      typeof payload === "object" &&
-      "error" in payload &&
-      payload.error?.code
+      payload && typeof payload === "object" && "error" in payload && payload.error?.code
         ? payload.error.code
-        : null;
+        : "REQUEST_FAILED";
     throw new MobileAuthError(message, response.status, code);
   }
 
@@ -303,7 +290,11 @@ export async function ensureFreshSession(session: AuthSession): Promise<AuthSess
   if (!isExpiringSoon(session.accessExpiresAt)) return session;
   if (isExpired(session.refreshExpiresAt)) {
     await clearPersistedSession();
-    throw new MobileAuthError("Sesi mobile sudah habis. Login lagi.", 401, "REFRESH_EXPIRED");
+    throw new MobileAuthError(
+      "The mobile session has expired. Sign in again.",
+      401,
+      "REFRESH_EXPIRED",
+    );
   }
   return refreshSession(session.refreshToken);
 }

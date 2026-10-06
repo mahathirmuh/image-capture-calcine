@@ -1,4 +1,5 @@
 import { requestWithSession, type AuthSession } from "./auth";
+import { translate } from "./i18n";
 import type { CaptureTrack } from "../../../src/lib/capture-schedule";
 
 export type SessionCoverageResponse = {
@@ -179,8 +180,8 @@ export function mapSessionCoverageToView(
     date: payload.date,
     plantLabel:
       payload.plants.length === 1
-        ? (payload.plants[0]?.plant ?? "Unknown Plant")
-        : `${payload.plants.length} Plants`,
+        ? (payload.plants[0]?.plant ?? translate("sessions.unknownPlant"))
+        : translate("sessions.plantsCount", { count: payload.plants.length }),
     summary,
     items,
   };

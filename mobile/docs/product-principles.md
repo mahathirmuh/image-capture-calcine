@@ -4,9 +4,9 @@
 
 The mobile app exists to help operators finish routine capture work quickly and correctly. UI and flows should optimize for clarity, speed, and low cognitive load.
 
-## 2. English UI, Practical Tone
+## 2. English And Chinese UI, Practical Tone
 
-All mobile UI text must stay in English. Wording should be operational, short, and unambiguous.
+The mobile UI is available in English (default) and Simplified Chinese, switchable by the operator. Every UI string lives in `mobile/src/lib/i18n.ts` and must be added in both languages in the same change; no screen may hard-code visible text. Wording should be operational, short, and unambiguous in both languages. Plant names and slot labels (Train 1, Bin 2) are identifiers and are not translated.
 
 ## 3. One Job Per Screen
 
