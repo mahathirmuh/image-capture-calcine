@@ -1,14 +1,23 @@
 import type { CameraSettings, DeviceTemplate, PresetFilter } from "@/lib/device-config";
-import { PRESET_FILTERS, getPresetFilterLabel } from "@/lib/device-config";
+import {
+  PRESET_FILTERS,
+  getPresetBadgeLabel,
+  getPresetFilterLabel,
+  getTemplateDescription,
+  getTemplateLabel,
+  getTemplateRecommendedFor,
+} from "@/lib/device-config";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { presetMessages as m } from "@/i18n/devices";
+import { useRichT, useT, type Message } from "@/lib/i18n";
 
-const SETTING_LABELS: Array<{ key: keyof CameraSettings; label: string }> = [
-  { key: "iso", label: "ISO" },
-  { key: "shutter", label: "Shutter" },
-  { key: "aperture", label: "Aperture" },
-  { key: "whiteBalance", label: "White Balance" },
-  { key: "pictureStyle", label: "Picture Style" },
-  { key: "focusMode", label: "Mode Fokus" },
+const SETTING_LABELS: Array<{ key: keyof CameraSettings; label: Message }> = [
+  { key: "iso", label: m.settingIso },
+  { key: "shutter", label: m.settingShutter },
+  { key: "aperture", label: m.settingAperture },
+  { key: "whiteBalance", label: m.settingWhiteBalance },
+  { key: "pictureStyle", label: m.settingPictureStyle },
+  { key: "focusMode", label: m.settingFocusMode },
 ];
 
 function getBadgeClassName(badge: string) {
@@ -51,6 +60,7 @@ function ApplyActionButton({
   hint?: string | null;
   onClick: () => void;
 }) {
+  const t = useT();
   const button = (
     <button
       type="button"
@@ -58,7 +68,7 @@ function ApplyActionButton({
       disabled={disabled}
       className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
     >
-      Terapkan sekarang
+      {t(m.applyNow)}
     </button>
   );
 
@@ -77,13 +87,14 @@ function ApplyActionButton({
 }
 
 export function PresetBadge({ badge }: { badge: string }) {
+  const t = useT();
   return (
     <span
       className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${getBadgeClassName(
         badge,
       )}`}
     >
-      {badge}
+      {getPresetBadgeLabel(badge, t)}
     </span>
   );
 }
@@ -95,6 +106,7 @@ export function PresetFilterBar({
   value: PresetFilter;
   onChange: (value: PresetFilter) => void;
 }) {
+  const t = useT();
   return (
     <div className="flex flex-wrap gap-2">
       {PRESET_FILTERS.map((filter) => {
@@ -110,7 +122,7 @@ export function PresetFilterBar({
                 : "border-input bg-background text-foreground hover:bg-accent"
             }`}
           >
-            {getPresetFilterLabel(filter)}
+            {getPresetFilterLabel(filter, t)}
           </button>
         );
       })}
@@ -125,19 +137,24 @@ export function PresetTemplatePreview({
   template: DeviceTemplate;
   compact?: boolean;
 }) {
+  const t = useT();
   return (
     <div className="rounded-md border bg-background/70 p-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="text-sm font-medium">{template.label}</div>
-          <p className="mt-1 text-xs text-muted-foreground">{template.description}</p>
+          <div className="text-sm font-medium">{getTemplateLabel(template, t)}</div>
           <p className="mt-1 text-xs text-muted-foreground">
-            Direkomendasikan untuk: {template.recommendedFor}
+            {getTemplateDescription(template, t)}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {t(m.recommendedFor, { text: getTemplateRecommendedFor(template, t) })}
           </p>
         </div>
         {!compact && (
           <div className="rounded-md border bg-muted/30 px-2 py-1 text-[11px] text-muted-foreground">
-            Tag: {template.filterTags.map((tag) => getPresetFilterLabel(tag)).join(", ")}
+            {t(m.tags, {
+              tags: template.filterTags.map((tag) => getPresetFilterLabel(tag, t)).join(", "),
+            })}
           </div>
         )}
       </div>
@@ -167,10 +184,11 @@ export function PresetExplorerGrid({
   applyActionDisabled?: boolean;
   applyActionHint?: string | null;
 }) {
+  const t = useT();
   if (templates.length === 0) {
     return (
       <div className="rounded-md border border-dashed p-4 text-xs text-muted-foreground">
-        Tidak ada preset yang cocok dengan filter ini.
+        {t(m.noPresetMatch)}
       </div>
     );
   }
@@ -194,14 +212,16 @@ export function PresetExplorerGrid({
               className="w-full text-left"
             >
               <div className="flex items-center justify-between gap-3">
-                <div className="text-sm font-medium">{template.label}</div>
+                <div className="text-sm font-medium">{getTemplateLabel(template, t)}</div>
                 <span className="text-[11px] text-muted-foreground">
                   {selected
-                    ? "Dipilih"
-                    : template.filterTags.map((tag) => getPresetFilterLabel(tag)).join(" / ")}
+                    ? t(m.selected)
+                    : template.filterTags.map((tag) => getPresetFilterLabel(tag, t)).join(" / ")}
                 </span>
               </div>
-              <p className="mt-1 text-xs text-muted-foreground">{template.recommendedFor}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {getTemplateRecommendedFor(template, t)}
+              </p>
               <div className="mt-2 flex flex-wrap gap-2">
                 {template.badges.map((badge) => (
                   <PresetBadge key={badge} badge={badge} />
@@ -216,7 +236,7 @@ export function PresetExplorerGrid({
                     onClick={() => onUseTemplate(template.id)}
                     className="rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent"
                   >
-                    {selected ? "Preset ini sedang dipakai" : "Pakai preset ini"}
+                    {selected ? t(m.presetInUse) : t(m.usePreset)}
                   </button>
                 )}
                 {onApplyTemplate && (
@@ -259,6 +279,8 @@ export function PresetCompareTable({
   applyActionDisabled?: boolean;
   applyActionHint?: string | null;
 }) {
+  const t = useT();
+  const rich = useRichT();
   const compareTemplate =
     compareOptions.find((template) => template.id === compareTemplateId) ??
     compareOptions[0] ??
@@ -269,13 +291,11 @@ export function PresetCompareTable({
       <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h4 className="text-sm font-semibold">{title}</h4>
-          <p className="text-xs text-muted-foreground">
-            Bandingkan preset terpilih dengan template lain sebelum diterapkan.
-          </p>
+          <p className="text-xs text-muted-foreground">{t(m.compareIntro)}</p>
         </div>
         <div className="flex w-full max-w-xl flex-wrap items-end gap-2">
           <div className="min-w-[220px] flex-1">
-            <label className="mb-1 block text-xs font-medium">Bandingkan dengan</label>
+            <label className="mb-1 block text-xs font-medium">{t(m.compareWith)}</label>
             <select
               value={compareTemplate?.id ?? ""}
               onChange={(e) => onCompareTemplateChange(e.target.value)}
@@ -283,7 +303,7 @@ export function PresetCompareTable({
             >
               {compareOptions.map((template) => (
                 <option key={template.id} value={template.id}>
-                  {template.label}
+                  {getTemplateLabel(template, t)}
                 </option>
               ))}
             </select>
@@ -294,7 +314,7 @@ export function PresetCompareTable({
               onClick={onUseBaseTemplate}
               className="rounded-md border border-input bg-background px-3 py-2 text-xs font-medium hover:bg-accent"
             >
-              Pakai preset ini
+              {t(m.usePreset)}
             </button>
           )}
           {onApplyBaseTemplate && (
@@ -312,7 +332,7 @@ export function PresetCompareTable({
 
       {!compareTemplate && (
         <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
-          Tidak ada preset pembanding untuk filter ini.
+          {t(m.noComparePreset)}
         </div>
       )}
 
@@ -329,15 +349,19 @@ export function PresetCompareTable({
               const same = baseValue === compareValue;
               return (
                 <div key={row.key} className="rounded-md border bg-background px-3 py-2 text-xs">
-                  <div className="font-medium">{row.label}</div>
+                  <div className="font-medium">{t(row.label)}</div>
                   <div className="mt-1 text-muted-foreground">
-                    Dipilih: <span className="font-medium text-foreground">{baseValue}</span>
+                    {rich(m.compareSelected, {
+                      value: <span className="font-medium text-foreground">{baseValue}</span>,
+                    })}
                   </div>
                   <div className="text-muted-foreground">
-                    Pembanding: <span className="font-medium text-foreground">{compareValue}</span>
+                    {rich(m.compareOther, {
+                      value: <span className="font-medium text-foreground">{compareValue}</span>,
+                    })}
                   </div>
                   <div className={same ? "mt-1 text-emerald-700" : "mt-1 text-amber-700"}>
-                    {same ? "Nilainya sama" : "Nilainya berbeda"}
+                    {same ? t(m.valuesSame) : t(m.valuesDiffer)}
                   </div>
                 </div>
               );

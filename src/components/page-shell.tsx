@@ -2,7 +2,8 @@ import { useRouterState } from "@tanstack/react-router";
 import { type LucideIcon, type ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
-import { findNavItem } from "@/lib/nav-items";
+import { useT } from "@/lib/i18n";
+import { findNavItem, NAV_GROUP_LABELS } from "@/lib/nav-items";
 
 /**
  * Bungkus isi halaman: jarak tepi dan lebar baca yang sama di seluruh aplikasi.
@@ -47,8 +48,11 @@ export function PageTitle({
   description?: ReactNode;
   eyebrow?: string;
 }) {
+  const t = useT();
   const pathname = useRouterState({ select: (router) => router.location.pathname });
-  const label = eyebrow ?? findNavItem(pathname)?.group;
+  // `group` adalah kunci grup, bukan teks tampilan; namanya ada di NAV_GROUP_LABELS.
+  const group = findNavItem(pathname)?.group;
+  const label = eyebrow ?? (group ? t(NAV_GROUP_LABELS[group]) : undefined);
 
   return (
     <div className="min-w-0">

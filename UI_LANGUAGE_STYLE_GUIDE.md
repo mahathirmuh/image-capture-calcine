@@ -2,6 +2,19 @@
 
 Panduan ini menetapkan aturan bahasa untuk UI `image capture calcine` agar istilah operasional, status runtime, dan label aksi konsisten di seluruh aplikasi.
 
+## Tiga Bahasa Antarmuka (sejak 2026-10-06)
+
+Web kini bisa dipakai dalam bahasa Indonesia (bawaan), English, dan 中文. Panduan ini tetap berlaku
+untuk **teks bahasa Indonesia**, yang menjadi sumber seluruh terjemahan.
+
+- Teks yang terlihat tidak lagi ditulis langsung di komponen. Tambahkan ke kamus halamannya di
+  `src/i18n/` sebagai `{ id, en, zh }`, lalu tampilkan lewat `t(...)`. Ketiga bahasa wajib diisi
+  dalam perubahan yang sama.
+- Nama plant, label slot (Train 1, Bin 2), nama berkas, kode device, dan token nama berkas tidak
+  diterjemahkan.
+- Mekanisme, aturan lengkap, daftar istilah English/中文, dan batasannya ada di
+  [docs/web-i18n.md](docs/web-i18n.md).
+
 ## Tujuan
 
 - Menjaga UI operasional mudah dipahami operator lapangan.

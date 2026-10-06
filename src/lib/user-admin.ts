@@ -56,7 +56,7 @@ export type AppUser = {
   updatedAt: string;
 };
 
-export type AdminResult<T> = ({ ok: true } & T) | { ok: false; message: string };
+export type AdminResult<T> = ({ ok: true } & T) | { ok: false; message: string; code?: string };
 
 const usernameSchema = z
   .string()
@@ -167,7 +167,7 @@ export function guardUserDeletion(input: {
   return null;
 }
 
-type AdminGate = { ok: true; actor: SessionUser } | { ok: false; message: string };
+type AdminGate = { ok: true; actor: SessionUser } | { ok: false; message: string; code?: string };
 
 /**
  * Peran dibaca ulang dari database, bukan dari cookie sesi.
@@ -184,7 +184,11 @@ async function requireAdmin(): Promise<AdminGate> {
   ]);
 
   if (!isSessionConfigured() || !isCardDbConfigured()) {
-    return { ok: false, message: "Konfigurasi server aplikasi belum lengkap." };
+    return {
+      ok: false,
+      code: "SERVER_NOT_CONFIGURED",
+      message: "Konfigurasi server aplikasi belum lengkap.",
+    };
   }
 
   let sessionUser: SessionUser | undefined;

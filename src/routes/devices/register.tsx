@@ -44,6 +44,7 @@ import {
   filterTemplatesByTag,
   getTemplateById,
   getTemplateCameraSettings,
+  getTemplateLabel,
   loadPresetFilterPreference,
   saveDeviceProfile,
   savePresetFilterPreference,
@@ -53,6 +54,10 @@ import {
 import { getRegisteredDevice, upsertRegisteredDeviceProfile } from "@/lib/device-registry";
 import { testEdgeConnection } from "@/lib/edge-targets";
 import { PageTitle } from "@/components/page-shell";
+import { commonMessages as c } from "@/i18n/common";
+import { deviceRegisterMessages as m } from "@/i18n/device-register";
+import { failureText } from "@/i18n/errors";
+import { useT, type Message } from "@/lib/i18n";
 
 export const Route = createFileRoute("/devices/register")({
   // Registry kamera dan tujuan simpan itu konfigurasi yang berlaku untuk semua
@@ -75,34 +80,35 @@ export const Route = createFileRoute("/devices/register")({
 
 const HOW_IT_WORKS = [
   {
-    title: "Install Capture Agent",
-    body: "Pasang Capture Agent di Mini PC lalu hubungkan kameranya.",
+    title: m.howStepInstallTitle,
+    body: m.howStepInstallBody,
   },
   {
-    title: "Isi Alamat Edge API",
-    body: "Masukkan alamat Camera API. Device Code akan terisi otomatis.",
+    title: m.howStepAddressTitle,
+    body: m.howStepAddressBody,
   },
   {
-    title: "Daftarkan di Web UI",
-    body: "Periksa hasil deteksi, tentukan nama dan lokasi, lalu simpan device.",
+    title: m.howStepRegisterTitle,
+    body: m.howStepRegisterBody,
   },
   {
-    title: "Sinkron & Siap",
-    body: "Device akan menyelaraskan konfigurasi dari server lalu siap dipakai capture.",
+    title: m.howStepSyncTitle,
+    body: m.howStepSyncBody,
   },
 ];
 
 const WHAT_GETS_CONFIGURED = [
-  "Template profil kamera dan default exposure manual",
-  "Metadata plant, source bin, dan station",
-  "Jadwal capture",
-  "Timezone dan catatan operator",
-  "Payload sinkronisasi untuk rollout edge-agent berikutnya",
+  m.configuredTemplate,
+  m.configuredMetadata,
+  m.configuredSchedule,
+  m.configuredTimezone,
+  m.configuredSyncPayload,
 ];
 
 function RegisterDevicePage() {
   const { deviceId } = Route.useSearch();
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const t = useT();
+  const [loadError, setLoadError] = useState<string | Message | null>(null);
   const [hydrating, setHydrating] = useState(!!deviceId);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [deviceCode, setDeviceCode] = useState("");
@@ -175,8 +181,7 @@ function RegisterDevicePage() {
         setCameraSettings(existing.cameraSettings);
       })
       .catch((error) => {
-        if (!cancelled)
-          setLoadError(error instanceof Error ? error.message : "Gagal memuat device.");
+        if (!cancelled) setLoadError(error instanceof Error ? error.message : m.loadFailed);
       })
       .finally(() => {
         if (!cancelled) setHydrating(false);
@@ -212,22 +217,20 @@ function RegisterDevicePage() {
       const result = await testEdgeConnection({ data: { url } });
       if (request !== probeRequest.current) return;
       if (!result.ok) {
-        setProbe({ reachable: false, detail: result.message });
+        setProbe({ reachable: false, detail: failureText(t, result, m.probeFailed) });
         return;
       }
       if (!result.reachable || !result.deviceCode) {
         setProbe({
           reachable: false,
-          detail: result.reachable
-            ? "API tidak mengirim identitas device yang valid."
-            : result.detail,
+          detail: result.reachable ? t(m.probeNoIdentity) : result.detail,
         });
         return;
       }
       if (deviceId && result.deviceCode !== deviceCode) {
         setProbe({
           reachable: false,
-          detail: "Identitas API berbeda dari device ini. Periksa alamatnya.",
+          detail: t(m.probeIdentityMismatch),
         });
         return;
       }
@@ -239,7 +242,7 @@ function RegisterDevicePage() {
       if (request !== probeRequest.current) return;
       setProbe({
         reachable: false,
-        detail: error instanceof Error ? error.message : "Uji koneksi gagal.",
+        detail: error instanceof Error ? error.message : t(m.probeFailed),
       });
     } finally {
       if (request === probeRequest.current) setProbing(false);
@@ -283,20 +286,20 @@ function RegisterDevicePage() {
       });
 
       if (!result.ok) {
-        toast.error("Gagal mendaftarkan device", {
-          description: result.message,
+        toast.error(t(m.registerFailed), {
+          description: failureText(t, result),
         });
         return;
       }
 
       saveDeviceProfile(result.profile);
       setRegistered(true);
-      toast.success(deviceId ? "Device berhasil diperbarui" : "Device berhasil didaftarkan", {
-        description: "Registry MSSQL dan profil lokal sudah sinkron.",
+      toast.success(deviceId ? t(m.deviceUpdated) : t(m.deviceRegistered), {
+        description: t(m.registrySynced),
       });
     } catch (error) {
-      toast.error("Gagal menyimpan device", {
-        description: error instanceof Error ? error.message : "Coba lagi.",
+      toast.error(t(m.saveFailed), {
+        description: error instanceof Error ? error.message : t(m.tryAgainHint),
       });
     } finally {
       setRegistering(false);
@@ -315,8 +318,8 @@ function RegisterDevicePage() {
   function handleUseTemplate(nextTemplateId: string) {
     selectTemplate(nextTemplateId);
     const nextTemplate = getTemplateById(nextTemplateId);
-    toast.success(`Preset aktif diubah ke "${nextTemplate.label}"`, {
-      description: "Camera defaults telah mengikuti template terpilih.",
+    toast.success(t(m.presetChanged, { label: nextTemplate.label }), {
+      description: t(m.presetChangedDetail),
     });
   }
 
@@ -332,18 +335,24 @@ function RegisterDevicePage() {
   if (hydrating || loadError)
     return (
       <main className="p-6 space-y-4">
-        <p role={loadError ? "alert" : "status"}>{loadError ?? "Memuat data device..."}</p>
+        <p role={loadError ? "alert" : "status"}>
+          {loadError === null
+            ? t(m.loadingDevice)
+            : typeof loadError === "string"
+              ? loadError
+              : t(loadError)}
+        </p>
         {loadError && (
           <button
             type="button"
             className="rounded-md border px-3 py-2"
             onClick={() => setLoadAttempt((value) => value + 1)}
           >
-            Coba lagi
+            {t(c.tryAgain)}
           </button>
         )}
         <Link to="/devices" className="block underline">
-          Kembali ke Devices
+          {t(m.backToDevices)}
         </Link>
       </main>
     );
@@ -351,17 +360,17 @@ function RegisterDevicePage() {
     <div className="p-6">
       <div className="mb-2 flex items-center gap-1.5 text-sm text-muted-foreground">
         <Link to="/devices" className="hover:underline">
-          Devices
+          {t(c.navDevices)}
         </Link>
         <span>/</span>
-        <span className="text-foreground">{deviceId ? "Edit Device" : "Daftarkan Device"}</span>
+        <span className="text-foreground">{deviceId ? t(m.editDevice) : t(m.registerDevice)}</span>
       </div>
 
       <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
           <PageTitle
-            title={deviceId ? "Edit Device" : "Daftarkan Device Baru"}
-            description="Kelola identitas, alamat Edge API, dan profil device. Pengaturan kamera diterapkan melalui halaman Devices."
+            title={deviceId ? t(m.editDevice) : t(m.registerNewDevice)}
+            description={t(m.pageDescription)}
           />
         </div>
         <div className="flex items-center gap-2">
@@ -369,7 +378,7 @@ function RegisterDevicePage() {
             onClick={() => setHowItWorksOpen((v) => !v)}
             className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent"
           >
-            <Info className="h-4 w-4" /> Cara kerjanya
+            <Info className="h-4 w-4" /> {t(m.howItWorks)}
             <ChevronDown
               className={`h-3.5 w-3.5 transition-transform ${howItWorksOpen ? "rotate-180" : ""}`}
             />
@@ -378,45 +387,45 @@ function RegisterDevicePage() {
             to="/devices"
             className="rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent"
           >
-            Batal
+            {t(m.cancel)}
           </Link>
         </div>
       </header>
 
       {/* Step indicator (visual only -- this is a mock, single-scroll form) */}
       <div className="mb-6 flex items-center justify-center gap-2 rounded-xl border bg-card shadow-sm px-6 py-4">
-        {["Identifikasi Device", "Lokasi & Sumber", "Konfigurasi", "Tinjau & Selesai"].map(
-          (label, i) => {
-            const stepNum = i + 1;
-            const active = showReview ? stepNum === 4 : stepNum === 1;
-            const complete = showReview && stepNum < 4;
-            return (
-              <div key={label} className="flex flex-1 items-center gap-2">
-                <div className="flex flex-col items-center gap-1">
-                  <span
-                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
-                      complete
+        {[m.stepIdentify, m.stepLocation, m.stepConfig, m.stepReview].map((label, i) => {
+          const stepNum = i + 1;
+          const active = showReview ? stepNum === 4 : stepNum === 1;
+          const complete = showReview && stepNum < 4;
+          return (
+            <div key={label.id} className="flex flex-1 items-center gap-2">
+              <div className="flex flex-col items-center gap-1">
+                <span
+                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
+                    complete
+                      ? "bg-primary text-primary-foreground"
+                      : active
                         ? "bg-primary text-primary-foreground"
-                        : active
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-muted text-muted-foreground"
-                    }`}
-                  >
-                    {complete ? <Check className="h-3.5 w-3.5" /> : stepNum}
-                  </span>
-                  <span className="hidden text-[11px] text-muted-foreground sm:block">{label}</span>
-                </div>
-                {stepNum < 4 && <div className="h-px flex-1 bg-border" />}
+                        : "bg-muted text-muted-foreground"
+                  }`}
+                >
+                  {complete ? <Check className="h-3.5 w-3.5" /> : stepNum}
+                </span>
+                <span className="hidden text-[11px] text-muted-foreground sm:block">
+                  {t(label)}
+                </span>
               </div>
-            );
-          },
-        )}
+              {stepNum < 4 && <div className="h-px flex-1 bg-border" />}
+            </div>
+          );
+        })}
       </div>
 
       {registered && (
         <div className="mb-6 flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700">
           <CheckCircle2 className="h-4 w-4 shrink-0" />
-          Device sudah tersimpan ke registry MSSQL dan profil aktif lokal sudah diperbarui.
+          {t(m.savedBanner)}
         </div>
       )}
 
@@ -429,61 +438,54 @@ function RegisterDevicePage() {
                 1
               </span>
               <div>
-                <h2 className="font-semibold">Identifikasi Device</h2>
-                <p className="text-xs text-muted-foreground">
-                  Isi Alamat Edge API di bagian Lokasi & Sumber. Identitas device akan dideteksi
-                  otomatis.
-                </p>
+                <h2 className="font-semibold">{t(m.stepIdentify)}</h2>
+                <p className="text-xs text-muted-foreground">{t(m.identifyHint)}</p>
               </div>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
               <div>
                 <label className="mb-1 block text-sm font-medium">
-                  Device Code <span className="text-destructive">*</span>
+                  {t(m.deviceCode)} <span className="text-destructive">*</span>
                 </label>
                 <div className="relative">
                   <input
                     value={deviceCode}
                     readOnly
-                    placeholder="Otomatis dari Alamat Edge API"
+                    placeholder={t(m.deviceCodePlaceholder)}
                     className="w-full rounded-md border border-input bg-background px-3 py-2 pr-9 text-sm font-mono"
                   />
                   {codeValid && (
                     <CheckCircle2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-emerald-500" />
                   )}
                 </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Kode diambil otomatis dari Camera API dan tidak perlu diketik.
-                </p>
+                <p className="mt-1 text-xs text-muted-foreground">{t(m.deviceCodeHint)}</p>
 
                 <label className="mb-1 mt-4 block text-sm font-medium">
-                  Nama Device <span className="text-destructive">*</span>
+                  {t(m.deviceName)} <span className="text-destructive">*</span>
                 </label>
                 <input
                   value={deviceName}
                   onChange={(e) => setDeviceName(e.target.value)}
-                  placeholder="e.g. MINIPC-004"
+                  placeholder={t(m.deviceNamePlaceholder)}
                   className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                 />
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Gunakan nama unik agar device ini mudah dikenali operator.
-                </p>
+                <p className="mt-1 text-xs text-muted-foreground">{t(m.deviceNameHint)}</p>
               </div>
 
               <div>
                 {codeValid ? (
                   <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3">
                     <div className="mb-2 flex items-center gap-1.5 text-sm font-medium text-emerald-700">
-                      <CheckCircle2 className="h-4 w-4" /> Identitas Device Terverifikasi
+                      <CheckCircle2 className="h-4 w-4" /> {t(m.identityVerified)}
                     </div>
                     <p className="mb-3 text-xs text-emerald-700/80">
-                      Identitas device sudah dibaca dari Camera API.
+                      {t(m.identityVerifiedDetail)}
                     </p>
                   </div>
                 ) : (
                   <div className="flex h-full items-center justify-center rounded-md border border-dashed p-6 text-center text-xs text-muted-foreground">
-                    Isi Alamat Edge API untuk mendeteksi device.
+                    {t(m.identityPending)}
                   </div>
                 )}
               </div>
@@ -497,17 +499,15 @@ function RegisterDevicePage() {
                 2
               </span>
               <div>
-                <h2 className="font-semibold">Lokasi &amp; Sumber</h2>
-                <p className="text-xs text-muted-foreground">
-                  Tentukan lokasi plant dan sumber bin untuk device sampling ini.
-                </p>
+                <h2 className="font-semibold">{t(m.stepLocation)}</h2>
+                <p className="text-xs text-muted-foreground">{t(m.locationHint)}</p>
               </div>
             </div>
 
             <div className="grid gap-4 md:grid-cols-3">
               <div>
                 <label className="mb-1 flex items-center gap-1 text-sm font-medium">
-                  <MapPin className="h-3.5 w-3.5 text-muted-foreground" /> Plant / Lokasi{" "}
+                  <MapPin className="h-3.5 w-3.5 text-muted-foreground" /> {t(m.plantLocation)}{" "}
                   <span className="text-destructive">*</span>
                 </label>
                 <select
@@ -524,7 +524,7 @@ function RegisterDevicePage() {
               </div>
               <div className="sm:col-span-2">
                 <label className="mb-1 flex items-center gap-1 text-sm font-medium">
-                  <Plug className="h-3.5 w-3.5 text-muted-foreground" /> Alamat Edge API
+                  <Plug className="h-3.5 w-3.5 text-muted-foreground" /> {t(m.edgeApiAddress)}
                 </label>
                 <div className="flex flex-wrap items-center gap-2">
                   <input
@@ -556,14 +556,10 @@ function RegisterDevicePage() {
                     ) : (
                       <Plug className="h-4 w-4" />
                     )}
-                    Uji koneksi
+                    {t(m.testConnection)}
                   </button>
                 </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Alamat service kamera pada Mini PC ini, lengkap dengan portnya. Tiap device boleh
-                  memakai port berbeda. Device Code dibaca otomatis setelah Anda selesai mengisi
-                  alamat.
-                </p>
+                <p className="mt-1 text-xs text-muted-foreground">{t(m.edgeApiAddressHint)}</p>
                 {probe && (
                   <p
                     className={`mt-1 text-xs ${probe.reachable ? "text-emerald-700" : "text-destructive"}`}
@@ -574,7 +570,7 @@ function RegisterDevicePage() {
               </div>
               <div>
                 <label className="mb-1 flex items-center gap-1 text-sm font-medium">
-                  <Package className="h-3.5 w-3.5 text-muted-foreground" /> Sumber (Bin){" "}
+                  <Package className="h-3.5 w-3.5 text-muted-foreground" /> {t(m.sourceBin)}{" "}
                   <span className="text-destructive">*</span>
                 </label>
                 <select
@@ -590,7 +586,7 @@ function RegisterDevicePage() {
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium">Station / Area (Opsional)</label>
+                <label className="mb-1 block text-sm font-medium">{t(m.stationAreaOptional)}</label>
                 <select
                   value={station}
                   onChange={(e) => setStation(e.target.value)}
@@ -606,11 +602,11 @@ function RegisterDevicePage() {
             </div>
 
             <div className="mt-4">
-              <label className="mb-1 block text-sm font-medium">Deskripsi (Opsional)</label>
+              <label className="mb-1 block text-sm font-medium">{t(m.descriptionOptional)}</label>
               <input
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder={`Calcine sampling station - ${plant}`}
+                placeholder={t(m.descriptionPlaceholder, { plant })}
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               />
             </div>
@@ -623,18 +619,15 @@ function RegisterDevicePage() {
                 3
               </span>
               <div>
-                <h2 className="font-semibold">Konfigurasi &amp; Profil Kamera</h2>
-                <p className="text-xs text-muted-foreground">
-                  Pilih template, lalu rapikan default kamera yang akan menjadi bagian dari profil
-                  device ini.
-                </p>
+                <h2 className="font-semibold">{t(m.configTitle)}</h2>
+                <p className="text-xs text-muted-foreground">{t(m.configHint)}</p>
               </div>
             </div>
 
             <div className="grid gap-4 md:grid-cols-3">
               <div>
                 <label className="mb-1 flex items-center gap-1 text-sm font-medium">
-                  <Settings2 className="h-3.5 w-3.5 text-muted-foreground" /> Template Konfigurasi{" "}
+                  <Settings2 className="h-3.5 w-3.5 text-muted-foreground" /> {t(m.configTemplate)}{" "}
                   <span className="text-destructive">*</span>
                 </label>
                 <select
@@ -646,7 +639,7 @@ function RegisterDevicePage() {
                 >
                   {DEVICE_TEMPLATES.map((template) => (
                     <option key={template.id} value={template.id}>
-                      {template.label}
+                      {getTemplateLabel(template, t)}
                     </option>
                   ))}
                 </select>
@@ -656,7 +649,7 @@ function RegisterDevicePage() {
               </div>
               <div>
                 <label className="mb-1 flex items-center gap-1 text-sm font-medium">
-                  <Calendar className="h-3.5 w-3.5 text-muted-foreground" /> Jadwal Capture{" "}
+                  <Calendar className="h-3.5 w-3.5 text-muted-foreground" /> {t(m.captureSchedule)}{" "}
                   <span className="text-destructive">*</span>
                 </label>
                 <select
@@ -673,7 +666,7 @@ function RegisterDevicePage() {
               </div>
               <div>
                 <label className="mb-1 flex items-center gap-1 text-sm font-medium">
-                  <Clock className="h-3.5 w-3.5 text-muted-foreground" /> Timezone{" "}
+                  <Clock className="h-3.5 w-3.5 text-muted-foreground" /> {t(m.timezone)}{" "}
                   <span className="text-destructive">*</span>
                 </label>
                 <select
@@ -694,19 +687,16 @@ function RegisterDevicePage() {
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
                   <h3 className="flex items-center gap-1.5 text-sm font-semibold">
-                    <Camera className="h-4 w-4" /> Default Kamera
+                    <Camera className="h-4 w-4" /> {t(m.cameraDefaults)}
                   </h3>
-                  <p className="text-xs text-muted-foreground">
-                    Pengaturan ini disimpan sebagai baseline profil device. Proses apply atau sync
-                    ke hardware tetap mengikuti alur edge API pada halaman Devices.
-                  </p>
+                  <p className="text-xs text-muted-foreground">{t(m.cameraDefaultsHint)}</p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setCameraSettings(getTemplateCameraSettings(templateId))}
                   className="rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent"
                 >
-                  Reset dari template
+                  {t(m.resetFromTemplate)}
                 </button>
               </div>
 
@@ -715,10 +705,8 @@ function RegisterDevicePage() {
               <div className="mb-4 mt-4 rounded-md border bg-background/70 p-3">
                 <div className="mb-2 flex items-center justify-between gap-3">
                   <div>
-                    <div className="text-sm font-medium">Filter Preset</div>
-                    <p className="text-xs text-muted-foreground">
-                      Saring preset explorer berdasarkan skenario sebelum memilih template.
-                    </p>
+                    <div className="text-sm font-medium">{t(m.presetFilter)}</div>
+                    <p className="text-xs text-muted-foreground">{t(m.presetFilterHint)}</p>
                   </div>
                 </div>
                 <PresetFilterBar value={templateFilter} onChange={setTemplateFilter} />
@@ -750,7 +738,7 @@ function RegisterDevicePage() {
                   </select>
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm font-medium">Shutter Speed</label>
+                  <label className="mb-1 block text-sm font-medium">{t(m.shutterSpeed)}</label>
                   <select
                     value={cameraSettings.shutter}
                     onChange={(e) =>
@@ -766,7 +754,7 @@ function RegisterDevicePage() {
                   </select>
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm font-medium">Aperture</label>
+                  <label className="mb-1 block text-sm font-medium">{t(m.aperture)}</label>
                   <select
                     value={cameraSettings.aperture}
                     onChange={(e) =>
@@ -782,7 +770,7 @@ function RegisterDevicePage() {
                   </select>
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm font-medium">White Balance</label>
+                  <label className="mb-1 block text-sm font-medium">{t(m.whiteBalance)}</label>
                   <select
                     value={cameraSettings.whiteBalance}
                     onChange={(e) =>
@@ -801,7 +789,7 @@ function RegisterDevicePage() {
                   </select>
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm font-medium">Picture Style</label>
+                  <label className="mb-1 block text-sm font-medium">{t(m.pictureStyle)}</label>
                   <select
                     value={cameraSettings.pictureStyle}
                     onChange={(e) =>
@@ -820,7 +808,7 @@ function RegisterDevicePage() {
                   </select>
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm font-medium">Focus Mode</label>
+                  <label className="mb-1 block text-sm font-medium">{t(m.focusMode)}</label>
                   <select
                     value={cameraSettings.focusMode}
                     onChange={(e) =>
@@ -842,7 +830,7 @@ function RegisterDevicePage() {
 
               <div className="mt-4">
                 <PresetCompareTable
-                  title="Perbandingan Preset"
+                  title={t(m.presetComparison)}
                   baseTemplate={selectedTemplate}
                   compareOptions={compareCandidates}
                   compareTemplateId={compareTemplateId}
@@ -854,11 +842,7 @@ function RegisterDevicePage() {
 
             <div className="mt-4 flex items-start gap-2 rounded-md border border-primary/30 bg-primary/5 p-3 text-xs">
               <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
-              <span>
-                Tahap ini menyimpan profil device ke registry MSSQL dan profil lokal operator agar
-                `/devices` bisa menjadi pusat kontrol default kamera. Mengirim nilai tersebut ke
-                kamera fisik tetap mengikuti endpoint edge API.
-              </span>
+              <span>{t(m.configNote)}</span>
             </div>
           </section>
 
@@ -870,43 +854,41 @@ function RegisterDevicePage() {
                   4
                 </span>
                 <div>
-                  <h2 className="font-semibold">Tinjau &amp; Selesai</h2>
-                  <p className="text-xs text-muted-foreground">
-                    Konfirmasi detail konfigurasi sebelum disimpan.
-                  </p>
+                  <h2 className="font-semibold">{t(m.stepReview)}</h2>
+                  <p className="text-xs text-muted-foreground">{t(m.reviewHint)}</p>
                 </div>
               </div>
               <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm md:grid-cols-3">
                 <div>
-                  <dt className="text-xs text-muted-foreground">Device Code</dt>
+                  <dt className="text-xs text-muted-foreground">{t(m.deviceCode)}</dt>
                   <dd className="font-medium">{deviceCode || "—"}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-muted-foreground">Nama Device</dt>
+                  <dt className="text-xs text-muted-foreground">{t(m.deviceName)}</dt>
                   <dd className="font-medium">{deviceName || "—"}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-muted-foreground">Plant / Lokasi</dt>
+                  <dt className="text-xs text-muted-foreground">{t(m.plantLocation)}</dt>
                   <dd className="font-medium">{plant}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-muted-foreground">Sumber (Bin)</dt>
+                  <dt className="text-xs text-muted-foreground">{t(m.sourceBin)}</dt>
                   <dd className="font-medium">{bin}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-muted-foreground">Station / Area</dt>
+                  <dt className="text-xs text-muted-foreground">{t(m.stationArea)}</dt>
                   <dd className="font-medium">{station}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-muted-foreground">Template</dt>
-                  <dd className="font-medium">{selectedTemplate.label}</dd>
+                  <dt className="text-xs text-muted-foreground">{t(m.template)}</dt>
+                  <dd className="font-medium">{getTemplateLabel(selectedTemplate, t)}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-muted-foreground">Jadwal</dt>
+                  <dt className="text-xs text-muted-foreground">{t(m.schedule)}</dt>
                   <dd className="font-medium">{schedule}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-muted-foreground">Timezone</dt>
+                  <dt className="text-xs text-muted-foreground">{t(m.timezone)}</dt>
                   <dd className="font-medium">{timezone}</dd>
                 </div>
                 <div>
@@ -914,23 +896,23 @@ function RegisterDevicePage() {
                   <dd className="font-medium">{cameraSettings.iso}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-muted-foreground">Shutter</dt>
+                  <dt className="text-xs text-muted-foreground">{t(m.shutter)}</dt>
                   <dd className="font-medium">{cameraSettings.shutter}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-muted-foreground">Aperture</dt>
+                  <dt className="text-xs text-muted-foreground">{t(m.aperture)}</dt>
                   <dd className="font-medium">{cameraSettings.aperture}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-muted-foreground">White Balance</dt>
+                  <dt className="text-xs text-muted-foreground">{t(m.whiteBalance)}</dt>
                   <dd className="font-medium">{cameraSettings.whiteBalance}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-muted-foreground">Picture Style</dt>
+                  <dt className="text-xs text-muted-foreground">{t(m.pictureStyle)}</dt>
                   <dd className="font-medium">{cameraSettings.pictureStyle}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-muted-foreground">Focus Mode</dt>
+                  <dt className="text-xs text-muted-foreground">{t(m.focusMode)}</dt>
                   <dd className="font-medium">{cameraSettings.focusMode}</dd>
                 </div>
               </dl>
@@ -942,7 +924,7 @@ function RegisterDevicePage() {
               to="/devices"
               className="rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
             >
-              Batal
+              {t(m.cancel)}
             </Link>
             {!showReview ? (
               <button
@@ -950,7 +932,7 @@ function RegisterDevicePage() {
                 disabled={!codeValid || !deviceName.trim()}
                 className="inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
               >
-                Lanjut <ArrowRight className="h-4 w-4" />
+                {t(m.next)} <ArrowRight className="h-4 w-4" />
               </button>
             ) : (
               <button
@@ -960,12 +942,12 @@ function RegisterDevicePage() {
               >
                 <Cpu className="h-4 w-4" />{" "}
                 {registered
-                  ? "Sudah tersimpan"
+                  ? t(m.alreadySaved)
                   : registering
-                    ? "Mendaftarkan..."
+                    ? t(m.registering)
                     : deviceId
-                      ? "Simpan Perubahan"
-                      : "Daftarkan Device"}
+                      ? t(m.saveChanges)
+                      : t(m.registerDevice)}
               </button>
             )}
           </div>
@@ -975,16 +957,16 @@ function RegisterDevicePage() {
         {howItWorksOpen && (
           <aside className="space-y-4">
             <div className="rounded-xl border bg-card shadow-sm p-4">
-              <h3 className="mb-3 text-sm font-semibold">Cara Mendaftarkan Device</h3>
+              <h3 className="mb-3 text-sm font-semibold">{t(m.howToRegister)}</h3>
               <ol className="space-y-3">
                 {HOW_IT_WORKS.map((step, i) => (
-                  <li key={step.title} className="flex gap-2">
+                  <li key={step.title.id} className="flex gap-2">
                     <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-semibold text-primary">
                       {i + 1}
                     </span>
                     <div>
-                      <div className="text-xs font-medium">{step.title}</div>
-                      <div className="text-xs text-muted-foreground">{step.body}</div>
+                      <div className="text-xs font-medium">{t(step.title)}</div>
+                      <div className="text-xs text-muted-foreground">{t(step.body)}</div>
                     </div>
                   </li>
                 ))}
@@ -992,11 +974,11 @@ function RegisterDevicePage() {
             </div>
 
             <div className="rounded-xl border bg-card shadow-sm p-4">
-              <h3 className="mb-3 text-sm font-semibold">Apa saja yang akan dikonfigurasi?</h3>
+              <h3 className="mb-3 text-sm font-semibold">{t(m.whatGetsConfigured)}</h3>
               <ul className="space-y-1.5">
                 {WHAT_GETS_CONFIGURED.map((item) => (
-                  <li key={item} className="flex items-center gap-2 text-xs">
-                    <Check className="h-3.5 w-3.5 shrink-0 text-emerald-500" /> {item}
+                  <li key={item.id} className="flex items-center gap-2 text-xs">
+                    <Check className="h-3.5 w-3.5 shrink-0 text-emerald-500" /> {t(item)}
                   </li>
                 ))}
               </ul>
@@ -1004,10 +986,7 @@ function RegisterDevicePage() {
 
             <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
               <Lightbulb className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
-              <span>
-                Semua pengaturan masih bisa diedit lagi setelah pendaftaran dari halaman detail
-                device.
-              </span>
+              <span>{t(m.editableLater)}</span>
             </div>
           </aside>
         )}

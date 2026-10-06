@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { deviceTelemetryMessages as m } from "../i18n/devices";
+import { failureText } from "../i18n/errors";
 import { getDeviceTelemetry } from "../lib/camera-api";
 import type { DeviceTelemetry } from "../lib/device-telemetry";
+import { useT } from "../lib/i18n";
 
 /** Poll host telemetry only; never poll gphoto2 or acquire camera sessions. */
 export function useDeviceTelemetry(
@@ -9,6 +12,13 @@ export function useDeviceTelemetry(
   endpoint?: string | null,
 ) {
   const key = `${deviceId}:${endpoint ?? ""}:${active}`;
+  // Penerjemah dibaca lewat ref supaya berganti bahasa tidak mengubah `refresh`
+  // dan ikut memulai ulang polling.
+  const t = useT();
+  const translate = useRef(t);
+  useEffect(() => {
+    translate.current = t;
+  }, [t]);
   const request = useRef(0);
   const running = useRef<{ key: string; promise: Promise<void> } | null>(null);
   const [state, setState] = useState<{
@@ -37,7 +47,7 @@ export function useDeviceTelemetry(
         setState({
           key,
           data: response.ok ? response.telemetry : null,
-          error: response.ok ? null : response.message,
+          error: response.ok ? null : failureText(translate.current, response),
           loading: false,
         });
       } catch {
@@ -45,7 +55,7 @@ export function useDeviceTelemetry(
           setState({
             key,
             data: null,
-            error: "Telemetri gagal dimuat. Coba refresh kembali.",
+            error: translate.current(m.telemetryLoadFailed),
             loading: false,
           });
       } finally {

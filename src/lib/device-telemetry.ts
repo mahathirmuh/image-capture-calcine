@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { deviceTelemetryMessages as m } from "@/i18n/devices";
+import { translateId, type Translator } from "@/lib/i18n";
 const nullableNumber = z.number().finite().nonnegative().nullable();
 const percent = z.number().finite().min(0).max(100).nullable();
 const scope = z.enum(["host", "runtime"]);
@@ -48,13 +50,18 @@ export const deviceTelemetrySchema = z.object({
   qc: z.object({ status: z.literal("unsupported"), reason: z.string() }),
 });
 export type DeviceTelemetry = z.infer<typeof deviceTelemetrySchema>;
-export function telemetryPercent(value: number | null | undefined) {
-  return value == null ? "Tidak tersedia" : `${value.toFixed(1)}%`;
+export function telemetryPercent(value: number | null | undefined, t: Translator = translateId) {
+  return value == null ? t(m.notAvailable) : `${value.toFixed(1)}%`;
 }
 export function telemetryCapacity(
   value: DeviceTelemetry["memory"] | DeviceTelemetry["disk"] | undefined,
+  t: Translator = translateId,
 ) {
-  if (!value || value.totalBytes == null || value.availableBytes == null) return "Tidak tersedia";
+  if (!value || value.totalBytes == null || value.availableBytes == null) return t(m.notAvailable);
   const gib = (bytes: number) => (bytes / 1024 ** 3).toFixed(1);
-  return `${telemetryPercent(value.usedPercent)} · ${gib(value.availableBytes)} / ${gib(value.totalBytes)} GiB tersedia`;
+  return t(m.capacity, {
+    used: telemetryPercent(value.usedPercent, t),
+    free: gib(value.availableBytes),
+    total: gib(value.totalBytes),
+  });
 }

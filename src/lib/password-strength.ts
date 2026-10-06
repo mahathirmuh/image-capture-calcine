@@ -1,3 +1,6 @@
+import { passwordStrengthMessages as m } from "@/i18n/users";
+import { translateId, type Message, type Translator } from "@/lib/i18n";
+
 export type PasswordScore = 0 | 1 | 2 | 3 | 4;
 
 export type PasswordStrength = {
@@ -7,12 +10,12 @@ export type PasswordStrength = {
   hint: string | null;
 };
 
-export const STRENGTH_LABELS: Record<PasswordScore, string> = {
-  0: "Sangat lemah",
-  1: "Lemah",
-  2: "Cukup",
-  3: "Kuat",
-  4: "Sangat kuat",
+export const STRENGTH_LABELS: Record<PasswordScore, Message> = {
+  0: m.veryWeak,
+  1: m.weak,
+  2: m.fair,
+  3: m.strong,
+  4: m.veryStrong,
 };
 
 /**
@@ -82,13 +85,16 @@ function mengandung(password: string, potongan: string | undefined) {
  *
  * Konteks (username, nama lengkap) ikut dinilai karena password yang memuat
  * identitas pemiliknya adalah tebakan paling awal, bukan tebakan terakhir.
+ *
+ * `t` menentukan bahasa label dan saran; tanpa itu hasilnya bahasa Indonesia.
  */
 export function assessPassword(
   password: string,
   context?: { username?: string; fullName?: string },
+  t: Translator = translateId,
 ): PasswordStrength {
   if (!password) {
-    return { score: 0, label: STRENGTH_LABELS[0], hint: null };
+    return { score: 0, label: t(STRENGTH_LABELS[0]), hint: null };
   }
 
   const lower = password.toLowerCase();
@@ -111,10 +117,10 @@ export function assessPassword(
   // jadi keduanya memasang langit-langit, bukan potongan nilai.
   if (TEBAKAN_PERTAMA.some((umum) => lower === umum || lower.startsWith(umum))) {
     batas = 0;
-    hint = "Password ini ada di daftar tebakan pertama. Ganti seluruhnya.";
+    hint = t(m.hintFirstGuess);
   } else if (mengandung(password, context?.username)) {
     batas = 1;
-    hint = "Jangan memakai username di dalam passwordnya.";
+    hint = t(m.hintUsername);
   } else if (
     context?.fullName &&
     context.fullName
@@ -123,20 +129,20 @@ export function assessPassword(
       .some((kata) => mengandung(password, kata))
   ) {
     batas = 1;
-    hint = "Jangan memakai nama sendiri di dalam passwordnya.";
+    hint = t(m.hintOwnName);
   }
 
   const score = Math.max(0, Math.min(batas, poin)) as PasswordScore;
 
   if (!hint) {
     if (password.length < 12) {
-      hint = "Tambah panjangnya. Panjang lebih menolong daripada menambah simbol.";
+      hint = t(m.hintLength);
     } else if (kelas < 2) {
-      hint = "Campur huruf dengan angka atau simbol.";
+      hint = t(m.hintMix);
     } else if (punyaPengulangan(password) || punyaUrutan(password)) {
-      hint = "Ada urutan atau pengulangan yang mudah ditebak di dalamnya.";
+      hint = t(m.hintPattern);
     }
   }
 
-  return { score, label: STRENGTH_LABELS[score], hint };
+  return { score, label: t(STRENGTH_LABELS[score]), hint };
 }

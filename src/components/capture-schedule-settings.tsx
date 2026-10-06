@@ -20,6 +20,39 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { scheduleSettingsMessages as m } from "@/i18n/settings";
+import { translateId, useT, type Message, type Translator } from "@/lib/i18n";
+
+// Galat jadwal -- dari scheduleValidation maupun dari server -- berupa teks
+// Indonesia tanpa kode. Di state teksnya disimpan apa adanya; saat ditampilkan,
+// yang dikenal (teksnya sama persis dengan `id` sebuah pesan, atau berawalan
+// kode yang dikenal) ditulis dalam bahasa antarmuka. Sisanya tampil apa adanya.
+const KNOWN_ERRORS: Message[] = [
+  m.errorStartHour,
+  m.errorInterval,
+  m.errorWindow,
+  m.errorTimezone,
+  m.errorDate,
+  m.errorBusy,
+  m.errorConflict,
+  m.errorTomorrowOnly,
+  m.errorSessionEnded,
+  m.errorAdminOnly,
+];
+
+const CODED_ERRORS: Record<string, Message> = {
+  SCHEDULE_STORAGE_UNAVAILABLE: m.errorStorageUnavailable,
+  SCHEDULE_STORAGE_INVALID: m.errorStorageInvalid,
+};
+
+function scheduleErrorText(text: string, t: Translator) {
+  const code = /^([A-Z_]+):/.exec(text)?.[1];
+  const known =
+    (code ? CODED_ERRORS[code] : undefined) ?? KNOWN_ERRORS.find((message) => message.id === text);
+  // Dalam bahasa Indonesia teks aslinya dipakai apa adanya, seperti failureText.
+  if (!known || t === translateId) return text;
+  return t(known);
+}
 
 export function CaptureScheduleSettings() {
   const [snapshot, setSnapshot] = useState<ScheduleSnapshot | null>(null);
@@ -32,6 +65,7 @@ export function CaptureScheduleSettings() {
   const [dirty, setDirty] = useState(false);
   const errorRef = useRef<HTMLParagraphElement>(null);
   const generation = useRef(0);
+  const t = useT();
   useEffect(() => {
     let cancelled = false;
     setError(null);
@@ -112,7 +146,7 @@ export function CaptureScheduleSettings() {
       if (token === generation.current) {
         setDirty(false);
         setSnapshot(next);
-        toast.success("Jadwal capture disimpan");
+        toast.success(t(m.saved));
       }
     } catch (e) {
       if (token === generation.current) {
@@ -129,12 +163,9 @@ export function CaptureScheduleSettings() {
       aria-labelledby="capture-schedule-title"
     >
       <h2 id="capture-schedule-title" className="text-base font-semibold">
-        Jadwal capture per plant
+        {t(m.title)}
       </h2>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Atur sesi sampling manual. Perubahan berlaku mulai tanggal yang dipilih; jadwal historis
-        tetap disimpan.
-      </p>
+      <p className="mt-1 text-sm text-muted-foreground">{t(m.intro)}</p>
       {error && (
         <p
           id="schedule-error"
@@ -143,7 +174,7 @@ export function CaptureScheduleSettings() {
           role="alert"
           className="mt-3 text-sm text-destructive"
         >
-          {error}
+          {scheduleErrorText(error, t)}
         </p>
       )}
       {error && snapshot && (
@@ -153,12 +184,12 @@ export function CaptureScheduleSettings() {
           disabled={saving || loading}
           className="mt-3 rounded-md border px-3 py-2 text-sm hover:bg-accent disabled:opacity-50"
         >
-          Muat ulang jadwal
+          {t(m.reload)}
         </button>
       )}
       {loading && snapshot && (
         <p role="status" className="mt-3 text-sm">
-          Memuat ulang jadwal…
+          {t(m.reloading)}
         </p>
       )}
       {!snapshot ? (
@@ -169,10 +200,10 @@ export function CaptureScheduleSettings() {
               onClick={() => setReload((x) => x + 1)}
               className="rounded-md border px-3 py-2"
             >
-              Muat ulang jadwal
+              {t(m.reload)}
             </button>
           ) : (
-            "Memuat jadwal…"
+            t(m.loading)
           )}
         </div>
       ) : (
@@ -181,7 +212,7 @@ export function CaptureScheduleSettings() {
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <div>
                 <label id="schedule-plant-label" className="text-sm font-medium">
-                  Plant
+                  {t(m.plant)}
                 </label>
                 <ScheduleSelect
                   value={plant}
@@ -200,14 +231,12 @@ export function CaptureScheduleSettings() {
                   </SelectContent>
                 </ScheduleSelect>
                 {dirty && (
-                  <p className="text-xs text-muted-foreground">
-                    Simpan atau batalkan sebelum pindah plant.
-                  </p>
+                  <p className="text-xs text-muted-foreground">{t(m.saveOrDiscardFirst)}</p>
                 )}
               </div>
               <div>
                 <label id="schedule-start-label" className="text-sm font-medium">
-                  Jam mulai
+                  {t(m.startHour)}
                 </label>
                 <ScheduleSelect
                   value={String(draft.startHour)}
@@ -228,7 +257,7 @@ export function CaptureScheduleSettings() {
               </div>
               <div>
                 <label id="schedule-interval-label" className="text-sm font-medium">
-                  Interval sesi
+                  {t(m.interval)}
                 </label>
                 <ScheduleSelect
                   value={String(draft.intervalHours)}
@@ -246,7 +275,7 @@ export function CaptureScheduleSettings() {
                   <SelectContent>
                     {SCHEDULE_INTERVALS.map((h) => (
                       <SelectItem key={h} value={String(h)}>
-                        Setiap {h} jam
+                        {t(m.everyHours, { hours: h })}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -254,7 +283,7 @@ export function CaptureScheduleSettings() {
               </div>
               <div>
                 <label htmlFor="schedule-window" className="text-sm font-medium">
-                  Jendela capture (menit)
+                  {t(m.window)}
                 </label>
                 <input
                   id="schedule-window"
@@ -273,7 +302,7 @@ export function CaptureScheduleSettings() {
               </div>
               <div>
                 <label id="schedule-zone-label" className="text-sm font-medium">
-                  Timezone plant
+                  {t(m.timezone)}
                 </label>
                 <ScheduleSelect
                   value={draft.timezone}
@@ -294,7 +323,7 @@ export function CaptureScheduleSettings() {
               </div>
               <div>
                 <label htmlFor="schedule-date" className="text-sm font-medium">
-                  Mulai berlaku (YYYY-MM-DD)
+                  {t(m.effectiveDate)}
                 </label>
                 <input
                   id="schedule-date"
@@ -311,16 +340,13 @@ export function CaptureScheduleSettings() {
             </div>
             <div className="rounded-lg bg-muted p-3" aria-live="polite">
               <p className="text-sm font-medium">
-                Preview: {hours.length} sesi · {hours.length * 2} foto per hari
+                {t(m.preview, { sessions: hours.length, photos: hours.length * 2 })}
               </p>
               <p className="mt-1 text-sm">
                 {hours.map((h) => `${String(h).padStart(2, "0")}:00`).join(" · ") ||
-                  "Perbaiki pengaturan untuk melihat preview."}
+                  t(m.fixToPreview)}
               </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Jam ditampilkan sesuai timezone plant. Jendela yang melewati tengah malam tetap
-                milik tanggal awal sesi.
-              </p>
+              <p className="mt-1 text-xs text-muted-foreground">{t(m.previewNote)}</p>
             </div>
             <div className="flex flex-wrap gap-2">
               <button
@@ -328,7 +354,7 @@ export function CaptureScheduleSettings() {
                 disabled={saving || loading || !dirty}
                 className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
               >
-                {saving ? "Menyimpan…" : "Simpan jadwal"}
+                {saving ? t(m.saving) : t(m.save)}
               </button>
               <button
                 type="button"
@@ -347,21 +373,27 @@ export function CaptureScheduleSettings() {
                 }}
                 className="rounded-md border px-4 py-2 text-sm hover:bg-accent disabled:opacity-50"
               >
-                Batalkan perubahan
+                {t(m.discard)}
               </button>
             </div>
             <details>
               <summary className="cursor-pointer text-sm font-medium">
-                Riwayat jadwal ({snapshot.versions.filter((v) => v.plant === plant).length})
+                {t(m.history, {
+                  count: snapshot.versions.filter((v) => v.plant === plant).length,
+                })}
               </summary>
               <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
                 {snapshot.versions
                   .filter((v) => v.plant === plant)
                   .map((v) => (
                     <li key={v.id}>
-                      {v.effectiveDate} — setiap {v.intervalHours} jam, mulai{" "}
-                      {String(v.startHour).padStart(2, "0")}:00, jendela {v.windowMinutes} menit ·{" "}
-                      {v.timezone}
+                      {t(m.historyEntry, {
+                        date: v.effectiveDate,
+                        interval: v.intervalHours,
+                        start: `${String(v.startHour).padStart(2, "0")}:00`,
+                        window: v.windowMinutes,
+                        timezone: v.timezone,
+                      })}
                     </li>
                   ))}
               </ul>

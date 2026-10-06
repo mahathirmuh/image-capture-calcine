@@ -540,3 +540,16 @@ Sources: product principles (principle 2 revised in this change), functional spe
 Verification: 49 suites / 417 tests pass (8 new: dictionary completeness and placeholder parity, switching, component re-render, error wording). Mobile TypeScript passes; ESLint (formatter rule excluded) and Prettier pass on the changed files. Browser walkthrough in headless Chrome at 390 px against a local mock API (no production requests): Login, Today Sessions (both tabs), Capture including the camera-in-use dialog, History, Capture Detail, My Device and Settings were inspected in Chinese, the stored preference and `<html lang>` were checked, switching back to English was checked, and no element overflowed the viewport. `docs/openapi.yaml` reviewed: no backend or contract change. The Chinese text was written without review by a native speaker.
 
 APK 1.3.0 / versionCode 4 (debug) built on 2026-10-06 against the production HTTPS API: Gradle BUILD SUCCESSFUL, v1/v2 signatures verified, bundle contains both dictionaries. SHA256 `FA4285F04E47F40F40B09995C9EFCFAB88AB9B928B15516982C9D7FBC2ED123C`. Same workstation debug key as APK 1.2.0. Not installed or run on a device.
+
+
+## Post-M5 Maintenance — Web interface languages (2026-10-06)
+
+Web/backend change; mobile scope and M0–M5 status unchanged, no mobile source touched. Details, rules and limits: docs/web-i18n.md.
+
+- [x] Web UI available in Indonesian (default), English and Simplified Chinese, switchable from the top bar and the login page; choice stored in a cookie and honoured by SSR.
+- [x] Every page converted to per-page dictionaries under src/i18n (about 1,700 messages); server failure codes and edge status sentences translated from their codes.
+- [x] Indonesian text, date and number formats unchanged.
+- [ ] Review of the English and Chinese wording by native-speaking users.
+- [ ] Check with real data (database, camera, share) and with Operator and Viewer accounts.
+
+Verification: 50 suites / 426 tests pass; no TypeScript error beyond the 52 already on main; ESLint (formatter rule excluded) and Prettier pass on the changed files; production build succeeds and serves each language. Headless-browser walkthrough of all ten pages in three languages against an isolated dev server (no database, no camera, locally sealed admin session): no console or hydration errors, no untranslated page text found. docs/openapi.yaml reviewed: no REST contract change.

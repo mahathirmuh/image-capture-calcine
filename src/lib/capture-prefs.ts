@@ -2,6 +2,9 @@
 // Preferences live in localStorage; the DirectoryHandle lives in IndexedDB
 // because handles are structured-clone-able but not JSON-serializable.
 
+import { capturePrefsMessages as m } from "@/i18n/capture";
+import { translateId, type Translator } from "@/lib/i18n";
+
 import { PLANTS } from "./locations";
 
 const PREFS_KEY = "capture-system:prefs:v2";
@@ -68,7 +71,10 @@ export type FilenamePatternAnalysis = {
   isValid: boolean;
 };
 
-export function analyzeFilenamePattern(pattern: string): FilenamePatternAnalysis {
+export function analyzeFilenamePattern(
+  pattern: string,
+  t: Translator = translateId,
+): FilenamePatternAnalysis {
   const normalizedPattern = pattern.trim();
   const tokenSet = new Set<FilenamePatternToken>(FILENAME_PATTERN_TOKENS);
   const rawTokens = Array.from(normalizedPattern.matchAll(/\{([^}]+)\}/g)).map(
@@ -90,19 +96,17 @@ export function analyzeFilenamePattern(pattern: string): FilenamePatternAnalysis
   const suggestions: string[] = [];
 
   if (normalizedPattern === "") {
-    errors.push("Filename pattern tidak boleh kosong.");
+    errors.push(t(m.patternEmpty));
   }
 
   if (unsupportedTokens.length > 0) {
     errors.push(
-      `Token tidak dikenal: ${unsupportedTokens.map((token) => `{${token}}`).join(", ")}.`,
+      t(m.unknownTokens, { tokens: unsupportedTokens.map((token) => `{${token}}`).join(", ") }),
     );
   }
 
   if (rawTokens.length === 0) {
-    warnings.push(
-      "Pattern ini tidak memakai token dinamis; semua file akan mulai dari nama dasar yang sama.",
-    );
+    warnings.push(t(m.noDynamicToken));
   }
 
   const hasLocation = recognizedTokens.includes("LOCATION");
@@ -117,28 +121,23 @@ export function analyzeFilenamePattern(pattern: string): FilenamePatternAnalysis
   // Plant sudah menjadi folder tersendiri di tujuan simpan, jadi {LOCATION}
   // hanya perlu disarankan untuk pola yang tidak memakai skema sesi -- pada
   // pola sesi ia cuma pengulangan yang memanjangkan nama.
+  //
+  // Pesan saran dipanggil TANPA parameter: `{LOCATION}`, `{SLOT}`, dan token
+  // lain di dalamnya adalah token pola yang harus tampil apa adanya.
   if (!hasLocation && !hasSession) {
-    suggestions.push("Tambahkan `{LOCATION}` agar file mudah diaudit per plant.");
+    suggestions.push(t(m.suggestLocation));
   }
   if (!hasSource) {
-    suggestions.push(
-      "Tambahkan `{SLOT}` agar operator bisa membedakan kedua slot capture dari nama file.",
-    );
+    suggestions.push(t(m.suggestSlot));
   }
   if (hasCollisionRisk && hasSession && hasSource) {
     // Pada skema sesi, nama yang sama itu DISENGAJA: satu sesi memang hanya
     // punya satu berkas per slot, dan capture ulang memang dimaksudkan
     // menggantikan yang sebelumnya.
-    warnings.push(
-      "Capture ulang pada sesi dan slot yang sama akan MENIMPA berkas sebelumnya di folder tujuan. Waktu capture setiap percobaan tetap tercatat di registry.",
-    );
+    warnings.push(t(m.overwriteWarning));
   } else if (hasCollisionRisk) {
-    warnings.push(
-      "Pattern ini berisiko menghasilkan nama ganda untuk capture yang berdekatan; aplikasi akan menambahkan suffix seperti `(2)` bila perlu.",
-    );
-    suggestions.push(
-      "Tambahkan `{INDEX}`, `{ss}`, atau `{TS}` jika ingin nama file lebih unik tanpa suffix tambahan.",
-    );
+    warnings.push(t(m.duplicateWarning));
+    suggestions.push(t(m.suggestUnique));
   }
 
   return {

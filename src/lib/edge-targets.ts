@@ -63,7 +63,11 @@ async function requireAdmin() {
   ]);
 
   if (!isSessionConfigured() || !isCardDbConfigured()) {
-    return { ok: false as const, message: "Konfigurasi server aplikasi belum lengkap." };
+    return {
+      ok: false as const,
+      code: "SERVER_NOT_CONFIGURED" as const,
+      message: "Konfigurasi server aplikasi belum lengkap.",
+    };
   }
 
   let userId: number | undefined;

@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { toast } from "sonner";
+import type { ZodIssue } from "zod";
 
 import {
   AlertDialog,
@@ -61,16 +62,18 @@ import {
   MIN_PASSWORD_LENGTH,
   resetAppUserPassword,
   resetPasswordSchema,
-  ROLE_LABELS,
   updateAppUser,
   updateUserSchema,
   USER_PLANT_ALL,
   USER_PLANT_OPTIONS,
-  userPlantLabel,
   USER_ROLES,
   type AppUser,
   type UserRole,
 } from "@/lib/user-admin";
+import { commonMessages as c } from "@/i18n/common";
+import { failureText } from "@/i18n/errors";
+import { usersMessages as m } from "@/i18n/users";
+import { useLocale, useT, type Message, type Translator } from "@/lib/i18n";
 
 export const Route = createFileRoute("/users")({
   // Penjaga tampilan. Yang mengikat sebenarnya ada di setiap serverFn di
@@ -90,21 +93,54 @@ export const Route = createFileRoute("/users")({
   }),
 });
 
-function formatDateTime(iso: string | null) {
+function formatDateTime(iso: string | null, locale: string) {
   if (!iso) return "—";
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "—";
-  const tanggal = date.toLocaleDateString("en-GB", {
+  const tanggal = date.toLocaleDateString(locale, {
     day: "2-digit",
     month: "short",
     year: "numeric",
   });
-  const jam = date.toLocaleTimeString("en-GB", {
+  const jam = date.toLocaleTimeString(locale, {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
   });
   return `${tanggal} ${jam}`;
+}
+
+// Sebutan peran dan plant untuk TAMPILAN. ROLE_LABELS dan userPlantLabel di
+// user-admin.ts tetap berbahasa Indonesia karena dipakai server untuk jejak
+// aktivitas, jadi halaman ini tidak memakainya.
+const ROLE_MESSAGES: Record<UserRole, Message> = {
+  admin: c.roleAdmin,
+  operator: c.roleOperator,
+  viewer: c.roleViewer,
+};
+
+function plantLabel(value: string, t: Translator) {
+  return value === USER_PLANT_ALL ? t(c.allPlants) : value;
+}
+
+// Pesan skema di user-admin.ts berbahasa Indonesia karena juga menjadi pesan
+// validasi di server. Di halaman ini kegagalannya dikenali dari kolom dan kode
+// isunya; yang tidak dikenal menampilkan pesan skemanya apa adanya.
+const VALIDATION_MESSAGES: Record<string, Message> = {
+  "username:too_small": m.usernameTooShort,
+  "username:too_big": m.usernameTooLong,
+  "username:invalid_string": m.usernameFormat,
+  "fullName:too_small": m.fullNameRequired,
+  "email:invalid_string": m.emailInvalid,
+  "email:too_big": m.emailTooLong,
+  "password:too_small": m.passwordTooShort,
+  "password:too_big": m.passwordTooLong,
+};
+
+function validationText(issue: ZodIssue | undefined, t: Translator, fallback: Message) {
+  if (!issue) return t(fallback);
+  const known = VALIDATION_MESSAGES[`${String(issue.path[0])}:${issue.code}`];
+  return known ? t(known, { min: MIN_PASSWORD_LENGTH }) : issue.message;
 }
 
 type FormState = {
@@ -131,6 +167,8 @@ const EMPTY_FORM: FormState = {
 
 function UsersPage() {
   const router = useRouter();
+  const t = useT();
+  const locale = useLocale();
 
   const [users, setUsers] = useState<AppUser[] | null>(null);
   const [actorId, setActorId] = useState<number | null>(null);
@@ -148,7 +186,7 @@ function UsersPage() {
     try {
       const result = await listAppUsers();
       if (!result.ok) {
-        setLoadError(result.message);
+        setLoadError(failureText(t, result));
         setUsers(null);
         return;
       }
@@ -158,14 +196,14 @@ function UsersPage() {
     } catch (error) {
       setLoadError(
         error instanceof Error
-          ? `Server aplikasi tidak merespons: ${error.message}`
-          : "Server aplikasi tidak merespons.",
+          ? t(m.serverNoResponseWith, { reason: error.message })
+          : t(m.serverNoResponse),
       );
       setUsers(null);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     refresh();
@@ -193,14 +231,14 @@ function UsersPage() {
     try {
       const result = await deleteAppUser({ data: { id: deleteTarget.id } });
       if (!result.ok) {
-        toast.error(result.message);
+        toast.error(failureText(t, result));
         return;
       }
-      toast.success(`Akun "${result.username}" dihapus`);
+      toast.success(t(m.deleted, { username: result.username }));
       setDeleteTarget(null);
       await refresh();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Akun gagal dihapus.");
+      toast.error(error instanceof Error ? error.message : t(m.deleteFailed));
     } finally {
       setBusy(false);
     }
@@ -210,19 +248,16 @@ function UsersPage() {
     <div className="p-6">
       <header className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <PageTitle
-            title="Users"
-            description="Kelola akun yang boleh masuk ke aplikasi, perannya, dan status aktifnya."
-          />
+          <PageTitle title={t(c.navUsers)} description={t(m.description)} />
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="sm" onClick={refresh} disabled={loading}>
             <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-            Muat ulang
+            {t(m.reload)}
           </Button>
           <Button size="sm" onClick={() => setFormTarget("new")}>
             <UserPlus className="mr-2 h-4 w-4" />
-            Tambah user
+            {t(m.addUser)}
           </Button>
         </div>
       </header>
@@ -234,7 +269,7 @@ function UsersPage() {
         >
           <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
           <div>
-            <p className="font-medium">Daftar akun tidak bisa dimuat</p>
+            <p className="font-medium">{t(m.loadFailedTitle)}</p>
             <p className="mt-0.5 text-destructive/90">{loadError}</p>
           </div>
         </div>
@@ -246,15 +281,19 @@ function UsersPage() {
           <Input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Cari username, nama, atau email"
+            placeholder={t(m.searchPlaceholder)}
             className="pl-9"
-            aria-label="Cari akun"
+            aria-label={t(m.searchLabel)}
           />
         </div>
         {users && (
           <p className="text-xs text-muted-foreground">
-            {terlihat.length} dari {users.length} akun · {jumlahAdminAktif} {ROLE_LABELS.admin}{" "}
-            aktif
+            {t(m.summary, {
+              shown: terlihat.length,
+              total: users.length,
+              admins: jumlahAdminAktif,
+              role: t(ROLE_MESSAGES.admin),
+            })}
           </p>
         )}
       </div>
@@ -263,14 +302,14 @@ function UsersPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Username</TableHead>
-              <TableHead>Nama lengkap</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Peran</TableHead>
-              <TableHead>Plant</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Login terakhir</TableHead>
-              <TableHead className="text-right">Aksi</TableHead>
+              <TableHead>{t(m.username)}</TableHead>
+              <TableHead>{t(m.fullName)}</TableHead>
+              <TableHead>{t(m.email)}</TableHead>
+              <TableHead>{t(m.role)}</TableHead>
+              <TableHead>{t(m.plant)}</TableHead>
+              <TableHead>{t(m.status)}</TableHead>
+              <TableHead>{t(m.lastLogin)}</TableHead>
+              <TableHead className="text-right">{t(m.actions)}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -278,15 +317,13 @@ function UsersPage() {
               <TableRow>
                 <TableCell colSpan={8} className="py-10 text-center text-sm text-muted-foreground">
                   <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-                  Memuat daftar akun...
+                  {t(m.loading)}
                 </TableCell>
               </TableRow>
             ) : terlihat.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={8} className="py-10 text-center text-sm text-muted-foreground">
-                  {users && users.length > 0
-                    ? "Tidak ada akun yang cocok dengan pencarian itu."
-                    : "Belum ada akun terdaftar."}
+                  {users && users.length > 0 ? t(m.noMatch) : t(m.empty)}
                 </TableCell>
               </TableRow>
             ) : (
@@ -299,7 +336,7 @@ function UsersPage() {
                         {user.username}
                         {diriSendiri && (
                           <Badge variant="outline" className="text-[10px]">
-                            Anda
+                            {t(m.you)}
                           </Badge>
                         )}
                       </span>
@@ -310,16 +347,16 @@ function UsersPage() {
                       {user.role === "admin" ? (
                         <Badge className="gap-1">
                           <ShieldCheck className="h-3 w-3" />
-                          {ROLE_LABELS.admin}
+                          {t(ROLE_MESSAGES.admin)}
                         </Badge>
                       ) : user.role === "viewer" ? (
-                        <Badge variant="outline">{ROLE_LABELS.viewer}</Badge>
+                        <Badge variant="outline">{t(ROLE_MESSAGES.viewer)}</Badge>
                       ) : (
-                        <Badge variant="secondary">{ROLE_LABELS.operator}</Badge>
+                        <Badge variant="secondary">{t(ROLE_MESSAGES.operator)}</Badge>
                       )}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {userPlantLabel(user.plant)}
+                      {plantLabel(user.plant, t)}
                     </TableCell>
                     <TableCell>
                       <span
@@ -332,11 +369,11 @@ function UsersPage() {
                             user.isActive ? "bg-emerald-500" : "bg-muted-foreground/40"
                           }`}
                         />
-                        {user.isActive ? "Aktif" : "Nonaktif"}
+                        {user.isActive ? t(m.active) : t(m.inactive)}
                       </span>
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {formatDateTime(user.lastLoginAt)}
+                      {formatDateTime(user.lastLoginAt, locale)}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
@@ -345,8 +382,8 @@ function UsersPage() {
                           size="icon"
                           className="h-8 w-8"
                           onClick={() => setFormTarget(user)}
-                          aria-label={`Ubah ${user.username}`}
-                          title="Ubah"
+                          aria-label={t(m.editNamed, { username: user.username })}
+                          title={t(m.edit)}
                         >
                           <Pencil className="h-4 w-4" />
                         </Button>
@@ -355,8 +392,8 @@ function UsersPage() {
                           size="icon"
                           className="h-8 w-8"
                           onClick={() => setResetTarget(user)}
-                          aria-label={`Reset password ${user.username}`}
-                          title="Reset password"
+                          aria-label={t(m.resetPasswordNamed, { username: user.username })}
+                          title={t(m.resetPassword)}
                         >
                           <KeyRound className="h-4 w-4" />
                         </Button>
@@ -366,8 +403,8 @@ function UsersPage() {
                           className="h-8 w-8 text-destructive hover:text-destructive"
                           onClick={() => setDeleteTarget(user)}
                           disabled={diriSendiri}
-                          aria-label={`Hapus ${user.username}`}
-                          title={diriSendiri ? "Tidak bisa menghapus akun sendiri" : "Hapus"}
+                          aria-label={t(m.deleteNamed, { username: user.username })}
+                          title={diriSendiri ? t(m.cannotDeleteSelf) : t(m.delete)}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -402,15 +439,13 @@ function UsersPage() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Hapus akun &quot;{deleteTarget?.username}&quot;?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Akun ini langsung kehilangan akses. Foto dan catatan capture yang sudah dibuatnya
-              tetap ada. Tindakan ini tidak bisa dibatalkan &mdash; kalau ragu, nonaktifkan saja
-              lewat tombol Ubah.
-            </AlertDialogDescription>
+            <AlertDialogTitle>
+              {t(m.deleteTitle, { username: deleteTarget?.username ?? "" })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>{t(m.deleteBody)}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={busy}>Batal</AlertDialogCancel>
+            <AlertDialogCancel disabled={busy}>{t(m.cancel)}</AlertDialogCancel>
             <AlertDialogAction
               onClick={(event) => {
                 event.preventDefault();
@@ -419,7 +454,7 @@ function UsersPage() {
               disabled={busy}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {busy ? "Menghapus..." : "Hapus akun"}
+              {busy ? t(m.deleting) : t(m.deleteAccount)}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -441,6 +476,7 @@ function UserFormDialog({
 }) {
   const mode = target === "new" ? "create" : "edit";
   const existing = target && target !== "new" ? target : null;
+  const t = useT();
 
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [error, setError] = useState<string | null>(null);
@@ -476,7 +512,7 @@ function UserFormDialog({
     // gunanya semata menangkap salah ketik sebelum passwordnya tersimpan
     // ter-hash dan tidak bisa dibaca siapa pun lagi.
     if (!existing && form.password !== form.confirmPassword) {
-      setError("Dua kolom password belum sama.");
+      setError(t(m.passwordsMismatch));
       return;
     }
 
@@ -503,7 +539,7 @@ function UserFormDialog({
         });
 
     if (!check.success) {
-      setError(check.error.issues[0]?.message ?? "Ada isian yang belum benar.");
+      setError(validationText(check.error.issues[0], t, m.formInvalid));
       return;
     }
 
@@ -534,18 +570,18 @@ function UserFormDialog({
           });
 
       if (!result.ok) {
-        setError(result.message);
+        setError(failureText(t, result));
         return;
       }
 
       toast.success(
         existing
-          ? `Akun "${result.user.username}" diperbarui`
-          : `Akun "${result.user.username}" dibuat`,
+          ? t(m.updated, { username: result.user.username })
+          : t(m.created, { username: result.user.username }),
       );
       await onSaved(existing?.id === actorId);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Akun gagal disimpan.");
+      setError(caught instanceof Error ? caught.message : t(m.saveFailed));
     } finally {
       setSaving(false);
     }
@@ -555,17 +591,15 @@ function UserFormDialog({
     <Dialog open={target !== null} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{mode === "create" ? "Tambah user" : "Ubah user"}</DialogTitle>
+          <DialogTitle>{mode === "create" ? t(m.addUser) : t(m.editUser)}</DialogTitle>
           <DialogDescription>
-            {mode === "create"
-              ? "Akun langsung bisa dipakai masuk begitu disimpan."
-              : "Username tidak bisa diubah karena dipakai sebagai identitas login dan di jejak audit."}
+            {mode === "create" ? t(m.createHint) : t(m.editHint)}
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           <div className="space-y-1.5">
-            <Label htmlFor="username">Username</Label>
+            <Label htmlFor="username">{t(m.username)}</Label>
             <Input
               id="username"
               value={form.username}
@@ -576,25 +610,23 @@ function UserFormDialog({
               placeholder="operator.bin1"
             />
             {mode === "create" && (
-              <p className="text-xs text-muted-foreground">
-                Huruf kecil, angka, titik, garis, atau underscore. Minimal 3 karakter.
-              </p>
+              <p className="text-xs text-muted-foreground">{t(m.usernameHint)}</p>
             )}
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="fullName">Nama lengkap</Label>
+            <Label htmlFor="fullName">{t(m.fullName)}</Label>
             <Input
               id="fullName"
               value={form.fullName}
               onChange={(event) => setForm((f) => ({ ...f, fullName: event.target.value }))}
               disabled={saving}
-              placeholder="Nama yang tampil di sidebar"
+              placeholder={t(m.fullNamePlaceholder)}
             />
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="email">Email (opsional)</Label>
+            <Label htmlFor="email">{t(m.emailOptional)}</Label>
             <Input
               id="email"
               type="email"
@@ -602,17 +634,15 @@ function UserFormDialog({
               onChange={(event) => setForm((f) => ({ ...f, email: event.target.value }))}
               disabled={saving}
               autoComplete="off"
-              placeholder="nama@mbma.co.id"
+              placeholder={t(m.emailPlaceholder)}
             />
-            <p className="text-xs text-muted-foreground">
-              Kalau diisi, operator boleh memakainya untuk masuk selain username.
-            </p>
+            <p className="text-xs text-muted-foreground">{t(m.emailHint)}</p>
           </div>
 
           {mode === "create" && (
             <>
               <div className="space-y-1.5">
-                <Label htmlFor="password">Password awal</Label>
+                <Label htmlFor="password">{t(m.initialPassword)}</Label>
                 <Input
                   id="password"
                   type="password"
@@ -620,7 +650,7 @@ function UserFormDialog({
                   onChange={(event) => setForm((f) => ({ ...f, password: event.target.value }))}
                   disabled={saving}
                   autoComplete="new-password"
-                  placeholder={`Minimal ${MIN_PASSWORD_LENGTH} karakter`}
+                  placeholder={t(m.passwordMinPlaceholder, { min: MIN_PASSWORD_LENGTH })}
                 />
                 <PasswordStrengthMeter
                   password={form.password}
@@ -630,7 +660,7 @@ function UserFormDialog({
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="confirmPassword">Ulangi password</Label>
+                <Label htmlFor="confirmPassword">{t(m.repeatPassword)}</Label>
                 <Input
                   id="confirmPassword"
                   type="password"
@@ -640,7 +670,7 @@ function UserFormDialog({
                   }
                   disabled={saving}
                   autoComplete="new-password"
-                  placeholder="Ketik ulang password yang sama"
+                  placeholder={t(m.repeatPasswordPlaceholder)}
                   aria-invalid={
                     form.confirmPassword !== "" && form.confirmPassword !== form.password
                       ? true
@@ -648,14 +678,14 @@ function UserFormDialog({
                   }
                 />
                 {form.confirmPassword !== "" && form.confirmPassword !== form.password && (
-                  <p className="text-xs text-destructive">Belum sama dengan kolom di atas.</p>
+                  <p className="text-xs text-destructive">{t(m.notSameAsAbove)}</p>
                 )}
               </div>
             </>
           )}
 
           <div className="space-y-1.5">
-            <Label htmlFor="plant">Plant</Label>
+            <Label htmlFor="plant">{t(m.plant)}</Label>
             <Select
               value={form.plant}
               onValueChange={(value) => setForm((f) => ({ ...f, plant: value }))}
@@ -667,20 +697,17 @@ function UserFormDialog({
               <SelectContent>
                 {USER_PLANT_OPTIONS.map((plant) => (
                   <SelectItem key={plant} value={plant}>
-                    {userPlantLabel(plant)}
+                    {plantLabel(plant, t)}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-xs text-muted-foreground">
-              Mengunci akses capture, preview, dan device ke plant ini. Akun dengan pilihan
-              Semua Plant tetap bisa lintas-plant, termasuk Super Admin.
-            </p>
+            <p className="text-xs text-muted-foreground">{t(m.plantHint)}</p>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label htmlFor="role">Peran</Label>
+              <Label htmlFor="role">{t(m.role)}</Label>
               <Select
                 value={form.role}
                 onValueChange={(value) => setForm((f) => ({ ...f, role: value as UserRole }))}
@@ -692,19 +719,21 @@ function UserFormDialog({
                 <SelectContent>
                   {USER_ROLES.map((role) => (
                     <SelectItem key={role} value={role}>
-                      {ROLE_LABELS[role]}
+                      {t(ROLE_MESSAGES[role])}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                Hanya {ROLE_LABELS.admin} yang bisa membuka halaman ini. {ROLE_LABELS.viewer} hanya
-                bisa melihat Gallery.
+                {t(m.roleHint, {
+                  admin: t(ROLE_MESSAGES.admin),
+                  viewer: t(ROLE_MESSAGES.viewer),
+                })}
               </p>
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="isActive">Status</Label>
+              <Label htmlFor="isActive">{t(m.status)}</Label>
               <div className="flex h-9 items-center gap-2.5">
                 <Switch
                   id="isActive"
@@ -712,11 +741,9 @@ function UserFormDialog({
                   onCheckedChange={(checked) => setForm((f) => ({ ...f, isActive: checked }))}
                   disabled={saving}
                 />
-                <span className="text-sm">{form.isActive ? "Aktif" : "Nonaktif"}</span>
+                <span className="text-sm">{form.isActive ? t(m.active) : t(m.inactive)}</span>
               </div>
-              <p className="text-xs text-muted-foreground">
-                Akun nonaktif ditolak saat login, tanpa dihapus.
-              </p>
+              <p className="text-xs text-muted-foreground">{t(m.inactiveHint)}</p>
             </div>
           </div>
 
@@ -732,11 +759,11 @@ function UserFormDialog({
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
-              Batal
+              {t(m.cancel)}
             </Button>
             <Button type="submit" disabled={saving}>
               {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {mode === "create" ? "Buat akun" : "Simpan perubahan"}
+              {mode === "create" ? t(m.createAccount) : t(m.saveChanges)}
             </Button>
           </DialogFooter>
         </form>
@@ -750,6 +777,7 @@ function ResetPasswordDialog({ target, onClose }: { target: AppUser | null; onCl
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const t = useT();
 
   useEffect(() => {
     if (!target) return;
@@ -763,13 +791,13 @@ function ResetPasswordDialog({ target, onClose }: { target: AppUser | null; onCl
     if (!target || saving) return;
 
     if (password !== confirm) {
-      setError("Dua kolom password belum sama.");
+      setError(t(m.passwordsMismatch));
       return;
     }
 
     const check = resetPasswordSchema.safeParse({ id: target.id, password });
     if (!check.success) {
-      setError(check.error.issues[0]?.message ?? "Password belum memenuhi syarat.");
+      setError(validationText(check.error.issues[0], t, m.passwordInvalid));
       return;
     }
 
@@ -778,15 +806,15 @@ function ResetPasswordDialog({ target, onClose }: { target: AppUser | null; onCl
     try {
       const result = await resetAppUserPassword({ data: { id: target.id, password } });
       if (!result.ok) {
-        setError(result.message);
+        setError(failureText(t, result));
         return;
       }
-      toast.success(`Password "${result.username}" diganti`, {
-        description: "Beri tahu operatornya lewat jalur yang aman, bukan lewat grup chat.",
+      toast.success(t(m.passwordChanged, { username: result.username }), {
+        description: t(m.passwordChangedHint),
       });
       onClose();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Password gagal disimpan.");
+      setError(caught instanceof Error ? caught.message : t(m.passwordSaveFailed));
     } finally {
       setSaving(false);
     }
@@ -796,16 +824,15 @@ function ResetPasswordDialog({ target, onClose }: { target: AppUser | null; onCl
     <Dialog open={target !== null} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Reset password</DialogTitle>
+          <DialogTitle>{t(m.resetPassword)}</DialogTitle>
           <DialogDescription>
-            Password baru untuk &quot;{target?.username}&quot;. Password lama tidak bisa dibaca
-            siapa pun, termasuk Super Admin &mdash; yang tersimpan cuma hash-nya.
+            {t(m.resetBody, { username: target?.username ?? "" })}
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           <div className="space-y-1.5">
-            <Label htmlFor="newPassword">Password baru</Label>
+            <Label htmlFor="newPassword">{t(m.newPassword)}</Label>
             <Input
               id="newPassword"
               type="password"
@@ -814,7 +841,7 @@ function ResetPasswordDialog({ target, onClose }: { target: AppUser | null; onCl
               disabled={saving}
               autoComplete="new-password"
               autoFocus
-              placeholder={`Minimal ${MIN_PASSWORD_LENGTH} karakter`}
+              placeholder={t(m.passwordMinPlaceholder, { min: MIN_PASSWORD_LENGTH })}
             />
             <PasswordStrengthMeter
               password={password}
@@ -824,7 +851,7 @@ function ResetPasswordDialog({ target, onClose }: { target: AppUser | null; onCl
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="confirmPassword">Ulangi password baru</Label>
+            <Label htmlFor="confirmPassword">{t(m.repeatNewPassword)}</Label>
             <Input
               id="confirmPassword"
               type="password"
@@ -847,11 +874,11 @@ function ResetPasswordDialog({ target, onClose }: { target: AppUser | null; onCl
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
-              Batal
+              {t(m.cancel)}
             </Button>
             <Button type="submit" disabled={saving}>
               {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Ganti password
+              {t(m.changePassword)}
             </Button>
           </DialogFooter>
         </form>

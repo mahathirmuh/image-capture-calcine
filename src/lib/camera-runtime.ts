@@ -1,3 +1,7 @@
+import { cameraRuntimeMessages as m } from "@/i18n/capture";
+import { failureText } from "@/i18n/errors";
+import { translateId, type Translator } from "@/lib/i18n";
+
 import type { DeviceStatus } from "./camera-api";
 
 export type CameraRuntimeIssueTone = "danger" | "warning" | "info";
@@ -28,74 +32,82 @@ export function getRuntimeErrorCode(error: unknown): string | null {
     : null;
 }
 
+/**
+ * Teks tampilan untuk error yang DILEMPAR (bukan dikembalikan) server function.
+ * Dalam bahasa Indonesia hasilnya pesan error itu sendiri; di bahasa lain kode
+ * yang dikenal diterjemahkan. Pesan mentah untuk log tetap diambil terpisah.
+ */
+export function getRuntimeErrorText(
+  error: unknown,
+  fallback: string,
+  t: Translator = translateId,
+): string {
+  if (!(error instanceof Error)) return fallback;
+  if (!error.message) return error.message;
+  return failureText(t, { code: getRuntimeErrorCode(error), message: error.message });
+}
+
 export function describeCameraRuntimeIssue(
   code: string | null | undefined,
   fallbackMessage?: string | null,
+  t: Translator = translateId,
 ): CameraRuntimeIssueDescriptor {
   switch (code) {
     case "UNREACHABLE":
       return {
         code,
-        title: "Edge API tidak terhubung",
-        detail:
-          fallbackMessage || "Aplikasi tidak bisa menjangkau service kamera pada edge device.",
-        nextAction: "Periksa koneksi jaringan, status Mini PC, dan service edge camera API.",
+        title: t(m.unreachableTitle),
+        detail: fallbackMessage || t(m.unreachableDetail),
+        nextAction: t(m.unreachableAction),
         tone: "danger",
       };
     case "SESSION_CONFLICT":
       return {
         code,
-        title: "Kamera sedang dipakai station lain",
-        detail: fallbackMessage || "Session kamera masih dikunci client lain.",
-        nextAction: "Tunggu station lain selesai, lalu hubungkan ulang dari halaman Capture.",
+        title: t(m.conflictTitle),
+        detail: fallbackMessage || t(m.conflictDetail),
+        nextAction: t(m.conflictAction),
         tone: "warning",
       };
     case "SESSION_LOST":
     case "INVALID_SESSION":
       return {
         code,
-        title: "Session kamera terputus",
-        detail:
-          fallbackMessage || "Lease session hilang atau kedaluwarsa saat operator masih aktif.",
-        nextAction:
-          "Biarkan aplikasi mencoba reconnect otomatis, atau klik Start camera bila perlu.",
+        title: t(m.sessionLostTitle),
+        detail: fallbackMessage || t(m.sessionLostDetail),
+        nextAction: t(m.sessionLostAction),
         tone: "warning",
       };
     case "CAMERA_DISCONNECTED":
       return {
         code,
-        title: "Kamera USB tidak terdeteksi",
-        detail: fallbackMessage || "Edge device online, tetapi kamera tidak terbaca.",
-        nextAction: "Cek kabel USB, power kamera, lalu tunggu status kamera kembali ready.",
+        title: t(m.cameraDisconnectedTitle),
+        detail: fallbackMessage || t(m.cameraDisconnectedDetail),
+        nextAction: t(m.cameraDisconnectedAction),
         tone: "danger",
       };
     case "PREVIEW_UNAVAILABLE":
       return {
         code,
-        title: "Preview kamera belum tersedia",
-        detail: fallbackMessage || "Frame preview tidak bisa diambil untuk sementara.",
-        nextAction: "Tunggu beberapa detik atau restart sesi kamera bila preview tetap kosong.",
+        title: t(m.previewUnavailableTitle),
+        detail: fallbackMessage || t(m.previewUnavailableDetail),
+        nextAction: t(m.previewUnavailableAction),
         tone: "warning",
       };
     case "REQUEST_FAILED":
       return {
         code,
-        title: "Permintaan ke kamera gagal",
-        detail:
-          fallbackMessage || "Edge API merespons dengan kegagalan saat memproses operasi kamera.",
-        nextAction:
-          "Periksa detail error dari edge API dan ulangi operasi setelah status perangkat normal.",
+        title: t(m.requestFailedTitle),
+        detail: fallbackMessage || t(m.requestFailedDetail),
+        nextAction: t(m.requestFailedAction),
         tone: "warning",
       };
     default:
       return {
         code: code ?? "UNKNOWN",
-        title: "Status runtime perlu perhatian",
-        detail:
-          fallbackMessage ||
-          "Terjadi kondisi runtime yang belum berhasil dipetakan secara spesifik.",
-        nextAction:
-          "Periksa status edge, koneksi kamera, dan ulangi operasi setelah kondisi stabil.",
+        title: t(m.unknownTitle),
+        detail: fallbackMessage || t(m.unknownDetail),
+        nextAction: t(m.unknownAction),
         tone: "warning",
       };
   }
@@ -136,139 +148,134 @@ export function shouldRenewSession(deviceStatus: DeviceStatus | null): boolean {
   return deviceStatus === null || deviceStatus.online;
 }
 
-export function getCaptureActionHint({
-  sessionId,
-  sessionStarting,
-  waitingForCamera,
-  cameraAsleep,
-  deviceStatus,
-  operationInProgress,
-}: CaptureRuntimeHintArgs): string {
+export function getCaptureActionHint(
+  {
+    sessionId,
+    sessionStarting,
+    waitingForCamera,
+    cameraAsleep,
+    deviceStatus,
+    operationInProgress,
+  }: CaptureRuntimeHintArgs,
+  t: Translator = translateId,
+): string {
   if (operationInProgress) {
-    return "Tunggu operasi kamera yang sedang berjalan selesai lebih dulu.";
+    return t(m.hintOperationRunning);
   }
   if (sessionStarting) {
-    return "Aplikasi sedang membuat session kamera ke edge device.";
+    return t(m.hintSessionStarting);
   }
   if (!deviceStatus?.online) {
-    return "Edge API belum terhubung, jadi capture belum bisa dimulai.";
+    return t(m.hintEdgeOffline);
   }
   if (!deviceStatus.camera?.connected) {
-    return "Hubungkan kamera USB ke edge device sebelum capture atau autofocus.";
+    return t(m.hintCameraUnplugged);
   }
   if (waitingForCamera) {
-    return "Kamera masih dipakai station lain; tunggu lease dilepas lalu coba lagi.";
+    return t(m.hintWaiting);
   }
   if (!sessionId) {
-    return "Klik Start camera untuk membuat session aktif terlebih dahulu.";
+    return t(m.hintStartSession);
   }
   if (cameraAsleep || deviceStatus.connectionState !== "ready") {
-    return "Bangunkan kamera atau stabilkan koneksi sampai status edge kembali siap.";
+    return t(m.hintWakeCamera);
   }
-  return "Kamera siap dipakai untuk capture dan autofocus.";
+  return t(m.hintReady);
 }
 
-export function getCaptureRuntimeActions({
-  sessionId,
-  sessionStarting,
-  waitingForCamera,
-  cameraAsleep,
-  deviceStatus,
-  operationInProgress,
-}: CaptureRuntimeHintArgs): string[] {
+export function getCaptureRuntimeActions(
+  {
+    sessionId,
+    sessionStarting,
+    waitingForCamera,
+    cameraAsleep,
+    deviceStatus,
+    operationInProgress,
+  }: CaptureRuntimeHintArgs,
+  t: Translator = translateId,
+): string[] {
   const hasHardwareBlocker = !deviceStatus?.online || !deviceStatus.camera?.connected;
   const actions = [
-    !deviceStatus?.online
-      ? "Pastikan Mini PC edge menyala dan service camera API dapat dijangkau dari aplikasi."
-      : null,
-    deviceStatus?.online && !deviceStatus.camera?.connected
-      ? "Periksa kabel USB, power kamera, dan enumerasi device pada edge node."
-      : null,
-    waitingForCamera && !hasHardwareBlocker
-      ? "Tunggu station lain selesai memakai kamera, atau batalkan lalu coba lagi nanti."
-      : null,
-    sessionStarting ? "Biarkan proses connect selesai sebelum menjalankan operasi lain." : null,
-    sessionId && cameraAsleep
-      ? "Bangunkan kamera dengan half-press shutter atau power-cycle bila tetap sleep."
-      : null,
-    sessionId && deviceStatus?.connectionState === "error"
-      ? "Koneksi edge berada pada status error; refresh session atau restart service edge camera."
-      : null,
+    !deviceStatus?.online ? t(m.actionEdgeOffline) : null,
+    deviceStatus?.online && !deviceStatus.camera?.connected ? t(m.actionCheckUsb) : null,
+    waitingForCamera && !hasHardwareBlocker ? t(m.actionWaitStation) : null,
+    sessionStarting ? t(m.actionLetConnect) : null,
+    sessionId && cameraAsleep ? t(m.actionWakeCamera) : null,
+    sessionId && deviceStatus?.connectionState === "error" ? t(m.actionEdgeError) : null,
     !sessionId && deviceStatus?.online && deviceStatus.camera?.connected && !sessionStarting
-      ? "Klik Start camera untuk membuka session baru sebelum mengambil gambar."
+      ? t(m.actionStartCamera)
       : null,
-    operationInProgress
-      ? "Tunggu proses capture/autofocus aktif selesai agar state kamera kembali idle."
-      : null,
+    operationInProgress ? t(m.actionWaitOperation) : null,
   ].filter(Boolean);
 
-  return actions.length > 0
-    ? (actions as string[])
-    : ["Runtime kamera terlihat stabil. Operator bisa lanjut capture atau autofocus."];
+  return actions.length > 0 ? (actions as string[]) : [t(m.actionStable)];
 }
 
-export function getCaptureSessionSummary({
-  deviceStatus,
-  sessionId,
-  sessionStarting,
-  waitingForCamera,
-}: {
-  deviceStatus: DeviceStatus | null;
-  sessionId: string | null;
-  sessionStarting: boolean;
-  waitingForCamera: boolean;
-}): { title: string; detail: string; tone: CameraRuntimeIssueTone } {
+export function getCaptureSessionSummary(
+  {
+    deviceStatus,
+    sessionId,
+    sessionStarting,
+    waitingForCamera,
+  }: {
+    deviceStatus: DeviceStatus | null;
+    sessionId: string | null;
+    sessionStarting: boolean;
+    waitingForCamera: boolean;
+  },
+  t: Translator = translateId,
+): { title: string; detail: string; tone: CameraRuntimeIssueTone } {
   if (waitingForCamera) {
     return {
-      title: "Menunggu kamera tersedia",
-      detail: "Kamera sedang dipakai station lain, jadi session baru belum bisa diambil.",
+      title: t(m.summaryWaitingTitle),
+      detail: t(m.summaryWaitingDetail),
       tone: "warning",
     };
   }
 
   if (sessionStarting) {
     return {
-      title: "Sedang menghubungkan session kamera",
-      detail: "Aplikasi sedang membuat session baru ke edge device.",
+      title: t(m.summaryStartingTitle),
+      detail: t(m.summaryStartingDetail),
       tone: "warning",
     };
   }
 
   if (!sessionId) {
     return {
-      title: "Belum ada session aktif",
-      detail: "Operator perlu memulai session sebelum capture atau autofocus bisa dijalankan.",
+      title: t(m.summaryNoSessionTitle),
+      detail: t(m.summaryNoSessionDetail),
       tone: "warning",
     };
   }
 
   if (!deviceStatus?.online) {
     return {
-      title: "Session aktif, edge belum stabil",
-      detail: "Session sudah ada, tetapi edge API belum terbaca stabil oleh aplikasi.",
+      title: t(m.summaryEdgeUnstableTitle),
+      detail: t(m.summaryEdgeUnstableDetail),
       tone: "warning",
     };
   }
 
   if (!deviceStatus.camera?.connected) {
     return {
-      title: "Session aktif, kamera USB belum terdeteksi",
-      detail: "Session sudah ada, tetapi kamera fisik belum terbaca oleh edge node.",
+      title: t(m.summaryUsbMissingTitle),
+      detail: t(m.summaryUsbMissingDetail),
       tone: "danger",
     };
   }
 
   if (deviceStatus.connectionState !== "ready") {
     return {
-      title: "Session aktif, kamera belum siap",
-      detail: `Koneksi kamera masih berada pada state ${deviceStatus.connectionState ?? "unknown"}.`,
+      title: t(m.summaryNotReadyTitle),
+      detail: t(m.summaryNotReadyDetail, { state: deviceStatus.connectionState ?? "unknown" }),
       tone: "warning",
     };
   }
 
   return {
-    title: "Session aktif dan siap dipakai",
-    detail: "Preview, autofocus, dan capture bisa dijalankan dari halaman ini.",
+    title: t(m.summaryReadyTitle),
+    detail: t(m.summaryReadyDetail),
     tone: "success",
   };
 }

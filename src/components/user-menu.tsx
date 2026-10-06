@@ -14,7 +14,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { logout } from "@/lib/auth";
 import { useSessionUser } from "@/lib/use-session-user";
-import { ROLE_LABELS, type UserRole } from "@/lib/user-admin";
+import { commonMessages as c, roleMessage } from "@/i18n/common";
+import { useT } from "@/lib/i18n";
 
 function initialsOf(fullName: string) {
   const parts = fullName.trim().split(/\s+/).filter(Boolean);
@@ -34,10 +35,12 @@ export function UserMenu() {
   const user = useSessionUser();
   const router = useRouter();
   const [signingOut, setSigningOut] = useState(false);
+  const t = useT();
 
   if (!user) return null;
 
-  const roleLabel = ROLE_LABELS[user.role as UserRole] ?? user.role;
+  const role = roleMessage(user.role);
+  const roleLabel = role ? t(role) : user.role;
 
   async function handleLogout() {
     setSigningOut(true);
@@ -54,7 +57,9 @@ export function UserMenu() {
       await router.navigate({ to: "/login", search: { loggedOut: true }, replace: true });
     } catch (error) {
       toast.error(
-        error instanceof Error ? `Gagal keluar: ${error.message}` : "Gagal keluar dari sesi.",
+        error instanceof Error
+          ? t(c.signOutFailedWith, { reason: error.message })
+          : t(c.signOutFailed),
       );
       setSigningOut(false);
     }
@@ -66,7 +71,7 @@ export function UserMenu() {
         <Button
           variant="ghost"
           className="h-auto gap-2.5 px-2 py-1.5 hover:bg-accent"
-          aria-label={`Akun ${user.fullName}`}
+          aria-label={t(c.accountOf, { name: user.fullName })}
         >
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand text-[11px] font-semibold text-brand-foreground">
             {initialsOf(user.fullName)}
@@ -90,7 +95,7 @@ export function UserMenu() {
       <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuLabel className="font-normal">
           <p className="truncate text-sm font-medium">{user.fullName}</p>
-          <p className="truncate text-xs text-muted-foreground">{user.email ?? "Tanpa email"}</p>
+          <p className="truncate text-xs text-muted-foreground">{user.email ?? t(c.noEmail)}</p>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem
@@ -102,7 +107,7 @@ export function UserMenu() {
           className="text-destructive focus:text-destructive"
         >
           <LogOut className="mr-2 h-4 w-4" />
-          {signingOut ? "Keluar..." : "Keluar"}
+          {signingOut ? t(c.signingOut) : t(c.signOut)}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

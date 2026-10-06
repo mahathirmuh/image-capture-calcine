@@ -21,6 +21,11 @@ import {
   type SpoolSummary,
   type StorageProbeResult,
 } from "@/lib/storage-diagnostics";
+import { commonMessages as c } from "@/i18n/common";
+import { failureText } from "@/i18n/errors";
+import { deviceStatusText } from "@/i18n/device-status";
+import { storageMessages as m } from "@/i18n/storage";
+import { useLocale, useRichT, useT, type Translator } from "@/lib/i18n";
 
 export const Route = createFileRoute("/storage")({
   // Registry kamera dan tujuan simpan itu konfigurasi yang berlaku untuk semua
@@ -56,17 +61,16 @@ const OFFLINE_STATUS: DeviceStatus = {
   agentVersion: null,
   connectionState: null,
   capabilities: [],
-  statusMessage: "Storage belum bisa menjangkau edge camera service.",
   camera: null,
 };
 
-function formatDateTime(date: Date) {
-  const datePart = date.toLocaleDateString("en-GB", {
+function formatDateTime(date: Date, locale: string) {
+  const datePart = date.toLocaleDateString(locale, {
     day: "2-digit",
     month: "short",
     year: "numeric",
   });
-  const timePart = date.toLocaleTimeString("en-GB", {
+  const timePart = date.toLocaleTimeString(locale, {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
@@ -110,9 +114,9 @@ function StatusCard({
   );
 }
 
-function getPathKind(targetRoot: string | null | undefined) {
-  if (!targetRoot) return "Belum dikonfigurasi";
-  return targetRoot.startsWith("\\\\") ? "UNC share" : "Path lokal";
+function getPathKind(targetRoot: string | null | undefined, t: Translator) {
+  if (!targetRoot) return t(m.notConfigured);
+  return targetRoot.startsWith("\\\\") ? t(m.pathKindUnc) : t(m.pathKindLocal);
 }
 
 // Bentuk path harus cocok dengan OS app server, dan ketidakcocokannya adalah
@@ -121,14 +125,14 @@ function getPathKind(targetRoot: string | null | undefined) {
 // terisi, kartunya tampak beres, tapi container mengunyah backslash-nya jadi
 // satu nama berkas lalu gagal ENOENT. Probe akan menangkapnya juga, tapi
 // menyebut sebabnya di sini jauh lebih cepat dibaca daripada kode errornya.
-function getPathFormMismatch(config: StorageConfigSummary | null): string | null {
+function getPathFormMismatch(config: StorageConfigSummary | null, t: Translator): string | null {
   if (!config?.targetRoot) return null;
   const isUnc = config.targetRoot.startsWith("\\\\");
   if (isUnc && config.platform !== "win32") {
-    return `Path UNC tidak berlaku di app server ${config.platform}. Pakai path mount, misalnya /mnt/mti/ML/MTI.`;
+    return t(m.pathMismatchUnc, { platform: config.platform });
   }
   if (!isUnc && config.platform === "win32" && config.targetRoot.startsWith("/")) {
-    return "Path bergaya POSIX di app server Windows. Pakai bentuk UNC, misalnya \\\\host\\share\\folder.";
+    return t(m.pathMismatchPosix);
   }
   return null;
 }
@@ -141,32 +145,30 @@ function getSaveRootStatus(
   configLoading: boolean,
   probeResult: StorageProbeResult | null,
   probeLoading: boolean,
+  t: Translator,
 ): { label: string; tone: string } {
-  if (configLoading) return { label: "Mengecek...", tone: "text-muted-foreground" };
-  if (!config?.configured) return { label: "Belum dikonfigurasi", tone: "text-destructive" };
-  if (probeLoading) return { label: "Menguji koneksi...", tone: "text-muted-foreground" };
-  if (!probeResult) return { label: "Belum diuji", tone: "text-muted-foreground" };
+  if (configLoading) return { label: t(m.checking), tone: "text-muted-foreground" };
+  if (!config?.configured) return { label: t(m.notConfigured), tone: "text-destructive" };
+  if (probeLoading) return { label: t(m.testingConnection), tone: "text-muted-foreground" };
+  if (!probeResult) return { label: t(m.notTested), tone: "text-muted-foreground" };
   return probeResult.ok
-    ? { label: "Terhubung, bisa ditulis", tone: "text-emerald-700" }
-    : { label: "Tidak bisa diakses", tone: "text-destructive" };
+    ? { label: t(m.connectedWritable), tone: "text-emerald-700" }
+    : { label: t(m.notAccessible), tone: "text-destructive" };
 }
 
-function getProbeGuidance(result: StorageProbeResult): {
+function getProbeGuidance(
+  result: StorageProbeResult,
+  t: Translator,
+): {
   headline: string;
   causes: string[];
   actions: string[];
 } {
   if (result.ok) {
     return {
-      headline: "App server sudah bisa menulis dan menghapus file uji di target root ini.",
-      causes: [
-        "Path target merespons operasi create/delete dari runtime aplikasi.",
-        "Permission dasar untuk read/write terlihat tersedia pada proses app server saat probe dijalankan.",
-      ],
-      actions: [
-        "Lanjutkan uji end-to-end dari halaman Capture untuk memastikan edge service juga berhasil export file final.",
-        "Jika export nyata masih gagal, fokuskan pengecekan ke edge service, lease kamera, atau payload export.",
-      ],
+      headline: t(m.guideOkHeadline),
+      causes: [t(m.guideOkCauseResponds), t(m.guideOkCausePermission)],
+      actions: [t(m.guideOkActionEndToEnd), t(m.guideOkActionIfFails)],
     };
   }
 
@@ -175,74 +177,45 @@ function getProbeGuidance(result: StorageProbeResult): {
   switch (result.code) {
     case "NOT_CONFIGURED":
       return {
-        headline: "Auto-save belum punya target path karena `NETWORK_SAVE_ROOT` belum diisi.",
-        causes: [
-          "Environment app server belum memuat `NETWORK_SAVE_ROOT`.",
-          "File `.env` atau variable deployment belum diterapkan ke runtime yang aktif.",
-        ],
-        actions: [
-          "Isi `NETWORK_SAVE_ROOT` dengan path target yang benar lalu restart app server.",
-          "Setelah restart, buka halaman ini lagi dan jalankan probe ulang.",
-        ],
+        headline: t(m.guideNotConfiguredHeadline),
+        causes: [t(m.guideNotConfiguredCauseEnv), t(m.guideNotConfiguredCauseDeploy)],
+        actions: [t(m.guideNotConfiguredActionSet), t(m.guideNotConfiguredActionRerun)],
       };
     case "NOT_DIRECTORY":
       return {
-        headline: "Path yang dikonfigurasi ada, tetapi bukan folder yang bisa dipakai untuk save.",
-        causes: [
-          "Path menunjuk ke file, shortcut, atau target yang tidak resolve sebagai direktori.",
-          "Nilai env mengandung typo atau mengarah ke level path yang salah.",
-        ],
-        actions: [
-          "Perbarui `NETWORK_SAVE_ROOT` agar menunjuk langsung ke folder tujuan.",
-          "Verifikasi path tersebut dengan Explorer atau PowerShell pada mesin app server.",
-        ],
+        headline: t(m.guideNotDirectoryHeadline),
+        causes: [t(m.guideNotDirectoryCauseTarget), t(m.guideNotDirectoryCauseTypo)],
+        actions: [t(m.guideNotDirectoryActionUpdate), t(m.guideNotDirectoryActionVerify)],
       };
     case "ENOENT":
       return {
-        headline: "Target root tidak ditemukan dari sisi runtime aplikasi.",
+        headline: t(m.guideEnoentHeadline),
         causes: [
-          "Folder tujuan belum ada atau nama share/path salah.",
-          usesUncPath
-            ? "Host share atau nama folder UNC tidak bisa di-resolve dari mesin app server."
-            : "Path lokal tidak ada pada mesin tempat app server berjalan.",
+          t(m.guideEnoentCauseMissing),
+          usesUncPath ? t(m.guideEnoentCauseUnc) : t(m.guideEnoentCauseLocal),
         ],
-        actions: [
-          "Cek ulang ejaan path, termasuk nama host share dan subfolder.",
-          "Pastikan folder tujuan benar-benar ada lalu jalankan probe ulang.",
-        ],
+        actions: [t(m.guideEnoentActionSpelling), t(m.guideEnoentActionExists)],
       };
     case "EACCES":
     case "EPERM":
       return {
-        headline:
-          "Runtime aplikasi bisa melihat path target, tetapi tidak punya izin tulis yang cukup.",
+        headline: t(m.guideAccessHeadline),
         causes: [
-          "Akun proses app server tidak punya hak create/delete pada folder tujuan.",
-          usesUncPath
-            ? "UNC share meminta kredensial yang tidak dimiliki service account."
-            : "ACL folder lokal menolak akses write/delete untuk user service.",
+          t(m.guideAccessCauseAccount),
+          usesUncPath ? t(m.guideAccessCauseUnc) : t(m.guideAccessCauseLocal),
         ],
-        actions: [
-          "Jalankan service/app dengan akun yang memang punya akses ke folder tujuan.",
-          "Uji create/delete file manual menggunakan akun runtime yang sama dengan app server.",
-        ],
+        actions: [t(m.guideAccessActionAccount), t(m.guideAccessActionManual)],
       };
     default:
       return {
-        headline: usesUncPath
-          ? "UNC share belum bisa dipakai andal dari runtime aplikasi ini."
-          : "Probe gagal dengan error yang belum terklasifikasi otomatis.",
+        headline: usesUncPath ? t(m.guideOtherHeadlineUnc) : t(m.guideOtherHeadline),
         causes: [
-          usesUncPath
-            ? "Share jaringan mungkin tidak reachable dari service account, walau terlihat benar dari sesi login biasa."
-            : "Path target merespons tidak normal saat dicek oleh app server.",
-          "Proses app server bisa berjalan pada konteks user/credential yang berbeda dari operator yang sedang login.",
+          usesUncPath ? t(m.guideOtherCauseUnc) : t(m.guideOtherCauseLocal),
+          t(m.guideOtherCauseContext),
         ],
         actions: [
-          usesUncPath
-            ? "Coba akses UNC path yang sama langsung dari mesin app server memakai akun runtime yang sama."
-            : "Cek log runtime server dan uji create/delete file manual pada path target.",
-          "Pastikan host share, kredensial, izin tulis, dan policy service account sudah sesuai.",
+          usesUncPath ? t(m.guideOtherActionUnc) : t(m.guideOtherActionLocal),
+          t(m.guideOtherActionVerify),
         ],
       };
   }
@@ -250,6 +223,9 @@ function getProbeGuidance(result: StorageProbeResult): {
 
 function StoragePage() {
   const isAdmin = useIsAdmin();
+  const t = useT();
+  const rich = useRichT();
+  const locale = useLocale();
   const [config, setConfig] = useState<StorageConfigSummary | null>(null);
   const [configLoading, setConfigLoading] = useState(true);
   const [deviceStatus, setDeviceStatus] = useState<DeviceStatus | null>(null);
@@ -322,78 +298,66 @@ function StoragePage() {
 
   const liveCaptureSaveReady = !!config?.configured && !!deviceStatus?.online;
   const lastProbeOk = probeResult?.ok ?? null;
-  const saveRootStatus = getSaveRootStatus(config, configLoading, probeResult, probeLoading);
-  const pathFormMismatch = getPathFormMismatch(config);
+  // OFFLINE_STATUS tidak membawa teksnya sendiri: pesannya diterjemahkan saat
+  // render, supaya ikut berganti bersama bahasa antarmuka.
+  const deviceStatusMessage =
+    deviceStatus === OFFLINE_STATUS
+      ? t(m.edgeServiceUnreachable)
+      : deviceStatusText(t, deviceStatus);
+  const saveRootStatus = getSaveRootStatus(config, configLoading, probeResult, probeLoading, t);
+  const pathFormMismatch = getPathFormMismatch(config, t);
   const recommendedSteps = [
-    !config?.configured
-      ? "Set `NETWORK_SAVE_ROOT` di environment app agar export otomatis punya target path."
-      : null,
-    config?.configured && !deviceStatus?.online
-      ? "Pastikan edge camera service reachable dari aplikasi sebelum mencoba auto-save."
-      : null,
-    probeResult && !probeResult.ok
-      ? `Perbaiki akses tulis app server ke target root. Error terakhir: ${probeResult.code}.`
-      : null,
-    liveCaptureSaveReady && lastProbeOk
-      ? "Lanjutkan tes end-to-end dari halaman Capture untuk memverifikasi penulisan final oleh app server."
-      : null,
+    !config?.configured ? t(m.stepSetRoot) : null,
+    config?.configured && !deviceStatus?.online ? t(m.stepEdgeReachable) : null,
+    probeResult && !probeResult.ok ? t(m.stepFixWriteAccess, { code: probeResult.code }) : null,
+    liveCaptureSaveReady && lastProbeOk ? t(m.stepEndToEnd) : null,
   ].filter(Boolean) as string[];
   const saveFlowSteps = [
     {
-      title: "Network save",
+      title: m.flowNetworkSave,
       state: liveCaptureSaveReady ? "active" : "pending",
-      description:
-        "App server menarik gambar dari edge lalu menulisnya sendiri ke NETWORK_SAVE_ROOT. Probe di halaman ini menguji mesin yang sama, jadi hasilnya mewakili jalur sebenarnya.",
+      description: m.flowNetworkSaveDescription,
     },
     {
-      title: "Folder handle",
+      title: m.flowFolderHandle,
       state: !liveCaptureSaveReady ? "active" : "pending",
-      description:
-        "Jika network export tidak bisa dipakai, operator dapat menyimpan ke folder yang dipilih di browser.",
+      description: m.flowFolderHandleDescription,
     },
     {
-      title: "Browser download",
+      title: m.flowBrowserDownload,
       state: !liveCaptureSaveReady ? "active" : "pending",
-      description:
-        "Fallback terakhir adalah download biasa dari browser bila jalur lain tidak tersedia.",
+      description: m.flowBrowserDownloadDescription,
     },
   ] as const;
   const readinessChecklist = [
     {
-      label: "NETWORK_SAVE_ROOT terisi",
+      label: m.checkRootSet,
       done: !!config?.configured,
-      detail: config?.configured
-        ? "Target path sudah dimuat dari env."
-        : "Env belum menyediakan target path.",
+      detail: config?.configured ? t(m.checkRootSetDone) : t(m.checkRootSetPending),
     },
     {
-      label: "Edge API reachable",
+      label: m.checkEdgeReachable,
       done: !!deviceStatus?.online,
-      detail: deviceStatus?.online
-        ? "Aplikasi berhasil membaca status edge device."
-        : "Aplikasi belum bisa menjangkau edge device saat ini.",
+      detail: deviceStatus?.online ? t(m.checkEdgeReachableDone) : t(m.checkEdgeReachablePending),
     },
     {
-      label: "Write probe berhasil",
+      label: m.checkWriteProbe,
       done: probeResult?.ok === true,
       detail:
         probeResult?.ok === true
-          ? "App server berhasil create/delete file uji."
+          ? t(m.checkWriteProbeDone)
           : probeResult
-            ? `Probe terakhir gagal dengan code ${probeResult.code}.`
-            : "Belum ada hasil probe untuk memverifikasi akses tulis.",
+            ? t(m.checkWriteProbeFailed, { code: probeResult.code })
+            : t(m.checkWriteProbePending),
     },
   ];
-  const probeGuidance = probeResult ? getProbeGuidance(probeResult) : null;
+  const probeGuidance = probeResult ? getProbeGuidance(probeResult, t) : null;
 
   return (
     <div className="p-6">
       <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <PageTitle
-            title="Storage"
-            description="Uji NETWORK_SAVE_ROOT, konfirmasi reachability edge API, dan pahami kapan Capture akan berpindah ke fallback browser download."
-          />
+          <PageTitle title={t(c.navStorage)} description={t(m.pageDescription)} />
         </div>
         <div className="flex flex-wrap gap-2">
           <button
@@ -406,56 +370,60 @@ function StoragePage() {
             <RefreshCw
               className={`h-4 w-4 ${configLoading || deviceLoading ? "animate-spin" : ""}`}
             />
-            Refresh Status
+            {t(m.refreshStatus)}
           </button>
           <Link
             to="/capture"
             className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
           >
-            Buka Capture
+            {t(m.openCapture)}
           </Link>
         </div>
       </header>
 
       <section className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatusCard
-          title="Kesiapan Auto-Save"
-          value={liveCaptureSaveReady ? "Siap" : "Perlu fallback"}
-          description="Menilai apakah Capture bisa mencoba auto-save sebelum fallback browser."
+          title={t(m.cardAutoSaveTitle)}
+          value={liveCaptureSaveReady ? t(m.ready) : t(m.needsFallback)}
+          description={t(m.cardAutoSaveDescription)}
           icon={HardDrive}
           tone={liveCaptureSaveReady ? "success" : "warning"}
         />
         <StatusCard
-          title="Network Root"
-          value={configLoading ? "Mengecek..." : config?.configured ? "Sudah diisi" : "Belum ada"}
-          description={config?.targetRoot ?? "Belum ada target network root yang dimuat dari env."}
+          title={t(m.cardNetworkRootTitle)}
+          value={
+            configLoading ? t(m.checking) : config?.configured ? t(m.rootSet) : t(m.rootMissing)
+          }
+          description={config?.targetRoot ?? t(m.cardNetworkRootEmpty)}
           icon={Network}
           tone={config?.configured ? "success" : "warning"}
         />
         <StatusCard
-          title="Reachability Edge"
-          value={deviceLoading ? "Mengecek..." : deviceStatus?.online ? "Terhubung" : "Offline"}
+          title={t(m.cardEdgeTitle)}
+          value={
+            deviceLoading ? t(m.checking) : deviceStatus?.online ? t(m.connected) : t(m.offline)
+          }
           description={
             deviceStatus?.online
-              ? (config?.cameraApiUrl ?? "Belum ada CAMERA_API_URL yang termuat.")
-              : (deviceStatus?.statusMessage ?? "Belum ada CAMERA_API_URL yang termuat.")
+              ? (config?.cameraApiUrl ?? t(m.cameraApiUrlEnvMissing))
+              : (deviceStatusMessage ?? t(m.cameraApiUrlEnvMissing))
           }
           icon={Server}
           tone={deviceStatus?.online ? "success" : "warning"}
         />
         <StatusCard
-          title="Probe Terakhir"
+          title={t(m.cardLastProbeTitle)}
           value={
             probeResult
               ? probeResult.ok
-                ? "Write OK"
-                : `Gagal (${probeResult.code})`
-              : "Belum dijalankan"
+                ? t(m.writeOk)
+                : t(m.failedWithCode, { code: probeResult.code })
+              : t(m.notRunYet)
           }
           description={
             probeResult
-              ? `Dicek ${formatDateTime(new Date(probeResult.checkedAt))}`
-              : "Jalankan write probe untuk menguji akses tulis app server."
+              ? t(m.checkedAt, { time: formatDateTime(new Date(probeResult.checkedAt), locale) })
+              : t(m.cardLastProbeEmpty)
           }
           icon={probeResult?.ok ? CheckCircle2 : AlertTriangle}
           tone={probeResult?.ok ? "success" : probeResult ? "warning" : "default"}
@@ -470,18 +438,18 @@ function StoragePage() {
           kartu kuning di bawah. */}
       {spool?.configured && !spool.writable && (
         <section className="mb-6 rounded-xl border border-destructive/40 bg-destructive/10 p-4">
-          <div className="text-sm font-semibold text-destructive">
-            Antrean kirim tidak bisa ditulis
-          </div>
+          <div className="text-sm font-semibold text-destructive">{t(m.spoolUnwritableTitle)}</div>
           <p className="mt-1 text-xs text-destructive/90">
-            App server tidak punya izin menulis di folder antrean, jadi setiap capture gagal
-            tersimpan ke folder jaringan dan jatuh ke unduhan browser. Umumnya ini terjadi karena
-            volume Docker-nya terbuat milik <code>root</code> sementara container berjalan sebagai{" "}
-            <code>node</code>. Jalankan di server:{" "}
-            <code>
-              docker compose run --rm --user root web chown -R node:node /var/lib/capture-spool
-            </code>
-            , lalu <code>docker compose up -d</code>.
+            {rich(m.spoolUnwritableBody, {
+              root: <code>root</code>,
+              node: <code>node</code>,
+              chown: (
+                <code>
+                  docker compose run --rm --user root web chown -R node:node /var/lib/capture-spool
+                </code>
+              ),
+              up: <code>docker compose up -d</code>,
+            })}
           </p>
         </section>
       )}
@@ -494,15 +462,19 @@ function StoragePage() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <div className="text-sm font-semibold text-amber-800">
-                {spool.pending} foto menunggu dikirim ke folder jaringan
+                {t(m.spoolPendingTitle, { count: spool.pending })}
               </div>
               <p className="mt-1 text-xs text-amber-700">
-                Foto sudah aman di app server dan akan terkirim sendiri begitu folder jaringan
-                terjangkau. {Math.round(spool.bytes / 1024 / 1024)} MB terpakai dari{" "}
-                {Math.round(spool.capBytes / 1024 / 1024)} MB.
                 {spool.oldestQueuedAt
-                  ? ` Paling lama menunggu sejak ${formatDateTime(new Date(spool.oldestQueuedAt))}.`
-                  : ""}
+                  ? t(m.spoolPendingBodyWithOldest, {
+                      used: Math.round(spool.bytes / 1024 / 1024),
+                      cap: Math.round(spool.capBytes / 1024 / 1024),
+                      time: formatDateTime(new Date(spool.oldestQueuedAt), locale),
+                    })
+                  : t(m.spoolPendingBody, {
+                      used: Math.round(spool.bytes / 1024 / 1024),
+                      cap: Math.round(spool.capBytes / 1024 / 1024),
+                    })}
               </p>
             </div>
             <button
@@ -510,7 +482,7 @@ function StoragePage() {
               disabled={flushing}
               className="shrink-0 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             >
-              {flushing ? "Mengirim..." : "Kirim sekarang"}
+              {flushing ? t(m.sending) : t(m.sendNow)}
             </button>
           </div>
         </section>
@@ -520,12 +492,11 @@ function StoragePage() {
         <div className="rounded-xl border bg-card shadow-sm p-4">
           <div className="mb-2 flex items-center gap-2">
             <HardDrive className="h-4 w-4 text-primary" />
-            <h2 className="font-semibold">Network Save Root</h2>
+            <h2 className="font-semibold">{t(m.saveRootTitle)}</h2>
           </div>
           <div className={`text-sm font-medium ${saveRootStatus.tone}`}>{saveRootStatus.label}</div>
           <p className="mt-2 break-all text-xs text-muted-foreground">
-            {config?.targetRoot ??
-              "Isi NETWORK_SAVE_ROOT di .env untuk mengaktifkan network save otomatis."}
+            {config?.targetRoot ?? t(m.saveRootEmpty)}
           </p>
           {pathFormMismatch && (
             <p className="mt-2 rounded-md bg-amber-500/10 px-2 py-1.5 text-xs text-amber-700">
@@ -534,12 +505,16 @@ function StoragePage() {
           )}
           {probeResult && !probeResult.ok && (
             <p className="mt-2 break-all text-xs text-destructive">
-              {probeResult.code}: {probeResult.message}
+              {probeResult.code}: {failureText(t, probeResult)}
             </p>
           )}
           <p className="mt-2 text-xs text-muted-foreground">
-            Jenis path: {getPathKind(config?.targetRoot)}
-            {config?.platform ? ` · app server: ${config.platform}` : ""}
+            {config?.platform
+              ? t(m.pathKindWithPlatform, {
+                  kind: getPathKind(config?.targetRoot, t),
+                  platform: config.platform,
+                })
+              : t(m.pathKind, { kind: getPathKind(config?.targetRoot, t) })}
           </p>
           <button
             onClick={() => void runProbe()}
@@ -547,7 +522,7 @@ function StoragePage() {
             className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-2.5 py-1.5 text-xs font-medium hover:bg-accent disabled:opacity-50"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${probeLoading ? "animate-spin" : ""}`} />
-            {probeLoading ? "Menguji..." : "Uji koneksi"}
+            {probeLoading ? t(m.testing) : t(m.testConnection)}
           </button>
         </div>
 
@@ -558,18 +533,20 @@ function StoragePage() {
           </div>
           <div className="text-sm font-medium">
             {deviceLoading
-              ? "Mengecek..."
+              ? t(m.checking)
               : deviceStatus?.online
-                ? "Terhubung"
-                : "Offline / tidak terhubung"}
+                ? t(m.connected)
+                : t(m.offlineNotConnected)}
           </div>
           <p className="mt-2 text-xs text-muted-foreground">
             {deviceStatus?.online
-              ? (config?.cameraApiUrl ?? "Belum ada camera API URL yang termuat")
-              : (deviceStatus?.statusMessage ?? "Belum ada camera API URL yang termuat")}
+              ? (config?.cameraApiUrl ?? t(m.cameraApiUrlMissing))
+              : (deviceStatusMessage ?? t(m.cameraApiUrlMissing))}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Pengecekan terakhir: {deviceCheckedAt ? formatDateTime(deviceCheckedAt) : "—"}
+            {t(m.lastCheck, {
+              time: deviceCheckedAt ? formatDateTime(deviceCheckedAt, locale) : "—",
+            })}
           </p>
         </div>
 
@@ -580,15 +557,12 @@ function StoragePage() {
             ) : (
               <AlertTriangle className="h-4 w-4 text-amber-600" />
             )}
-            <h2 className="font-semibold">Jalur Simpan Capture</h2>
+            <h2 className="font-semibold">{t(m.savePathTitle)}</h2>
           </div>
           <div className="text-sm font-medium">
-            {liveCaptureSaveReady ? "Siap mencoba network export" : "Fallback mungkin dipakai"}
+            {liveCaptureSaveReady ? t(m.readyForNetworkExport) : t(m.fallbackMayBeUsed)}
           </div>
-          <p className="mt-2 text-xs text-muted-foreground">
-            Simpan otomatis dari `/capture` membutuhkan save root yang sudah dikonfigurasi dan edge
-            camera service yang bisa dijangkau.
-          </p>
+          <p className="mt-2 text-xs text-muted-foreground">{t(m.savePathHint)}</p>
         </div>
       </section>
 
@@ -596,7 +570,7 @@ function StoragePage() {
         <div className="rounded-xl border bg-card shadow-sm p-4">
           <div className="mb-3 flex items-center gap-2">
             <Info className="h-4 w-4 text-primary" />
-            <h2 className="font-semibold">Tindakan Berikutnya</h2>
+            <h2 className="font-semibold">{t(m.nextActionsTitle)}</h2>
           </div>
           <div className="space-y-3">
             {recommendedSteps.length > 0 ? (
@@ -610,8 +584,7 @@ function StoragePage() {
               ))
             ) : (
               <div className="rounded-lg border bg-background p-3 text-sm text-muted-foreground">
-                Semua dependency utama terlihat siap. Lakukan tes nyata dari halaman Capture untuk
-                memastikan edge service berhasil menulis file akhir ke target storage.
+                {t(m.allDependenciesReady)}
               </div>
             )}
           </div>
@@ -620,11 +593,11 @@ function StoragePage() {
         <div className="rounded-xl border bg-card shadow-sm p-4">
           <div className="mb-3 flex items-center gap-2">
             <HardDrive className="h-4 w-4 text-primary" />
-            <h2 className="font-semibold">Urutan Alur Simpan</h2>
+            <h2 className="font-semibold">{t(m.saveFlowTitle)}</h2>
           </div>
           <div className="space-y-3">
             {saveFlowSteps.map((step, index) => (
-              <div key={step.title} className="flex items-start gap-3">
+              <div key={step.title.id} className="flex items-start gap-3">
                 <div className="flex flex-col items-center">
                   <span
                     className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold ${
@@ -641,14 +614,14 @@ function StoragePage() {
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 text-sm font-medium">
-                    <span>{step.title}</span>
+                    <span>{t(step.title)}</span>
                     {step.state === "active" && (
                       <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] text-primary">
-                        Jalur aktif
+                        {t(m.activePath)}
                       </span>
                     )}
                   </div>
-                  <p className="mt-1 text-xs text-muted-foreground">{step.description}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{t(step.description)}</p>
                 </div>
               </div>
             ))}
@@ -660,18 +633,18 @@ function StoragePage() {
         <div className="rounded-xl border bg-card shadow-sm p-4">
           <div className="mb-3 flex items-center gap-2">
             <CheckCircle2 className="h-4 w-4 text-primary" />
-            <h2 className="font-semibold">Checklist Kesiapan</h2>
+            <h2 className="font-semibold">{t(m.readinessTitle)}</h2>
           </div>
           <div className="space-y-3">
             {readinessChecklist.map((item) => (
-              <div key={item.label} className="rounded-lg border bg-background p-3">
+              <div key={item.label.id} className="rounded-lg border bg-background p-3">
                 <div className="flex items-center gap-2 text-sm font-medium">
                   {item.done ? (
                     <CheckCircle2 className="h-4 w-4 text-emerald-600" />
                   ) : (
                     <AlertTriangle className="h-4 w-4 text-amber-600" />
                   )}
-                  <span>{item.label}</span>
+                  <span>{t(item.label)}</span>
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">{item.detail}</p>
               </div>
@@ -682,7 +655,7 @@ function StoragePage() {
         <div className="rounded-xl border bg-card shadow-sm p-4">
           <div className="mb-3 flex items-center gap-2">
             <Info className="h-4 w-4 text-primary" />
-            <h2 className="font-semibold">Panduan Probe</h2>
+            <h2 className="font-semibold">{t(m.probeGuideTitle)}</h2>
           </div>
           {probeGuidance ? (
             <div className="space-y-4">
@@ -691,7 +664,7 @@ function StoragePage() {
               </div>
               <div>
                 <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Kemungkinan penyebab
+                  {t(m.possibleCauses)}
                 </div>
                 <div className="space-y-2">
                   {probeGuidance.causes.map((cause) => (
@@ -706,7 +679,7 @@ function StoragePage() {
               </div>
               <div>
                 <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Tindakan berikutnya
+                  {t(m.nextActions)}
                 </div>
                 <div className="space-y-2">
                   {probeGuidance.actions.map((action) => (
@@ -722,8 +695,7 @@ function StoragePage() {
             </div>
           ) : (
             <div className="rounded-lg border border-dashed bg-background p-4 text-sm text-muted-foreground">
-              Jalankan write probe dulu agar halaman ini bisa memberi arahan troubleshooting yang
-              lebih spesifik berdasarkan error runtime yang aktual.
+              {t(m.probeGuideEmpty)}
             </div>
           )}
         </div>
@@ -734,11 +706,9 @@ function StoragePage() {
           <div>
             <h2 className="flex items-center gap-2 font-semibold">
               <Server className="h-4 w-4 text-primary" />
-              Probe Storage App Server
+              {t(m.probeSectionTitle)}
             </h2>
-            <p className="text-sm text-muted-foreground">
-              Menjalankan probe write-delete yang aman dari app server ini ke `NETWORK_SAVE_ROOT`.
-            </p>
+            <p className="text-sm text-muted-foreground">{t(m.probeSectionHint)}</p>
           </div>
           <button
             onClick={() => void runProbe()}
@@ -746,14 +716,13 @@ function StoragePage() {
             className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
           >
             <RefreshCw className={`h-4 w-4 ${probeLoading ? "animate-spin" : ""}`} />
-            Jalankan Write Probe
+            {t(m.runWriteProbe)}
           </button>
         </div>
 
         {!probeResult && (
           <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-            Belum ada hasil probe. Jalankan tes ini untuk memastikan app server bisa membuat dan
-            menghapus file sementara di dalam root yang dikonfigurasi.
+            {t(m.probeResultEmpty)}
           </div>
         )}
 
@@ -771,33 +740,37 @@ function StoragePage() {
               ) : (
                 <AlertTriangle className="h-4 w-4 text-amber-600" />
               )}
-              {probeResult.ok ? "Probe berhasil" : `Probe gagal (${probeResult.code})`}
+              {probeResult.ok
+                ? t(m.probeSucceeded)
+                : t(m.probeFailedWithCode, { code: probeResult.code })}
             </div>
             <dl className="grid gap-2 text-xs text-muted-foreground md:grid-cols-2">
               <div>
-                <dt>Path target</dt>
+                <dt>{t(m.targetPath)}</dt>
                 <dd className="break-all font-medium text-foreground">
                   {probeResult.targetRoot ?? "—"}
                 </dd>
               </div>
               <div>
-                <dt>Waktu cek</dt>
+                <dt>{t(m.checkTime)}</dt>
                 <dd className="font-medium text-foreground">
-                  {formatDateTime(new Date(probeResult.checkedAt))}
+                  {formatDateTime(new Date(probeResult.checkedAt), locale)}
                 </dd>
               </div>
               <div>
-                <dt>Platform app server</dt>
+                <dt>{t(m.appServerPlatform)}</dt>
                 <dd className="font-medium text-foreground">{probeResult.platform}</dd>
               </div>
               {probeResult.ok && (
                 <div>
-                  <dt>File probe</dt>
+                  <dt>{t(m.probeFile)}</dt>
                   <dd className="font-medium text-foreground">{probeResult.probeFile}</dd>
                 </div>
               )}
             </dl>
-            <p className="mt-3 text-xs text-muted-foreground">{probeResult.message}</p>
+            <p className="mt-3 text-xs text-muted-foreground">
+              {probeResult.ok ? probeResult.message : failureText(t, probeResult)}
+            </p>
           </div>
         )}
       </section>
@@ -806,45 +779,29 @@ function StoragePage() {
         <div className="mb-3 flex items-start gap-2">
           <Info className="mt-0.5 h-4 w-4 text-primary" />
           <div>
-            <h2 className="font-semibold">Cara Membaca Halaman Ini</h2>
-            <p className="text-sm text-muted-foreground">
-              Halaman ini membantu diagnosis alur simpan, tetapi tidak menggantikan tes capture yang
-              nyata.
-            </p>
+            <h2 className="font-semibold">{t(m.howToReadTitle)}</h2>
+            <p className="text-sm text-muted-foreground">{t(m.howToReadHint)}</p>
           </div>
         </div>
         <ul className="space-y-2 text-sm text-muted-foreground">
-          <li>
-            Jika `Network Save Root` belum dikonfigurasi, `/capture` akan langsung berpindah ke
-            folder-picker atau fallback browser download.
-          </li>
-          <li>
-            Jika `Edge API` sedang offline, aplikasi tidak bisa meminta camera service mengekspor
-            aset hasil capture ke network share.
-          </li>
-          <li>
-            Jika `Jalankan Write Probe` gagal, berarti app server ini sendiri belum bisa menulis ke
-            path yang dikonfigurasi. Ini pertanda kuat bahwa auto-save tidak akan andal di runtime
-            saat ini.
-          </li>
-          <li>
-            Meski probe ini berhasil, export capture final tetap bergantung pada edge camera service
-            untuk menyelesaikan request export-nya sendiri.
-          </li>
+          <li>{t(m.howToReadSaveRoot)}</li>
+          <li>{t(m.howToReadEdge)}</li>
+          <li>{t(m.howToReadProbeFails)}</li>
+          <li>{t(m.howToReadProbeSucceeds)}</li>
         </ul>
         <div className="mt-4 flex flex-wrap gap-2">
           <Link
             to="/capture"
             className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
           >
-            Buka Capture
+            {t(m.openCapture)}
           </Link>
           {isAdmin && (
             <Link
               to="/settings"
               className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent"
             >
-              Tinjau Settings <ArrowRight className="h-4 w-4" />
+              {t(m.reviewSettings)} <ArrowRight className="h-4 w-4" />
             </Link>
           )}
         </div>

@@ -1,6 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+import { logMessages as m } from "@/i18n/log";
+import type { Message } from "@/lib/i18n";
+
 export const ACTIVITY_ACTIONS = [
   "login.success",
   "login.failed",
@@ -41,24 +44,27 @@ export const ACTIVITY_ACTIONS = [
 export type ActivityAction = (typeof ACTIVITY_ACTIONS)[number];
 export type ActivitySeverity = "info" | "warning";
 
-export const ACTION_LABELS: Record<ActivityAction, string> = {
-  "login.success": "Berhasil masuk",
-  "login.failed": "Gagal masuk",
-  "login.blocked": "Masuk ditolak",
-  logout: "Keluar",
-  "user.created": "Akun dibuat",
-  "user.updated": "Akun diubah",
-  "user.deleted": "Akun dihapus",
-  "user.password_reset": "Password direset",
-  "capture.deleted": "Capture dihapus",
-  "capture.renamed": "Capture diubah nama",
-  "storage.target_changed": "Alamat edge diubah",
-  "storage.forward_failed": "Antrean gagal terkirim",
-  "storage.forward_recovered": "Antrean pulih",
-  "device.updated": "Device diperbarui",
-  "camera.settings_applied": "Setelan kamera diterapkan",
-  "capture.created": "Capture dibuat",
-  "storage.flush_manual": "Antrean dikirim manual",
+// Nilainya pesan tiga bahasa, bukan teks jadi: halaman /log merendernya dengan
+// t(ACTION_LABELS[aksi]), dan ekspor CSV mengambil `.id` supaya isi berkasnya
+// tetap Indonesia apa pun bahasa antarmukanya.
+export const ACTION_LABELS: Record<ActivityAction, Message> = {
+  "login.success": m.actionLoginSuccess,
+  "login.failed": m.actionLoginFailed,
+  "login.blocked": m.actionLoginBlocked,
+  logout: m.actionLogout,
+  "user.created": m.actionUserCreated,
+  "user.updated": m.actionUserUpdated,
+  "user.deleted": m.actionUserDeleted,
+  "user.password_reset": m.actionUserPasswordReset,
+  "capture.deleted": m.actionCaptureDeleted,
+  "capture.renamed": m.actionCaptureRenamed,
+  "storage.target_changed": m.actionStorageTargetChanged,
+  "storage.forward_failed": m.actionStorageForwardFailed,
+  "storage.forward_recovered": m.actionStorageForwardRecovered,
+  "device.updated": m.actionDeviceUpdated,
+  "camera.settings_applied": m.actionCameraSettingsApplied,
+  "capture.created": m.actionCaptureCreated,
+  "storage.flush_manual": m.actionStorageFlushManual,
 };
 
 export type ActivityEntry = {
@@ -94,8 +100,7 @@ const listInputSchema = z.object({
 export type ListActivityInput = z.input<typeof listInputSchema>;
 
 export type ActivityResult =
-  | { ok: true; entries: ActivityEntry[]; total: number }
-  | { ok: false; message: string };
+  { ok: true; entries: ActivityEntry[]; total: number } | { ok: false; message: string };
 
 /**
  * Jejak aktivitas hanya boleh dibaca Super Admin, dan perannya dibaca ulang dari
@@ -109,7 +114,11 @@ async function requireAdmin() {
   ]);
 
   if (!isSessionConfigured() || !isCardDbConfigured()) {
-    return { ok: false as const, message: "Konfigurasi server aplikasi belum lengkap." };
+    return {
+      ok: false as const,
+      code: "SERVER_NOT_CONFIGURED" as const,
+      message: "Konfigurasi server aplikasi belum lengkap.",
+    };
   }
 
   let userId: number | undefined;

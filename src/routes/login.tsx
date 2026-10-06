@@ -8,7 +8,6 @@ import {
   ClipboardCheck,
   Eye,
   EyeOff,
-  Globe,
   HardDrive,
   History,
   Images,
@@ -28,7 +27,12 @@ import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { LanguageSwitch } from "@/components/language-switch";
+import { commonMessages as c } from "@/i18n/common";
+import { failureText } from "@/i18n/errors";
+import { loginMessages as m } from "@/i18n/login";
 import { loginInputSchema, loginWithPassword, toSafeRedirect } from "@/lib/auth";
+import { useT, type Message } from "@/lib/i18n";
 
 const loginSearchSchema = z.object({
   // `.catch` supaya query string yang diacak-acak tidak memunculkan error page
@@ -51,9 +55,9 @@ export const Route = createFileRoute("/login")({
 
 type ModuleHighlight = {
   icon: LucideIcon;
-  title: string;
-  subtitle: string;
-  description: string;
+  title: Message;
+  subtitle: Message;
+  description: Message;
 };
 
 // Enam modul yang sama dengan isi sidebar setelah login, supaya operator baru
@@ -61,39 +65,39 @@ type ModuleHighlight = {
 const MODULES: ModuleHighlight[] = [
   {
     icon: LayoutDashboard,
-    title: "Dashboard",
-    subtitle: "Ringkasan Operasi",
-    description: "Volume capture, status edge device, dan tren sampling harian dalam satu layar.",
+    title: c.navDashboard,
+    subtitle: m.dashboardSubtitle,
+    description: m.dashboardDescription,
   },
   {
     icon: Camera,
-    title: "Capture",
-    subtitle: "Ambil Foto Sampel",
-    description: "Live preview, kontrol kamera Canon, dan simpan BIN 1 / BIN 2 dalam satu alur.",
+    title: c.navCapture,
+    subtitle: m.captureSubtitle,
+    description: m.captureDescription,
   },
   {
     icon: Images,
-    title: "Gallery",
-    subtitle: "Arsip Hasil Capture",
-    description: "Telusuri foto per tanggal, plant, dan station lengkap dengan metadatanya.",
+    title: c.navGallery,
+    subtitle: m.gallerySubtitle,
+    description: m.galleryDescription,
   },
   {
     icon: Network,
-    title: "Devices",
-    subtitle: "Registry Kamera",
-    description: "Daftarkan Mini PC dan kamera, atur preset ISO, shutter, serta white balance.",
+    title: c.navDevices,
+    subtitle: m.devicesSubtitle,
+    description: m.devicesDescription,
   },
   {
     icon: HardDrive,
-    title: "Storage",
-    subtitle: "Tujuan Simpan",
-    description: "Pantau share jaringan dan diagnosa kegagalan penyimpanan otomatis.",
+    title: c.navStorage,
+    subtitle: m.storageSubtitle,
+    description: m.storageDescription,
   },
   {
     icon: Settings,
-    title: "Settings",
-    subtitle: "Preferensi Aplikasi",
-    description: "Pola penamaan berkas, jadwal pengambilan, dan zona waktu operasional.",
+    title: c.navSettings,
+    subtitle: m.settingsSubtitle,
+    description: m.settingsDescription,
   },
 ];
 
@@ -121,16 +125,17 @@ type LoginDialog =
   | null;
 
 const PILLARS = [
-  { icon: ShieldCheck, title: "Sampel Terekam", subtitle: "Tiap BIN Terdokumentasi" },
-  { icon: ClipboardCheck, title: "Metadata Lengkap", subtitle: "Waktu, Plant, Station" },
-  { icon: HardDrive, title: "Simpan Otomatis", subtitle: "Langsung ke Share" },
-  { icon: History, title: "Riwayat Terlacak", subtitle: "Audit per Operator" },
+  { icon: ShieldCheck, title: m.pillarRecorded, subtitle: m.pillarRecordedSub },
+  { icon: ClipboardCheck, title: m.pillarMetadata, subtitle: m.pillarMetadataSub },
+  { icon: HardDrive, title: m.pillarAutoSave, subtitle: m.pillarAutoSaveSub },
+  { icon: History, title: m.pillarHistory, subtitle: m.pillarHistorySub },
 ];
 
 function LoginPage() {
   const router = useRouter();
   const navigate = useNavigate();
   const search = Route.useSearch();
+  const t = useT();
 
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
@@ -164,7 +169,16 @@ function LoginPage() {
     // dari server, yang bukan soal isian.
     const parsed = loginInputSchema.safeParse({ identifier, password });
     if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message ?? "Lengkapi username dan password.");
+      const field = parsed.error.issues[0]?.path[0];
+      setError(
+        t(
+          field === "identifier"
+            ? m.identifierRequired
+            : field === "password"
+              ? m.passwordRequired
+              : m.incomplete,
+        ),
+      );
       return;
     }
 
@@ -182,7 +196,7 @@ function LoginPage() {
       if (!result.ok) {
         setPassword("");
         setSubmitting(false);
-        setDialog({ kind: "failed", message: result.message });
+        setDialog({ kind: "failed", message: failureText(t, result, m.failedTitle) });
         return;
       }
 
@@ -203,8 +217,8 @@ function LoginPage() {
         kind: "failed",
         message:
           caught instanceof Error
-            ? `Server aplikasi tidak merespons: ${caught.message}`
-            : "Server aplikasi tidak merespons.",
+            ? t(m.serverNoResponseWith, { reason: caught.message })
+            : t(m.serverNoResponse),
       });
     }
   }
@@ -213,18 +227,18 @@ function LoginPage() {
     <div className="relative min-h-svh w-full overflow-hidden bg-slate-100">
       <BackdropLayers />
 
-      {dialog?.kind === "progress" && <ProgressDialog title="Sedang masuk..." />}
+      {dialog?.kind === "progress" && <ProgressDialog title={t(m.progressTitle)} />}
       {dialog?.kind === "success" && (
         <StatusDialog
           tone="success"
-          title="Berhasil Masuk"
-          message={`Selamat datang, ${dialog.name}. Anda akan dialihkan sebentar lagi.`}
+          title={t(m.successTitle)}
+          message={t(m.successMessage, { name: dialog.name })}
         />
       )}
       {dialog?.kind === "failed" && (
         <StatusDialog
           tone="failed"
-          title="Gagal Masuk"
+          title={t(m.failedTitle)}
           message={dialog.message}
           onDismiss={() => setDialog(null)}
         />
@@ -232,8 +246,8 @@ function LoginPage() {
       {dialog?.kind === "loggedOut" && (
         <StatusDialog
           tone="success"
-          title="Berhasil Keluar"
-          message="Sampai jumpa!"
+          title={t(m.loggedOutTitle)}
+          message={t(m.loggedOutMessage)}
           onDismiss={dismissLoggedOut}
         />
       )}
@@ -244,13 +258,7 @@ function LoginPage() {
         <div className="flex items-center justify-center lg:py-2">
           <div className="w-full max-w-[430px] rounded-2xl border border-white/70 bg-white/95 p-6 shadow-[0_24px_60px_-20px_rgb(15_23_42/0.35)] backdrop-blur-sm sm:p-8">
             <div className="flex justify-end">
-              {/* Aplikasi ini berbahasa Indonesia sepenuhnya. Slot bahasa tetap
-                  ditampilkan sebagai penanda, bukan dropdown palsu yang tidak
-                  mengubah apa pun saat diklik. */}
-              <span className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-medium text-slate-600">
-                <Globe className="h-3.5 w-3.5" />
-                Bahasa Indonesia
-              </span>
+              <LanguageSwitch className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-400" />
             </div>
 
             <div className="mt-5 flex justify-center">
@@ -258,16 +266,14 @@ function LoginPage() {
             </div>
 
             <div className="mt-6 text-center">
-              <h1 className="text-2xl font-semibold tracking-tight text-brand">Selamat Datang</h1>
-              <p className="mt-1.5 text-sm text-slate-500">
-                Masuk untuk mulai mendokumentasikan sampel calcine.
-              </p>
+              <h1 className="text-2xl font-semibold tracking-tight text-brand">{t(m.welcome)}</h1>
+              <p className="mt-1.5 text-sm text-slate-500">{t(m.welcomeCopy)}</p>
             </div>
 
             <form onSubmit={handleSubmit} className="mt-6 space-y-4" noValidate>
               <div className="space-y-1.5">
                 <Label htmlFor="identifier" className="text-slate-700">
-                  Username atau email
+                  {t(m.identifierLabel)}
                 </Label>
                 <div className="relative">
                   <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -291,7 +297,7 @@ function LoginPage() {
 
               <div className="space-y-1.5">
                 <Label htmlFor="password" className="text-slate-700">
-                  Password
+                  {t(m.passwordLabel)}
                 </Label>
                 <div className="relative">
                   <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -300,7 +306,7 @@ function LoginPage() {
                     name="password"
                     type={showPassword ? "text" : "password"}
                     autoComplete="current-password"
-                    placeholder="Password akun operator"
+                    placeholder={t(m.passwordPlaceholder)}
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
                     disabled={submitting}
@@ -311,8 +317,8 @@ function LoginPage() {
                     type="button"
                     onClick={() => setShowPassword((visible) => !visible)}
                     className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1.5 text-slate-400 transition-colors hover:text-slate-700 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-400"
-                    aria-label={showPassword ? "Sembunyikan password" : "Tampilkan password"}
-                    title={showPassword ? "Sembunyikan password" : "Tampilkan password"}
+                    aria-label={showPassword ? t(m.hidePassword) : t(m.showPassword)}
+                    title={showPassword ? t(m.hidePassword) : t(m.showPassword)}
                   >
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
@@ -325,7 +331,7 @@ function LoginPage() {
                   onClick={() => setHelpOpen(true)}
                   className="text-sm font-medium text-brand underline-offset-4 transition-colors hover:text-brand-strong hover:underline"
                 >
-                  Lupa password?
+                  {t(m.forgotPassword)}
                 </button>
               </div>
 
@@ -348,10 +354,10 @@ function LoginPage() {
                 {submitting ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Memeriksa...
+                    {t(m.checking)}
                   </>
                 ) : (
-                  "Masuk"
+                  t(m.signIn)
                 )}
               </Button>
             </form>
@@ -360,9 +366,9 @@ function LoginPage() {
             <HelpSection open={helpOpen} onToggle={() => setHelpOpen((value) => !value)} />
 
             <p className="mt-6 text-center text-[11px] leading-relaxed text-slate-400">
-              &copy; {new Date().getFullYear()} Capture Calcine &middot; Operasional Plant
+              &copy; {new Date().getFullYear()} Capture Calcine &middot; {t(m.footerPlant)}
               <br />
-              Penggunaan akun dicatat untuk keperluan audit.
+              {t(m.footerAudit)}
             </p>
           </div>
         </div>
@@ -438,6 +444,7 @@ function StatusDialog({
   onDismiss?: () => void;
 }) {
   const okRef = useRef<HTMLButtonElement>(null);
+  const t = useT();
 
   useEffect(() => {
     if (!onDismiss) return;
@@ -474,7 +481,7 @@ function StatusDialog({
           onClick={onDismiss}
           className="mt-7 h-10 w-24 bg-brand text-brand-foreground hover:bg-brand-strong"
         >
-          OK
+          {t(m.ok)}
         </Button>
       )}
     </ModalShell>
@@ -574,11 +581,13 @@ function BackdropLayers() {
 }
 
 function GroupLogos({ className }: { className?: string }) {
+  const t = useT();
+
   return (
     <img
       src="/merdeka-group-logo.png"
       // Nama ketiganya dieja supaya pembaca layar tidak hanya mendengar "logo".
-      alt="Merdeka Copper Gold, Merdeka Battery Materials, dan Merdeka Gold Resources"
+      alt={t(m.groupLogosAlt)}
       // Dimensi asli dicantumkan supaya browser memesan ruangnya lebih dulu dan
       // kartu login tidak melompat saat gambarnya selesai termuat.
       width={1140}
@@ -589,6 +598,8 @@ function GroupLogos({ className }: { className?: string }) {
 }
 
 function BrandPanel() {
+  const t = useT();
+
   return (
     <div className="flex flex-col justify-between gap-8">
       {/* Dibatasi supaya berhenti sebelum pita foto. Tanpa batas ini kartu modul
@@ -600,7 +611,7 @@ function BrandPanel() {
               kotak navy lagi -- dua bentuk bertumpuk hanya saling meredam. */}
           <img
             src="/app-logo.png"
-            alt="Logo Capture Calcine"
+            alt={t(c.logoAlt)}
             width={256}
             height={256}
             className="h-16 w-16 shrink-0"
@@ -610,38 +621,37 @@ function BrandPanel() {
               Capture <span className="text-brand">Calcine</span>
             </p>
             <p className="mt-1 text-[13px] leading-snug text-slate-600">
-              Dokumentasi Sampling Calcine
+              {t(m.taglineFirst)}
               <br />
-              Cepat, Konsisten, dan Terlacak
+              {t(m.taglineSecond)}
             </p>
           </div>
         </div>
 
         <div className="mt-5 h-1 w-16 rounded-full bg-brand-accent" />
 
-        <p className="mt-5 max-w-xl text-[15px] leading-relaxed text-slate-600">
-          Platform terpadu untuk mengambil, menyimpan, dan menelusuri foto sampel calcine dari
-          seluruh plant &mdash; satu alur kerja dari kamera di lapangan sampai arsip di share
-          jaringan.
-        </p>
+        <p className="mt-5 max-w-xl text-[15px] leading-relaxed text-slate-600">{t(m.intro)}</p>
 
         <div className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {MODULES.map((module) => (
-            <ModuleCard key={module.title} {...module} />
+            <ModuleCard key={module.title.id} {...module} />
           ))}
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-brand-foreground/25 shadow-lg lg:max-w-[880px] lg:grid-cols-4">
         {PILLARS.map((pillar) => (
-          <div key={pillar.title} className="flex items-center gap-2.5 bg-brand-strong px-4 py-3.5">
+          <div
+            key={pillar.title.id}
+            className="flex items-center gap-2.5 bg-brand-strong px-4 py-3.5"
+          >
             <pillar.icon className="h-5 w-5 shrink-0 text-brand-foreground/80" />
             <div className="min-w-0">
               <p className="truncate text-[13px] font-semibold leading-tight text-brand-foreground">
-                {pillar.title}
+                {t(pillar.title)}
               </p>
               <p className="truncate text-[11px] leading-tight text-brand-foreground/80">
-                {pillar.subtitle}
+                {t(pillar.subtitle)}
               </p>
             </div>
           </div>
@@ -652,14 +662,16 @@ function BrandPanel() {
 }
 
 function ModuleCard({ icon: Icon, title, subtitle, description }: ModuleHighlight) {
+  const t = useT();
+
   return (
     <div className="rounded-xl border border-white/80 bg-white/95 p-4 shadow-sm backdrop-blur-sm transition-shadow hover:shadow-md">
       <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand text-brand-foreground">
         <Icon className="h-[18px] w-[18px]" />
       </span>
-      <p className="mt-3 text-[15px] font-semibold leading-tight text-brand">{title}</p>
-      <p className="mt-0.5 text-[13px] font-medium leading-tight text-brand">{subtitle}</p>
-      <p className="mt-2 text-[12.5px] leading-relaxed text-slate-600">{description}</p>
+      <p className="mt-3 text-[15px] font-semibold leading-tight text-brand">{t(title)}</p>
+      <p className="mt-0.5 text-[13px] font-medium leading-tight text-brand">{t(subtitle)}</p>
+      <p className="mt-2 text-[12.5px] leading-relaxed text-slate-600">{t(description)}</p>
     </div>
   );
 }
@@ -669,13 +681,14 @@ function SsoSection() {
   // ini. Dibiarkan terlihat supaya tata letaknya sudah siap saat IT menyediakan
   // client ID, dan `disabled` supaya operator tidak menunggu sesuatu yang tidak
   // akan terjadi.
-  const notReady = "SSO belum tersedia - masuk dengan username dan password.";
+  const t = useT();
+  const notReady = t(m.ssoNotReady);
 
   return (
     <div className="mt-6">
       <div className="flex items-center gap-3">
         <span className="h-px flex-1 bg-slate-200" />
-        <span className="text-xs text-slate-400">atau masuk dengan SSO</span>
+        <span className="text-xs text-slate-400">{t(m.ssoDivider)}</span>
         <span className="h-px flex-1 bg-slate-200" />
       </div>
 
@@ -707,6 +720,8 @@ function SsoSection() {
 }
 
 function HelpSection({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+  const t = useT();
+
   return (
     <div className="mt-5 overflow-hidden rounded-xl border border-brand-border bg-brand-subtle/70">
       <button
@@ -720,10 +735,10 @@ function HelpSection({ open, onToggle }: { open: boolean; onToggle: () => void }
         </span>
         <span className="min-w-0 flex-1">
           <span className="block text-[13px] font-medium leading-tight text-slate-700">
-            Butuh bantuan masuk?
+            {t(m.helpQuestion)}
           </span>
           <span className="block text-[13px] font-semibold leading-tight text-brand-strong">
-            Panduan Login
+            {t(m.helpTitle)}
           </span>
         </span>
         {open ? (
@@ -737,18 +752,13 @@ function HelpSection({ open, onToggle }: { open: boolean; onToggle: () => void }
         <div className="border-t border-brand-border px-4 py-3 text-[12.5px] leading-relaxed text-slate-600">
           <ul className="space-y-1.5">
             <li>
-              Pakai username operator yang didaftarkan Super Admin, misalnya{" "}
-              <code className="rounded bg-white px-1 py-0.5 text-[11.5px]">operator.bin1</code>.
-              Email kantor juga diterima di kolom yang sama.
+              {t(m.helpUsernameBefore)}{" "}
+              <code className="rounded bg-white px-1 py-0.5 text-[11.5px]">operator.bin1</code>.{" "}
+              {t(m.helpUsernameAfter)}
             </li>
-            <li>Password salah berulang kali? Berhenti menebak dan hubungi Super Admin.</li>
-            <li>
-              Reset password dan pembuatan akun baru dilakukan Super Admin lewat menu Users di dalam
-              aplikasi, bukan dari halaman ini.
-            </li>
-            <li>
-              Kalau muncul pesan database tidak bisa dihubungi, itu kendala server, bukan akun Anda.
-            </li>
+            <li>{t(m.helpWrongPassword)}</li>
+            <li>{t(m.helpReset)}</li>
+            <li>{t(m.helpDatabase)}</li>
           </ul>
         </div>
       )}

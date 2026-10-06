@@ -4,7 +4,11 @@ import { findUserById } from "./users";
 
 export async function requireDeviceRegistryAccess(write = false) {
   if (!isCardDbConfigured() || !isSessionConfigured()) {
-    return { ok: false as const, message: "Konfigurasi server aplikasi belum lengkap." };
+    return {
+      ok: false as const,
+      code: "SERVER_NOT_CONFIGURED" as const,
+      message: "Konfigurasi server aplikasi belum lengkap.",
+    };
   }
   let id: number | undefined;
   try {

@@ -29,6 +29,10 @@ import { isAdminOnlyPath } from "@/lib/nav-items";
 import { useIsAdmin } from "@/lib/use-session-user";
 import { getStorageConfigSummary } from "@/lib/storage-diagnostics";
 import { PageTitle } from "@/components/page-shell";
+import { deviceStatusText } from "@/i18n/device-status";
+import { dashboardMessages as m } from "@/i18n/dashboard";
+import { failureText } from "@/i18n/errors";
+import { useLocale, useT, type Message, type Translator } from "@/lib/i18n";
 
 export const Route = createFileRoute("/dashboard")({
   component: DashboardPage,
@@ -57,7 +61,15 @@ export const Route = createFileRoute("/dashboard")({
 const COLOR_A = "#f54900";
 const COLOR_B = "#009689";
 
-const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const DAY_LABELS: Message[] = [
+  m.daySun,
+  m.dayMon,
+  m.dayTue,
+  m.dayWed,
+  m.dayThu,
+  m.dayFri,
+  m.daySat,
+];
 const SSR_SAFE_DAY = new Date(Date.UTC(2000, 0, 1, 0, 0, 0));
 
 function formatBytes(bytes: number): string {
@@ -73,13 +85,13 @@ function formatBytes(bytes: number): string {
   return `${value.toFixed(1)} ${units[i]}`;
 }
 
-function formatDateTime(ts: number) {
+function formatDateTime(ts: number, locale: string) {
   const date = new Date(ts);
-  const datePart = date.toLocaleDateString("en-GB", {
+  const datePart = date.toLocaleDateString(locale, {
     day: "2-digit",
     month: "short",
   });
-  const timePart = date.toLocaleTimeString("en-GB", {
+  const timePart = date.toLocaleTimeString(locale, {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
@@ -96,22 +108,23 @@ function formatDashboardBin(bin?: string | null): string {
   return bin;
 }
 
-function formatDeviceEventLabel(eventType: string): string {
-  const labels: Record<string, string> = {
-    "metadata-finalized": "Metadata difinalisasi",
-    "capture-trigger-failed": "Trigger capture gagal",
-    "capture-job-failed": "Job capture gagal",
-    "capture-missing-asset": "Asset capture tidak tersedia",
-    "capture-exception": "Capture exception",
-    "autofocus-trigger-failed": "Trigger autofocus gagal",
-    "autofocus-job-failed": "Job autofocus gagal",
-    "autofocus-exception": "Autofocus exception",
-    "network-save-fallback": "Fallback network save",
-    "folder-save-fallback": "Fallback folder browser",
-    "browser-download-fallback": "Fallback download lokal",
-    "capture-record-sync-failed": "Sinkron capture DB gagal",
+function formatDeviceEventLabel(eventType: string, t: Translator): string {
+  const labels: Record<string, Message> = {
+    "metadata-finalized": m.eventMetadataFinalized,
+    "capture-trigger-failed": m.eventCaptureTriggerFailed,
+    "capture-job-failed": m.eventCaptureJobFailed,
+    "capture-missing-asset": m.eventCaptureMissingAsset,
+    "capture-exception": m.eventCaptureException,
+    "autofocus-trigger-failed": m.eventAutofocusTriggerFailed,
+    "autofocus-job-failed": m.eventAutofocusJobFailed,
+    "autofocus-exception": m.eventAutofocusException,
+    "network-save-fallback": m.eventNetworkSaveFallback,
+    "folder-save-fallback": m.eventFolderSaveFallback,
+    "browser-download-fallback": m.eventBrowserDownloadFallback,
+    "capture-record-sync-failed": m.eventCaptureRecordSyncFailed,
   };
-  return labels[eventType] ?? eventType;
+  const label = labels[eventType];
+  return label ? t(label) : eventType;
 }
 
 function startOfDay(d: Date) {
@@ -121,7 +134,8 @@ function startOfDay(d: Date) {
 }
 
 function NotAvailable() {
-  return <span className="text-muted-foreground">Belum tersedia</span>;
+  const t = useT();
+  return <span className="text-muted-foreground">{t(m.notAvailable)}</span>;
 }
 
 // Metronic-style KPI tile: a colored icon box, not just an inline icon+label
@@ -209,14 +223,13 @@ function CompareRow({
   total: number;
   color: string;
 }) {
+  const t = useT();
   const pct = total > 0 ? Math.round((count / total) * 100) : 0;
   return (
     <div>
       <div className="mb-1 flex items-center justify-between text-xs">
         <span className="font-medium">{label}</span>
-        <span className="text-muted-foreground">
-          {count} capture ({pct}%)
-        </span>
+        <span className="text-muted-foreground">{t(m.compareCount, { count, pct })}</span>
       </div>
       <div className="h-2 overflow-hidden rounded-full bg-muted">
         <div
@@ -230,17 +243,20 @@ function CompareRow({
 
 type DayBucket = { date: Date; label: string; count: number };
 type StorageConfigSummary = Awaited<ReturnType<typeof getStorageConfigSummary>>;
+// Kegagalan server function disimpan utuh (kode + pesan), bukan teksnya saja,
+// supaya teks yang tampil mengikuti bahasa yang sedang dipakai.
+type ServerFailure = { code?: string | null; message?: string | null };
 
-function formatRelativeTime(date: Date | null) {
-  if (!date) return "Belum dicek";
+function formatRelativeTime(date: Date | null, t: Translator) {
+  if (!date) return t(m.relativeNotChecked);
   const diffMs = Date.now() - date.getTime();
   const diffMinutes = Math.max(0, Math.floor(diffMs / 60000));
-  if (diffMinutes < 1) return "Baru saja";
-  if (diffMinutes < 60) return `${diffMinutes} menit lalu`;
+  if (diffMinutes < 1) return t(m.relativeJustNow);
+  if (diffMinutes < 60) return t(m.relativeMinutes, { count: diffMinutes });
   const diffHours = Math.floor(diffMinutes / 60);
-  if (diffHours < 24) return `${diffHours} jam lalu`;
+  if (diffHours < 24) return t(m.relativeHours, { count: diffHours });
   const diffDays = Math.floor(diffHours / 24);
-  return `${diffDays} hari lalu`;
+  return t(m.relativeDays, { count: diffDays });
 }
 
 function StatusPill({
@@ -319,6 +335,8 @@ function InsightCard({
 }
 
 function WeekTrendChart({ days }: { days: DayBucket[] }) {
+  const t = useT();
+  const locale = useLocale();
   const width = 560;
   const height = 140;
   const padBottom = 24;
@@ -425,13 +443,15 @@ function WeekTrendChart({ days }: { days: DayBucket[] }) {
           }}
         >
           <div className="font-medium">
-            {days[hover].date.toLocaleDateString("en-GB", {
+            {days[hover].date.toLocaleDateString(locale, {
               weekday: "long",
               day: "2-digit",
               month: "short",
             })}
           </div>
-          <div className="text-muted-foreground">{days[hover].count} capture</div>
+          <div className="text-muted-foreground">
+            {t(m.captureCount, { count: days[hover].count })}
+          </div>
         </div>
       )}
     </div>
@@ -440,6 +460,8 @@ function WeekTrendChart({ days }: { days: DayBucket[] }) {
 
 function DashboardPage() {
   const isAdmin = useIsAdmin();
+  const t = useT();
+  const locale = useLocale();
 
   /**
    * Tujuan tautan, atau null kalau pembacanya tidak berhak membukanya.
@@ -454,9 +476,9 @@ function DashboardPage() {
   const [status, setStatus] = useState<DeviceStatus | null>(null);
   const [storageConfig, setStorageConfig] = useState<StorageConfigSummary | null>(null);
   const [captureDbSummary, setCaptureDbSummary] = useState<CaptureDashboardSummary | null>(null);
-  const [captureDbError, setCaptureDbError] = useState<string | null>(null);
+  const [captureDbFailure, setCaptureDbFailure] = useState<ServerFailure | null>(null);
   const [deviceEvents, setDeviceEvents] = useState<DeviceEventView[]>([]);
-  const [deviceEventsError, setDeviceEventsError] = useState<string | null>(null);
+  const [deviceEventsFailure, setDeviceEventsFailure] = useState<ServerFailure | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const [loading, setLoading] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
@@ -495,17 +517,17 @@ function DashboardPage() {
       setStorageConfig(storageSummary);
       if (dbSummaryResult.ok) {
         setCaptureDbSummary(dbSummaryResult.summary);
-        setCaptureDbError(null);
+        setCaptureDbFailure(null);
       } else {
         setCaptureDbSummary(null);
-        setCaptureDbError(dbSummaryResult.message);
+        setCaptureDbFailure(dbSummaryResult);
       }
       if (deviceEventsResult.ok) {
         setDeviceEvents(deviceEventsResult.events);
-        setDeviceEventsError(null);
+        setDeviceEventsFailure(null);
       } else {
         setDeviceEvents([]);
-        setDeviceEventsError(deviceEventsResult.message);
+        setDeviceEventsFailure(deviceEventsResult);
       }
       setLastRefreshed(new Date());
     } finally {
@@ -548,17 +570,17 @@ function DashboardPage() {
       setStorageConfig(storageSummary);
       if (dbSummaryResult.ok) {
         setCaptureDbSummary(dbSummaryResult.summary);
-        setCaptureDbError(null);
+        setCaptureDbFailure(null);
       } else {
         setCaptureDbSummary(null);
-        setCaptureDbError(dbSummaryResult.message);
+        setCaptureDbFailure(dbSummaryResult);
       }
       if (deviceEventsResult.ok) {
         setDeviceEvents(deviceEventsResult.events);
-        setDeviceEventsError(null);
+        setDeviceEventsFailure(null);
       } else {
         setDeviceEvents([]);
-        setDeviceEventsError(deviceEventsResult.message);
+        setDeviceEventsFailure(deviceEventsResult);
       }
       setLastRefreshed(new Date());
       setLoading(false);
@@ -567,6 +589,9 @@ function DashboardPage() {
       cancelled = true;
     };
   }, []);
+
+  const captureDbError = captureDbFailure ? failureText(t, captureDbFailure) : null;
+  const deviceEventsError = deviceEventsFailure ? failureText(t, deviceEventsFailure) : null;
 
   const effectiveToday = today ?? SSR_SAFE_DAY;
 
@@ -591,8 +616,8 @@ function DashboardPage() {
   const cameraConnected = !!status?.camera?.connected;
   const cameraLabel = status?.camera
     ? [status.camera.manufacturer, status.camera.model].filter(Boolean).join(" ") ||
-      "Model tidak diketahui"
-    : "Belum terdeteksi";
+      t(m.modelUnknown)
+    : t(m.notDetected);
 
   // Urutan plant tetap mengikuti daftar tetap aplikasi, bukan diurutkan menurut
   // jumlah: baris dan warnanya harus stabil supaya perubahan angka terbaca
@@ -627,7 +652,7 @@ function DashboardPage() {
   const days: DayBucket[] = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(effectiveToday);
     d.setDate(d.getDate() - (6 - i));
-    return { date: d, label: DAY_LABELS[d.getDay()], count: dailyTally.get(i) ?? 0 };
+    return { date: d, label: t(DAY_LABELS[d.getDay()]), count: dailyTally.get(i) ?? 0 };
   });
   const weekTotal = captureDbSummary?.weekCount ?? 0;
 
@@ -656,81 +681,82 @@ function DashboardPage() {
       ? "text-emerald-600"
       : "text-amber-600";
   const readinessLabel = !status?.online
-    ? "Perlu perhatian"
+    ? t(m.readinessAttention)
     : cameraConnected
-      ? "Siap"
-      : "Edge siap, kamera perlu dicek";
+      ? t(m.readinessReady)
+      : t(m.readinessCameraCheck);
   const operationalNotes = [
-    !status?.online
-      ? "Edge device belum reachable. Cek Mini PC, jaringan LAN, atau service edge API."
-      : null,
-    status?.online && !cameraConnected
-      ? "Edge API reachable, tetapi kamera belum terhubung atau sesi belum siap."
-      : null,
-    capturesToday === 0
-      ? "Belum ada capture hari ini. Jika shift sudah berjalan, lakukan pengecekan alur capture."
-      : null,
+    !status?.online ? t(m.noteEdgeUnreachable) : null,
+    status?.online && !cameraConnected ? t(m.noteCameraNotReady) : null,
+    capturesToday === 0 ? t(m.noteNoCaptureToday) : null,
     latestCaptureDate
-      ? `Capture terakhir tersimpan pada ${formatDateTime(latestCaptureDate.getTime())}.`
-      : "Belum ada capture yang tercatat di registry.",
+      ? t(m.noteLastCaptureSaved, { time: formatDateTime(latestCaptureDate.getTime(), locale) })
+      : t(m.noteNoCaptureInRegistry),
     captureDbError
-      ? `Registry DB belum bisa dimuat: ${captureDbError}`
+      ? t(m.noteRegistryLoadFailed, { reason: captureDbError })
       : captureDbSummary?.lastCapturedAt
-        ? `Registry DB terakhir mencatat capture ${formatRelativeTime(latestDbCaptureDate)}.`
-        : "Belum ada metadata capture di registry MSSQL.",
+        ? t(m.noteRegistryLastCapture, { when: formatRelativeTime(latestDbCaptureDate, t) })
+        : t(m.noteNoMetadata),
     deviceEventsError
-      ? `Log device belum bisa dimuat: ${deviceEventsError}`
+      ? t(m.noteDeviceLogLoadFailed, { reason: deviceEventsError })
       : latestDeviceEvent
-        ? `Event device terbaru ${formatRelativeTime(latestDeviceEventDate)}: ${formatDeviceEventLabel(latestDeviceEvent.eventType)}.`
-        : "Belum ada event device terbaru yang tercatat di MSSQL.",
+        ? t(m.noteLatestDeviceEvent, {
+            when: formatRelativeTime(latestDeviceEventDate, t),
+            event: formatDeviceEventLabel(latestDeviceEvent.eventType, t),
+          })
+        : t(m.noteNoDeviceEvent),
   ].filter(Boolean) as string[];
   const freshnessCards = [
     {
-      title: "Riwayat capture",
-      status: latestCapture ? "Ada capture" : "Belum ada capture",
+      title: t(m.historyTitle),
+      status: latestCapture ? t(m.historyHasCapture) : t(m.historyNoCapture),
       description: latestCapture
-        ? `Capture terakhir ${formatRelativeTime(latestCaptureDate)}.`
-        : "Registry belum memuat satu pun capture.",
+        ? t(m.historyLastCapture, { when: formatRelativeTime(latestCaptureDate, t) })
+        : t(m.historyEmpty),
       detail: latestCapture
-        ? `${recent.length} record terbaru siap direview.`
-        : "Mulai dari halaman Capture, atau periksa apakah penyimpanan ke folder jaringan gagal.",
+        ? t(m.historyRecordsReady, { count: recent.length })
+        : t(m.historyStartHint),
       to: "/gallery",
-      cta: "Buka Gallery",
+      cta: t(m.openGallery),
       icon: Images,
       tone: latestCapture ? ("success" as const) : ("warning" as const),
     },
     {
-      title: "Edge device",
-      status: status?.online ? "Terhubung" : "Offline",
+      title: t(m.edgeTitle),
+      status: status?.online ? t(m.connected) : t(m.offline),
       description: status?.online
-        ? `Status terakhir diperbarui ${formatRelativeTime(lastRefreshed)}.`
-        : (status?.statusMessage ??
-          "Dashboard belum bisa menjangkau edge device saat refresh terakhir."),
+        ? t(m.edgeStatusUpdated, { when: formatRelativeTime(lastRefreshed, t) })
+        : (deviceStatusText(t, status) ?? t(m.edgeUnreachableAtRefresh)),
       detail: status?.online
-        ? `Status koneksi: ${status.connectionState ?? "unknown"}${cameraConnected ? " • kamera terhubung" : " • kamera belum siap"}.`
-        : "Periksa Mini PC, jaringan LAN, service edge API, atau halaman Devices untuk diagnosa lanjutan.",
+        ? t(cameraConnected ? m.edgeStateCameraConnected : m.edgeStateCameraNotReady, {
+            state: status.connectionState ?? "unknown",
+          })
+        : t(m.edgeOfflineHint),
       to: "/devices",
-      cta: "Buka Devices",
+      cta: t(m.openDevices),
       icon: Wifi,
       tone: status?.online ? ("success" as const) : ("warning" as const),
     },
     {
-      title: "Registry DB",
+      title: t(m.registryTitle),
       status: captureDbSummary?.lastCapturedAt
-        ? "Tercatat"
+        ? t(m.registryRecorded)
         : captureDbError
-          ? "Perlu cek"
-          : "Belum ada log",
+          ? t(m.registryNeedsCheck)
+          : t(m.registryNoLog),
       description: captureDbSummary?.lastCapturedAt
-        ? `Capture DB terakhir ${formatRelativeTime(latestDbCaptureDate)}.`
+        ? t(m.registryLastCapture, { when: formatRelativeTime(latestDbCaptureDate, t) })
         : captureDbError
-          ? "Dashboard belum bisa memuat metadata capture dari MSSQL."
-          : "Belum ada metadata capture yang tercatat di registry MSSQL.",
+          ? t(m.registryLoadFailed)
+          : t(m.registryNoMetadata),
       detail: captureDbSummary
-        ? `${captureDbSummary.todayCount} capture hari ini • ${captureDbSummary.totalCount} total record.`
-        : captureDbError || "Capture akan muncul di sini setelah tersimpan dan tercatat ke DB.",
+        ? t(m.registryCounts, {
+            today: captureDbSummary.todayCount,
+            total: captureDbSummary.totalCount,
+          })
+        : captureDbError || t(m.registryPendingHint),
       to: "/gallery",
-      cta: "Audit Registry",
+      cta: t(m.auditRegistry),
       icon: Database,
       tone: captureDbSummary?.lastCapturedAt
         ? ("success" as const)
@@ -739,16 +765,12 @@ function DashboardPage() {
           : ("muted" as const),
     },
     {
-      title: "Auto-save target",
-      status: storageConfig?.configured ? "Sudah diisi" : "Perlu setup",
-      description: storageConfig?.configured
-        ? "App server sudah memuat path target untuk auto-save."
-        : "NETWORK_SAVE_ROOT belum tersedia untuk app server ini.",
-      detail: storageConfig?.targetRoot
-        ? storageConfig.targetRoot
-        : "Buka Storage untuk cek env target path dan kesiapan write probe.",
+      title: t(m.autoSaveTitle),
+      status: storageConfig?.configured ? t(m.autoSaveConfigured) : t(m.autoSaveNeedsSetup),
+      description: storageConfig?.configured ? t(m.autoSaveLoaded) : t(m.autoSaveMissing),
+      detail: storageConfig?.targetRoot ? storageConfig.targetRoot : t(m.autoSaveHint),
       to: "/storage",
-      cta: "Buka Storage",
+      cta: t(m.openStorage),
       icon: FolderOpen,
       tone: storageConfig?.configured ? ("success" as const) : ("warning" as const),
     },
@@ -756,46 +778,42 @@ function DashboardPage() {
   const attentionItems = [
     !status?.online
       ? {
-          title: "Edge device sedang offline",
-          detail:
-            "Dashboard tidak bisa menjangkau edge device. Buka Devices untuk cek connection state dan identitas Mini PC.",
+          title: t(m.attentionEdgeOfflineTitle),
+          detail: t(m.attentionEdgeOfflineDetail),
           to: "/devices",
-          cta: "Buka Devices",
+          cta: t(m.openDevices),
         }
       : null,
     status?.online && !cameraConnected
       ? {
-          title: "Sesi kamera perlu perhatian",
-          detail: "Edge API terhubung, tetapi kamera belum siap untuk capture baru.",
+          title: t(m.attentionCameraTitle),
+          detail: t(m.attentionCameraDetail),
           to: "/devices",
-          cta: "Cek Status Kamera",
+          cta: t(m.checkCameraStatus),
         }
       : null,
     !storageConfig?.configured
       ? {
-          title: "Target auto-save belum dikonfigurasi",
-          detail:
-            "App server belum memuat NETWORK_SAVE_ROOT. Storage page akan membantu verifikasi env dan alur save.",
+          title: t(m.attentionStorageTitle),
+          detail: t(m.attentionStorageDetail),
           to: "/storage",
-          cta: "Konfigurasi Storage",
+          cta: t(m.configureStorage),
         }
       : null,
     captureDbError
       ? {
-          title: "Registry capture belum sinkron",
-          detail:
-            "Dashboard gagal memuat ringkasan capture dari MSSQL. Buka Gallery untuk cek riwayat registry atau verifikasi koneksi DB.",
+          title: t(m.attentionRegistryTitle),
+          detail: t(m.attentionRegistryDetail),
           to: "/gallery",
-          cta: "Cek Gallery",
+          cta: t(m.checkGallery),
         }
       : null,
     capturesToday === 0
       ? {
-          title: "Belum ada capture hari ini",
-          detail:
-            "Jika shift sudah berjalan, buka Capture untuk uji autofocus dan ambil sample baru.",
+          title: t(m.attentionNoCaptureTitle),
+          detail: t(m.attentionNoCaptureDetail),
           to: "/capture",
-          cta: "Buka Capture",
+          cta: t(m.openCapture),
         }
       : null,
   ].filter(Boolean) as Array<{ title: string; detail: string; to: string; cta: string }>;
@@ -804,19 +822,18 @@ function DashboardPage() {
     <div className="p-6">
       <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <PageTitle
-            title="Dashboard"
-            description="Ringkasan capture, kamera, dan status device."
-          />
+          <PageTitle title={t(m.pageTitle)} description={t(m.pageDescription)} />
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground">
-            {lastRefreshed ? `Diperbarui ${formatDateTime(lastRefreshed.getTime())}` : ""}
+            {lastRefreshed
+              ? t(m.updatedAt, { time: formatDateTime(lastRefreshed.getTime(), locale) })
+              : ""}
           </span>
           <button
             onClick={refresh}
             disabled={loading}
-            title="Refresh dashboard"
+            title={t(m.refresh)}
             className="rounded-md border border-input bg-background p-2 hover:bg-accent disabled:opacity-50"
           >
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
@@ -829,41 +846,41 @@ function DashboardPage() {
           <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
             <div>
               <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Snapshot Operasional
+                {t(m.snapshotEyebrow)}
               </div>
               <h2 className={`mt-1 text-xl font-semibold ${readinessTone}`}>{readinessLabel}</h2>
               <p className="mt-1 text-sm text-muted-foreground">
                 {cameraConnected
-                  ? "Kamera terhubung dan siap dipakai untuk capture berikutnya."
+                  ? t(m.snapshotCameraReady)
                   : status?.online
-                    ? "Perangkat edge online, tetapi koneksi kamera masih perlu perhatian."
-                    : "Dashboard belum bisa mengonfirmasi koneksi edge device saat ini."}
+                    ? t(m.snapshotCameraAttention)
+                    : t(m.snapshotEdgeUnconfirmed)}
               </p>
             </div>
             <div className="rounded-lg border bg-background px-3 py-2 text-right text-xs">
-              <div className="text-muted-foreground">Capture terakhir</div>
+              <div className="text-muted-foreground">{t(m.lastCapture)}</div>
               <div className="mt-1 font-medium text-foreground">
-                {latestCaptureDate ? formatDateTime(latestCaptureDate.getTime()) : "—"}
+                {latestCaptureDate ? formatDateTime(latestCaptureDate.getTime(), locale) : "—"}
               </div>
             </div>
           </div>
 
           <div className="mb-4 grid gap-3 sm:grid-cols-3">
             <div className="rounded-lg border bg-background p-3">
-              <div className="text-xs text-muted-foreground">Capture minggu ini</div>
+              <div className="text-xs text-muted-foreground">{t(m.capturesThisWeek)}</div>
               <div className="mt-1 text-lg font-semibold">{weekTotal}</div>
             </div>
             <div className="rounded-lg border bg-background p-3">
-              <div className="text-xs text-muted-foreground">Plant tercakup hari ini</div>
+              <div className="text-xs text-muted-foreground">{t(m.plantsCoveredToday)}</div>
               <div className="mt-1 text-lg font-semibold">{plantsCoveredToday}</div>
             </div>
             <div className="rounded-lg border bg-background p-3">
               {/* Ini memang angka LOKAL, dan disebut begitu. Berguna karena
                   IndexedDB punya kuota; menyamarkannya sebagai ukuran produksi
                   justru yang keliru selama ini. */}
-              <div className="text-xs text-muted-foreground">Salinan di browser ini</div>
+              <div className="text-xs text-muted-foreground">{t(m.localCopies)}</div>
               <div className="mt-1 text-lg font-semibold">
-                {hydrated ? `${localCopyCount} foto` : "—"}
+                {hydrated ? t(m.photoCount, { count: localCopyCount }) : "—"}
               </div>
               <div className="text-[11px] text-muted-foreground">
                 {hydrated ? formatBytes(localCopyBytes) : "—"}
@@ -874,29 +891,29 @@ function DashboardPage() {
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <ActionCard
               to="/capture"
-              title="Buka Capture"
-              description="Mulai autofocus, ambil gambar, dan simpan hasil."
+              title={t(m.openCapture)}
+              description={t(m.actionCaptureDescription)}
               icon={Camera}
             />
             <ActionCard
               to="/gallery"
-              title="Tinjau Gallery"
-              description="Audit hasil capture, compare, rename, atau download batch."
+              title={t(m.reviewGallery)}
+              description={t(m.actionGalleryDescription)}
               icon={Images}
             />
             {isAdmin && (
               <ActionCard
                 to="/storage"
-                title="Cek Storage"
-                description="Verifikasi share path, edge reachability, dan fallback save."
+                title={t(m.checkStorage)}
+                description={t(m.actionStorageDescription)}
                 icon={FolderOpen}
               />
             )}
             {isAdmin && (
               <ActionCard
                 to="/settings"
-                title="Settings Operator"
-                description="Atur pattern filename, counter, dan akses folder simpan."
+                title={t(m.operatorSettings)}
+                description={t(m.actionSettingsDescription)}
                 icon={Settings2}
               />
             )}
@@ -906,7 +923,7 @@ function DashboardPage() {
         <section className="rounded-xl border bg-card shadow-sm p-5">
           <div className="mb-3 flex items-center gap-2">
             <ShieldAlert className="h-4 w-4 text-primary" />
-            <h2 className="text-sm font-semibold">Perhatian & Tindakan Berikutnya</h2>
+            <h2 className="text-sm font-semibold">{t(m.attentionHeading)}</h2>
           </div>
           {attentionItems.length > 0 ? (
             <div className="space-y-3">
@@ -950,10 +967,11 @@ function DashboardPage() {
               <div className="flex items-start gap-2">
                 <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-600" />
                 <div>
-                  <div className="text-sm font-medium text-foreground">Siap secara operasional</div>
+                  <div className="text-sm font-medium text-foreground">
+                    {t(m.operationallyReady)}
+                  </div>
                   <div className="mt-1 text-sm text-muted-foreground">
-                    Edge device online, storage target terkonfigurasi, dan dashboard tidak melihat
-                    blocker utama saat ini.
+                    {t(m.operationallyReadyDetail)}
                   </div>
                 </div>
               </div>
@@ -970,9 +988,7 @@ function DashboardPage() {
             ))}
           </div>
           <div className="mt-4 rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
-            Angka capture di halaman ini dibaca dari registry MSSQL, jadi sama di setiap PC. Hanya
-            "Salinan di browser ini" yang bersifat lokal — itu memang menghitung isi penyimpanan
-            browser yang sedang dipakai.
+            {t(m.sourceNote)}
           </div>
         </section>
       </section>
@@ -994,44 +1010,46 @@ function DashboardPage() {
       <section className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           icon={Images}
-          label="Total Capture"
+          label={t(m.totalCaptures)}
           value={captureDbSummary ? totalCaptures : "—"}
           sub={
             captureDbError
-              ? "Registry belum bisa dibaca"
+              ? t(m.registryUnreadable)
               : captureDbSummary
-                ? "Semua waktu, seluruh plant"
-                : "Menunggu registry"
+                ? t(m.allTimeAllPlants)
+                : t(m.waitingForRegistry)
           }
           tone={captureDbError ? "amber" : "primary"}
         />
         <StatCard
           icon={Camera}
-          label="Capture Hari Ini"
+          label={t(m.capturesToday)}
           value={captureDbSummary ? capturesToday : "—"}
           sub={
             hydrated && today
-              ? today.toLocaleDateString("en-GB", {
+              ? today.toLocaleDateString(locale, {
                   day: "2-digit",
                   month: "short",
                   year: "numeric",
                 })
-              : "Tanggal lokal operator"
+              : t(m.operatorLocalDate)
           }
           tone="sky"
         />
         <StatCard
           icon={Wifi}
-          label="Kamera"
-          value={status?.online ? (cameraConnected ? "Terhubung" : "Sesi aktif") : "Offline"}
-          sub={status?.online ? cameraLabel : (status?.statusMessage ?? cameraLabel)}
+          label={t(m.camera)}
+          value={
+            status?.online ? (cameraConnected ? t(m.connected) : t(m.sessionActive)) : t(m.offline)
+          }
+          sub={status?.online ? cameraLabel : (deviceStatusText(t, status) ?? cameraLabel)}
           tone={cameraConnected ? "emerald" : status?.online ? "amber" : "muted"}
         />
         <StatCard
           icon={Database}
-          label="Ukuran Tercatat"
+          label={t(m.recordedSize)}
           value={captureDbSummary ? formatBytes(totalBytes) : "—"}
-          sub="Total berkas menurut registry"
+          sub={t(m.recordedSizeHint)}
           tone="emerald"
         />
       </section>
@@ -1040,10 +1058,10 @@ function DashboardPage() {
         {/* Captures by Location */}
         <section className="rounded-xl border bg-card shadow-sm p-4">
           <h2 className="mb-3 flex items-center gap-1.5 text-sm font-semibold">
-            <MapPin className="h-4 w-4 text-muted-foreground" /> Capture per Lokasi
+            <MapPin className="h-4 w-4 text-muted-foreground" /> {t(m.byLocation)}
           </h2>
           {totalCaptures === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">Belum ada capture.</p>
+            <p className="py-6 text-center text-sm text-muted-foreground">{t(m.noCaptures)}</p>
           ) : (
             <div className="space-y-3">
               {locationCounts.map((row, i) => (
@@ -1057,7 +1075,7 @@ function DashboardPage() {
               ))}
               {otherLocationCount > 0 && (
                 <CompareRow
-                  label="Lainnya / belum ditentukan"
+                  label={t(m.otherLocation)}
                   count={otherLocationCount}
                   total={totalCaptures}
                   color="var(--color-muted-foreground)"
@@ -1070,17 +1088,17 @@ function DashboardPage() {
         {/* Captures by Bin */}
         <section className="rounded-xl border bg-card shadow-sm p-4">
           <h2 className="mb-3 flex items-center gap-1.5 text-sm font-semibold">
-            <Package className="h-4 w-4 text-muted-foreground" /> Capture per Bin
+            <Package className="h-4 w-4 text-muted-foreground" /> {t(m.byBin)}
           </h2>
           {totalCaptures === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">Belum ada capture.</p>
+            <p className="py-6 text-center text-sm text-muted-foreground">{t(m.noCaptures)}</p>
           ) : (
             <div className="space-y-3">
               <CompareRow label="BIN 1" count={bin1Count} total={totalCaptures} color={COLOR_A} />
               <CompareRow label="BIN 2" count={bin2Count} total={totalCaptures} color={COLOR_B} />
               {unspecifiedBinCount > 0 && (
                 <CompareRow
-                  label="Belum ditentukan"
+                  label={t(m.unspecified)}
                   count={unspecifiedBinCount}
                   total={totalCaptures}
                   color="var(--color-muted-foreground)"
@@ -1094,11 +1112,13 @@ function DashboardPage() {
       {/* Last 7 days trend */}
       <section className="mb-6 rounded-xl border bg-card shadow-sm p-4">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold">Capture — 7 Hari Terakhir</h2>
-          <span className="text-xs text-muted-foreground">{weekTotal} capture minggu ini</span>
+          <h2 className="text-sm font-semibold">{t(m.last7Days)}</h2>
+          <span className="text-xs text-muted-foreground">
+            {t(m.capturesThisWeekCount, { count: weekTotal })}
+          </span>
         </div>
         {totalCaptures === 0 ? (
-          <p className="py-10 text-center text-sm text-muted-foreground">Belum ada capture.</p>
+          <p className="py-10 text-center text-sm text-muted-foreground">{t(m.noCaptures)}</p>
         ) : (
           <WeekTrendChart days={days} />
         )}
@@ -1111,16 +1131,16 @@ function DashboardPage() {
       <div className="grid gap-4 lg:grid-cols-3">
         <section className="rounded-xl border bg-card shadow-sm p-4">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold">Capture Terbaru</h2>
+            <h2 className="text-sm font-semibold">{t(m.latestCaptures)}</h2>
             <Link to="/gallery" className="text-xs font-medium text-primary hover:underline">
-              Lihat semua
+              {t(m.viewAll)}
             </Link>
           </div>
           {captureDbError ? (
             <p className="py-6 text-center text-sm text-muted-foreground">{captureDbError}</p>
           ) : !captureDbSummary || captureDbSummary.recentRecords.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">
-              Metadata capture dari MSSQL akan muncul di sini.
+              {t(m.latestCapturesEmpty)}
             </p>
           ) : (
             <ul className="space-y-2">
@@ -1140,7 +1160,7 @@ function DashboardPage() {
                       </div>
                     </div>
                     <span className="shrink-0 text-[11px] text-muted-foreground">
-                      {formatDateTime(new Date(record.capturedAt).getTime())}
+                      {formatDateTime(new Date(record.capturedAt).getTime(), locale)}
                     </span>
                   </div>
                 </li>
@@ -1149,17 +1169,20 @@ function DashboardPage() {
           )}
           <div className="mt-4 rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
             {captureDbSummary
-              ? `${captureDbSummary.saveBreakdown.saved} tersimpan ke folder jaringan • ${captureDbSummary.saveBreakdown.downloaded} baru diunduh lokal.`
-              : "Belum ada ringkasan untuk ditampilkan."}
+              ? t(m.saveBreakdown, {
+                  saved: captureDbSummary.saveBreakdown.saved,
+                  downloaded: captureDbSummary.saveBreakdown.downloaded,
+                })
+              : t(m.noSummary)}
           </div>
         </section>
 
         <section className="rounded-xl border bg-card shadow-sm p-4">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold">Event Device Terbaru</h2>
+            <h2 className="text-sm font-semibold">{t(m.latestDeviceEvents)}</h2>
             {isAdmin && (
               <Link to="/devices" className="text-xs font-medium text-primary hover:underline">
-                Buka Devices
+                {t(m.openDevices)}
               </Link>
             )}
           </div>
@@ -1167,7 +1190,7 @@ function DashboardPage() {
             <p className="py-6 text-center text-sm text-muted-foreground">{deviceEventsError}</p>
           ) : deviceEvents.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">
-              Event operasional device akan muncul di sini.
+              {t(m.deviceEventsEmpty)}
             </p>
           ) : (
             <ul className="space-y-2">
@@ -1177,7 +1200,7 @@ function DashboardPage() {
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-xs font-medium">
-                          {formatDeviceEventLabel(event.eventType)}
+                          {formatDeviceEventLabel(event.eventType, t)}
                         </span>
                         <StatusPill
                           tone={
@@ -1197,7 +1220,7 @@ function DashboardPage() {
                       </div>
                     </div>
                     <span className="shrink-0 text-[11px] text-muted-foreground">
-                      {formatDateTime(new Date(event.createdAt).getTime())}
+                      {formatDateTime(new Date(event.createdAt).getTime(), locale)}
                     </span>
                   </div>
                 </li>
@@ -1209,17 +1232,17 @@ function DashboardPage() {
         {/* Device health */}
         <section className="rounded-xl border bg-card shadow-sm p-4">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold">Kesehatan Device</h2>
+            <h2 className="text-sm font-semibold">{t(m.deviceHealth)}</h2>
             {isAdmin && (
               <Link to="/devices" className="text-xs font-medium text-primary hover:underline">
-                Kelola
+                {t(m.manage)}
               </Link>
             )}
           </div>
           <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 text-xs">
-            <dt className="text-muted-foreground">Mini PC</dt>
+            <dt className="text-muted-foreground">{t(m.miniPc)}</dt>
             <dd className="text-right font-medium">{status?.deviceId ?? <NotAvailable />}</dd>
-            <dt className="text-muted-foreground">Status koneksi</dt>
+            <dt className="text-muted-foreground">{t(m.connectionState)}</dt>
             <dd className="text-right font-medium">
               {status?.connectionState ? (
                 <span
@@ -1237,17 +1260,17 @@ function DashboardPage() {
                 <NotAvailable />
               )}
             </dd>
-            <dt className="text-muted-foreground">Kamera</dt>
+            <dt className="text-muted-foreground">{t(m.camera)}</dt>
             <dd className="text-right font-medium">
               {status?.camera ? cameraLabel : <NotAvailable />}
             </dd>
-            <dt className="text-muted-foreground">Versi Agent</dt>
+            <dt className="text-muted-foreground">{t(m.agentVersion)}</dt>
             <dd className="text-right font-medium">{status?.agentVersion ?? <NotAvailable />}</dd>
-            <dt className="text-muted-foreground">CPU / RAM / Disk</dt>
+            <dt className="text-muted-foreground">{t(m.cpuRamDisk)}</dt>
             <dd className="text-right">
               <NotAvailable />
             </dd>
-            <dt className="text-muted-foreground">Uptime</dt>
+            <dt className="text-muted-foreground">{t(m.uptime)}</dt>
             <dd className="text-right">
               <NotAvailable />
             </dd>

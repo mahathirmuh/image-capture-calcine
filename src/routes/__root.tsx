@@ -26,27 +26,30 @@ import { Toaster } from "@/components/ui/sonner";
 const TOAST_DURATION_MS = 3000;
 import { SidebarProvider, SidebarTrigger, SidebarInset, useSidebar } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
-import { canRoleOpenPath, findNavItem, SUB_PAGE_TITLES, VIEWER_HOME } from "@/lib/nav-items";
+import { canRoleOpenPath, findNavItem, SUB_PAGE_LABELS, VIEWER_HOME } from "@/lib/nav-items";
+import { LanguageSwitch } from "@/components/language-switch";
 import { UserMenu } from "@/components/user-menu";
-import { fetchCurrentUser, type SessionUser } from "@/lib/auth";
+import { commonMessages as c } from "@/i18n/common";
+import { fetchCurrentUser, fetchUiLanguage, type SessionUser } from "@/lib/auth";
+import { getClientLanguage, I18nProvider, useT, type Language } from "@/lib/i18n";
 
 const LOGIN_PATH = "/login";
 
 function NotFoundComponent() {
+  const t = useT();
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">
         <h1 className="text-7xl font-bold text-foreground">404</h1>
-        <h2 className="mt-4 text-xl font-semibold text-foreground">Halaman tidak ditemukan</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Halaman yang Anda cari tidak tersedia atau sudah dipindahkan.
-        </p>
+        <h2 className="mt-4 text-xl font-semibold text-foreground">{t(c.notFoundTitle)}</h2>
+        <p className="mt-2 text-sm text-muted-foreground">{t(c.notFoundBody)}</p>
         <div className="mt-6">
           <Link
             to="/capture"
             className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
-            Kembali ke Capture
+            {t(c.backToCapture)}
           </Link>
         </div>
       </div>
@@ -57,16 +60,13 @@ function NotFoundComponent() {
 function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   console.error(error);
   const router = useRouter();
+  const t = useT();
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">
-        <h1 className="text-xl font-semibold tracking-tight text-foreground">
-          Halaman gagal dimuat
-        </h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Terjadi kendala di aplikasi. Coba muat ulang halaman ini atau kembali ke Capture.
-        </p>
+        <h1 className="text-xl font-semibold tracking-tight text-foreground">{t(c.errorTitle)}</h1>
+        <p className="mt-2 text-sm text-muted-foreground">{t(c.errorBody)}</p>
         {import.meta.env.DEV && (
           <pre className="mt-4 whitespace-pre-wrap text-xs">{error.message}</pre>
         )}
@@ -78,13 +78,13 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
             }}
             className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
-            Coba lagi
+            {t(c.tryAgain)}
           </button>
           <a
             href="/"
             className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
           >
-            Ke Capture
+            {t(c.toCapture)}
           </a>
         </div>
       </div>
@@ -95,12 +95,18 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
 export const Route = createRootRouteWithContext<{
   queryClient: QueryClient;
   user: SessionUser | null;
+  language: Language;
 }>()({
   // Satu-satunya gerbang aplikasi. Ditaruh di root supaya rute baru ikut
   // terkunci begitu berkasnya dibuat -- tidak ada daftar rute terproteksi yang
   // bisa lupa diperbarui.
   beforeLoad: async ({ location }) => {
-    const user = await fetchCurrentUser();
+    // Bahasa dibaca bersama sesi. Di server sumbernya cookie permintaan; di
+    // browser keadaannya sudah ada di memori dan tidak perlu satu RPC lagi.
+    const [user, language] = await Promise.all([
+      fetchCurrentUser(),
+      typeof document === "undefined" ? fetchUiLanguage() : getClientLanguage(),
+    ]);
 
     if (!user && location.pathname !== LOGIN_PATH) {
       throw redirect({ to: LOGIN_PATH, search: { redirect: location.href } });
@@ -116,7 +122,7 @@ export const Route = createRootRouteWithContext<{
       throw redirect({ to: VIEWER_HOME });
     }
 
-    return { user };
+    return { user, language };
   },
   head: () => ({
     meta: [
@@ -165,7 +171,7 @@ export const Route = createRootRouteWithContext<{
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="id" suppressHydrationWarning>
       <head>
         <HeadContent />
       </head>
@@ -180,6 +186,7 @@ function RootShell({ children }: { children: ReactNode }) {
 function SidebarToggle() {
   const { state, toggleSidebar } = useSidebar();
   const collapsed = state === "collapsed";
+  const t = useT();
 
   return (
     <>
@@ -189,8 +196,8 @@ function SidebarToggle() {
         size="icon"
         className="hidden md:inline-flex"
         onClick={toggleSidebar}
-        aria-label={collapsed ? "Tampilkan sidebar" : "Sembunyikan sidebar"}
-        title={collapsed ? "Tampilkan sidebar" : "Sembunyikan sidebar"}
+        aria-label={collapsed ? t(c.showSidebar) : t(c.hideSidebar)}
+        title={collapsed ? t(c.showSidebar) : t(c.hideSidebar)}
       >
         {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
       </Button>
@@ -205,7 +212,8 @@ function SidebarToggle() {
 function Breadcrumb() {
   const currentPath = useRouterState({ select: (router) => router.location.pathname });
   const section = findNavItem(currentPath);
-  const subTitle = SUB_PAGE_TITLES[currentPath];
+  const subLabel = SUB_PAGE_LABELS[currentPath];
+  const t = useT();
 
   if (!section) {
     return <span className="font-semibold tracking-tight">Capture App</span>;
@@ -213,25 +221,25 @@ function Breadcrumb() {
 
   const Icon = section.icon;
   return (
-    <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5 text-sm">
+    <nav aria-label={t(c.breadcrumb)} className="flex min-w-0 items-center gap-1.5 text-sm">
       <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
-      {subTitle ? (
+      {subLabel ? (
         <>
           <Link to={section.url} className="truncate text-muted-foreground hover:text-foreground">
-            {section.title}
+            {t(section.label)}
           </Link>
           <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
-          <span className="truncate font-semibold text-foreground">{subTitle}</span>
+          <span className="truncate font-semibold text-foreground">{t(subLabel)}</span>
         </>
       ) : (
-        <span className="truncate font-semibold text-foreground">{section.title}</span>
+        <span className="truncate font-semibold text-foreground">{t(section.label)}</span>
       )}
     </nav>
   );
 }
 
 function RootComponent() {
-  const { queryClient } = Route.useRouteContext();
+  const { queryClient, language } = Route.useRouteContext();
   const onLoginRoute = useRouterState({
     select: (router) => router.location.pathname === LOGIN_PATH,
   });
@@ -240,39 +248,44 @@ function RootComponent() {
   // masuk, tidak ada satu pun tujuan navigasi di sana yang bisa dibuka.
   if (onLoginRoute) {
     return (
-      <QueryClientProvider client={queryClient}>
-        <Outlet />
-        <Toaster richColors duration={TOAST_DURATION_MS} />
-      </QueryClientProvider>
+      <I18nProvider ssrLanguage={language}>
+        <QueryClientProvider client={queryClient}>
+          <Outlet />
+          <Toaster richColors duration={TOAST_DURATION_MS} />
+        </QueryClientProvider>
+      </I18nProvider>
     );
   }
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <SidebarProvider>
-        <div className="flex min-h-svh w-full">
-          <AppSidebar />
-          <SidebarInset className="transition-[width,margin] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]">
-            {/* Topbar menempel di atas supaya identitas operator dan tombol
+    <I18nProvider ssrLanguage={language}>
+      <QueryClientProvider client={queryClient}>
+        <SidebarProvider>
+          <div className="flex min-h-svh w-full">
+            <AppSidebar />
+            <SidebarInset className="transition-[width,margin] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]">
+              {/* Topbar menempel di atas supaya identitas operator dan tombol
                 lipat sidebar tetap terjangkau saat halaman panjang di-scroll --
                 Gallery dan Devices keduanya jauh lebih tinggi dari satu layar. */}
-            <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center gap-2 border-b bg-background px-4">
-              <SidebarToggle />
-              <Breadcrumb />
-              <div className="ml-auto flex items-center gap-1">
-                <UserMenu />
-              </div>
-            </header>
-            {/* Latar abu di sini, bukan di tiap halaman: kartu putih isi halaman
+              <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center gap-2 border-b bg-background px-4">
+                <SidebarToggle />
+                <Breadcrumb />
+                <div className="ml-auto flex items-center gap-1">
+                  <LanguageSwitch />
+                  <UserMenu />
+                </div>
+              </header>
+              {/* Latar abu di sini, bukan di tiap halaman: kartu putih isi halaman
                 baru terbaca sebagai permukaan kalau ada yang lebih gelap di
                 belakangnya. */}
-            <div className="flex-1 overflow-auto bg-muted/50">
-              <Outlet />
-            </div>
-          </SidebarInset>
-        </div>
-        <Toaster richColors duration={TOAST_DURATION_MS} />
-      </SidebarProvider>
-    </QueryClientProvider>
+              <div className="flex-1 overflow-auto bg-muted/50">
+                <Outlet />
+              </div>
+            </SidebarInset>
+          </div>
+          <Toaster richColors duration={TOAST_DURATION_MS} />
+        </SidebarProvider>
+      </QueryClientProvider>
+    </I18nProvider>
   );
 }

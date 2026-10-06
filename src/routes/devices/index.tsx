@@ -53,6 +53,23 @@ import { loadGallery } from "@/lib/gallery-store";
 import { loadPrefs } from "@/lib/capture-prefs";
 import { PageTitle } from "@/components/page-shell";
 import { downloadBlobFile, escapeCsvValue } from "@/lib/csv";
+import { commonMessages as c } from "@/i18n/common";
+import { deviceStatusText } from "@/i18n/device-status";
+import {
+  cameraSettingsMessages as cm,
+  deviceLogMessages as lm,
+  devicesMessages as m,
+} from "@/i18n/devices";
+import { failureText } from "@/i18n/errors";
+import {
+  translateId,
+  useLocale,
+  useNativeLocale,
+  useRichT,
+  useT,
+  type Message,
+  type Translator,
+} from "@/lib/i18n";
 import {
   APERTURE_OPTIONS,
   APPLY_HISTORY_SAVED_VIEW_OPTIONS,
@@ -68,8 +85,10 @@ import {
   appendApplyHistory,
   clearApplyHistory,
   filterTemplatesByTag,
+  getDeviceEventSavedViewLabel,
   getTemplateById,
   getTemplateCameraSettings,
+  getTemplateLabel,
   loadApplyHistory,
   loadApplyHistorySavedViewPreference,
   loadDeviceEventSavedViews,
@@ -135,12 +154,12 @@ export const Route = createFileRoute("/devices/")({
 // Runtime data is fetched for the selected registry ID. Host telemetry and QC are not supplied by the edge API.
 
 const TABS = [
-  { id: "overview", label: "Ringkasan" },
-  { id: "camera-settings", label: "Pengaturan Kamera" },
-  { id: "health", label: "Kesehatan & Status" },
-  { id: "logs", label: "Log" },
-  { id: "configuration", label: "Konfigurasi" },
-  { id: "fallback", label: "Koneksi Cadangan" },
+  { id: "overview", label: m.tabOverview },
+  { id: "camera-settings", label: m.tabCameraSettings },
+  { id: "health", label: m.tabHealth },
+  { id: "logs", label: m.tabLogs },
+  { id: "configuration", label: m.tabConfiguration },
+  { id: "fallback", label: m.tabFallback },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
 type ApplyHistoryFilter = "All" | "Applied" | "Failed";
@@ -151,17 +170,17 @@ type DeviceEventSavedViewId = DeviceEventSavedViewPreference;
 
 type ApplyHistorySavedView = {
   id: ApplyHistorySavedViewId;
-  label: string;
-  description: string;
+  label: Message;
+  description: Message;
   filter: ApplyHistoryFilter;
   quickFilter: ApplyHistoryQuickFilter;
   sort: ApplyHistorySort;
 };
 
-const DEVICE_EVENT_SAVED_VIEW_DESCRIPTIONS: Record<DeviceEventSavedViewId, string> = {
-  "audit-slot-1": "Audit harian rutin atau shift aktif.",
-  "audit-slot-2": "Investigasi insiden atau gangguan runtime.",
-  "audit-slot-3": "View operator favorit untuk audit cepat.",
+const DEVICE_EVENT_SAVED_VIEW_DESCRIPTIONS: Record<DeviceEventSavedViewId, Message> = {
+  "audit-slot-1": lm.savedViewSlot1Description,
+  "audit-slot-2": lm.savedViewSlot2Description,
+  "audit-slot-3": lm.savedViewSlot3Description,
 };
 const EMPTY_DEVICE_EVENT_SAVED_VIEW_COUNTS: DeviceEventSavedViewCounts = {
   "audit-slot-1": 0,
@@ -172,67 +191,67 @@ const EMPTY_DEVICE_EVENT_SAVED_VIEW_COUNTS: DeviceEventSavedViewCounts = {
 const APPLY_HISTORY_SAVED_VIEWS: ApplyHistorySavedView[] = [
   {
     id: "all-activity",
-    label: "Semua aktivitas",
-    description: "Semua hasil apply terbaru.",
+    label: cm.historyViewAll,
+    description: cm.historyViewAllDescription,
     filter: "All",
     quickFilter: "Any",
     sort: "Newest",
   },
   {
     id: "failures-only",
-    label: "Hanya gagal",
-    description: "Fokus pada apply yang gagal.",
+    label: cm.historyViewFailures,
+    description: cm.historyViewFailuresDescription,
     filter: "Failed",
     quickFilter: "Any",
     sort: "Newest",
   },
   {
     id: "needs-review",
-    label: "Perlu review",
-    description: "Entri dengan skipped keys yang perlu dicek operator.",
+    label: cm.historyViewNeedsReview,
+    description: cm.historyViewNeedsReviewDescription,
     filter: "All",
     quickFilter: "Has skipped keys",
     sort: "Failed first",
   },
   {
     id: "with-edge-profile",
-    label: "Dengan edge profile",
-    description: "Entri yang sudah punya edge profile.",
+    label: cm.historyViewWithEdgeProfile,
+    description: cm.historyViewWithEdgeProfileDescription,
     filter: "All",
     quickFilter: "Has edge profile",
     sort: "Newest",
   },
 ];
 
-const APPLY_HISTORY_FILTER_LABELS: Record<ApplyHistoryFilter, string> = {
-  All: "Semua",
-  Applied: "Berhasil",
-  Failed: "Gagal",
+const APPLY_HISTORY_FILTER_LABELS: Record<ApplyHistoryFilter, Message> = {
+  All: cm.historyFilterAll,
+  Applied: cm.historyFilterApplied,
+  Failed: cm.historyFilterFailed,
 };
 
-const APPLY_HISTORY_QUICK_FILTER_LABELS: Record<ApplyHistoryQuickFilter, string> = {
-  Any: "Semua entri",
-  "Has code": "Ada kode",
-  "Has skipped keys": "Ada skipped keys",
-  "Has edge profile": "Ada edge profile",
+const APPLY_HISTORY_QUICK_FILTER_LABELS: Record<ApplyHistoryQuickFilter, Message> = {
+  Any: cm.historyQuickAny,
+  "Has code": cm.historyQuickHasCode,
+  "Has skipped keys": cm.historyQuickHasSkippedKeys,
+  "Has edge profile": cm.historyQuickHasEdgeProfile,
 };
 
-const APPLY_HISTORY_SORT_LABELS: Record<ApplyHistorySort, string> = {
-  Newest: "Terbaru",
-  Oldest: "Terlama",
-  "Applied first": "Berhasil dulu",
-  "Failed first": "Gagal dulu",
+const APPLY_HISTORY_SORT_LABELS: Record<ApplyHistorySort, Message> = {
+  Newest: cm.historySortNewest,
+  Oldest: cm.historySortOldest,
+  "Applied first": cm.historySortAppliedFirst,
+  "Failed first": cm.historySortFailedFirst,
 };
 
 const DEFAULT_APPLY_HISTORY_SAVED_VIEW = APPLY_HISTORY_SAVED_VIEW_OPTIONS[0];
 
-function formatDateTime(date: Date) {
-  const datePart = date.toLocaleDateString("en-GB", {
+function formatDateTime(date: Date, locale: string) {
+  const datePart = date.toLocaleDateString(locale, {
     day: "2-digit",
     month: "short",
     year: "numeric",
   });
-  const timePart = date.toLocaleTimeString("en-GB", {
+  const timePart = date.toLocaleTimeString(locale, {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
@@ -240,16 +259,16 @@ function formatDateTime(date: Date) {
   return `${datePart} ${timePart}`;
 }
 
-function formatRelativeTime(timestamp: number | null) {
-  if (!timestamp) return "Belum ada data";
+function formatRelativeTime(timestamp: number | null, t: Translator) {
+  if (!timestamp) return t(m.relNoData);
   const diffMs = Date.now() - timestamp;
   const diffMinutes = Math.max(0, Math.floor(diffMs / 60000));
-  if (diffMinutes < 1) return "Baru saja";
-  if (diffMinutes < 60) return `${diffMinutes} menit lalu`;
+  if (diffMinutes < 1) return t(m.relJustNow);
+  if (diffMinutes < 60) return t(m.relMinutesAgo, { count: diffMinutes });
   const diffHours = Math.floor(diffMinutes / 60);
-  if (diffHours < 24) return `${diffHours} jam lalu`;
+  if (diffHours < 24) return t(m.relHoursAgo, { count: diffHours });
   const diffDays = Math.floor(diffHours / 24);
-  return `${diffDays} hari lalu`;
+  return t(m.relDaysAgo, { count: diffDays });
 }
 
 function StatusChip({
@@ -311,22 +330,35 @@ function useDebouncedValue<T>(value: T, delayMs: number) {
   return debouncedValue;
 }
 
-function formatDeviceEventLabel(eventType: string): string {
-  const labels: Record<string, string> = {
-    "metadata-finalized": "Metadata difinalisasi",
-    "capture-trigger-failed": "Trigger capture gagal",
-    "capture-job-failed": "Job capture gagal",
-    "capture-missing-asset": "Asset capture tidak tersedia",
-    "capture-exception": "Capture exception",
-    "autofocus-trigger-failed": "Trigger autofocus gagal",
-    "autofocus-job-failed": "Job autofocus gagal",
-    "autofocus-exception": "Autofocus exception",
-    "network-save-fallback": "Fallback network save",
-    "folder-save-fallback": "Fallback folder browser",
-    "browser-download-fallback": "Fallback download lokal",
-    "capture-record-sync-failed": "Sinkron capture DB gagal",
+// `t` bawaannya Indonesia: berkas ekspor (JSON/CSV) tidak ikut bahasa antarmuka.
+function formatDeviceEventLabel(eventType: string, t: Translator = translateId): string {
+  const labels: Record<string, Message> = {
+    "metadata-finalized": lm.eventMetadataFinalized,
+    "capture-trigger-failed": lm.eventCaptureTriggerFailed,
+    "capture-job-failed": lm.eventCaptureJobFailed,
+    "capture-missing-asset": lm.eventCaptureMissingAsset,
+    "capture-exception": lm.eventCaptureException,
+    "autofocus-trigger-failed": lm.eventAutofocusTriggerFailed,
+    "autofocus-job-failed": lm.eventAutofocusJobFailed,
+    "autofocus-exception": lm.eventAutofocusException,
+    "network-save-fallback": lm.eventNetworkSaveFallback,
+    "folder-save-fallback": lm.eventFolderSaveFallback,
+    "browser-download-fallback": lm.eventBrowserDownloadFallback,
+    "capture-record-sync-failed": lm.eventCaptureRecordSyncFailed,
   };
-  return labels[eventType] ?? eventType;
+  const label = labels[eventType];
+  return label ? t(label) : eventType;
+}
+
+// Severity adalah nilai data (info/warning/error); ini hanya teks tampilannya.
+function formatDeviceEventSeverity(severity: string, t: Translator): string {
+  const labels: Record<string, Message> = {
+    info: lm.severityValueInfo,
+    warning: lm.severityValueWarning,
+    error: lm.severityValueError,
+  };
+  const label = labels[severity];
+  return label ? t(label) : severity;
 }
 
 type DeviceEventFilter = "all" | "info" | "warning" | "error";
@@ -335,70 +367,80 @@ type DeviceEventTimeRange = "all" | "today" | "7d" | "30d" | "custom";
 type DeviceEventPresetId =
   "error-latest" | "audit-failures" | "fallback-events" | "capture-failures" | "autofocus-failures";
 
-const DEVICE_EVENT_FILTERS: Array<{ id: DeviceEventFilter; label: string }> = [
-  { id: "all", label: "Semua" },
-  { id: "error", label: "Error" },
-  { id: "warning", label: "Warning" },
-  { id: "info", label: "Info" },
+const DEVICE_EVENT_FILTERS: Array<{ id: DeviceEventFilter; label: Message }> = [
+  { id: "all", label: lm.severityAll },
+  { id: "error", label: lm.severityError },
+  { id: "warning", label: lm.severityWarning },
+  { id: "info", label: lm.severityInfo },
 ];
 
-const DEVICE_EVENT_TYPE_FILTERS: Array<{ id: DeviceEventTypeFilter; label: string }> = [
-  { id: "all", label: "Semua Tipe" },
-  { id: "capture", label: "Capture" },
-  { id: "autofocus", label: "Autofocus" },
-  { id: "fallback", label: "Fallback" },
-  { id: "other", label: "Lainnya" },
+const DEVICE_EVENT_TYPE_FILTERS: Array<{ id: DeviceEventTypeFilter; label: Message }> = [
+  { id: "all", label: lm.typeAll },
+  { id: "capture", label: lm.typeCapture },
+  { id: "autofocus", label: lm.typeAutofocus },
+  { id: "fallback", label: lm.typeFallback },
+  { id: "other", label: lm.typeOther },
 ];
 
-const DEVICE_EVENT_TIME_FILTERS: Array<{ id: DeviceEventTimeRange; label: string }> = [
-  { id: "all", label: "Semua Waktu" },
-  { id: "today", label: "Hari Ini" },
-  { id: "7d", label: "7 Hari" },
-  { id: "30d", label: "30 Hari" },
-  { id: "custom", label: "Rentang Kustom" },
+const DEVICE_EVENT_TIME_FILTERS: Array<{ id: DeviceEventTimeRange; label: Message }> = [
+  { id: "all", label: lm.timeAll },
+  { id: "today", label: lm.timeToday },
+  { id: "7d", label: lm.time7d },
+  { id: "30d", label: lm.time30d },
+  { id: "custom", label: lm.timeCustom },
 ];
 const DEVICE_EVENT_SEARCH_DEBOUNCE_MS = 250;
 const DEFAULT_DEVICE_EVENT_FETCH_LIMIT = 8;
 const DEVICE_EVENT_FETCH_STEP = 8;
 
+/** Label sebuah pilihan filter; id-nya sendiri kalau pilihannya tidak dikenal. */
+function filterLabel<T extends string>(
+  filters: Array<{ id: T; label: Message }>,
+  id: T,
+  t: Translator,
+): string {
+  const match = filters.find((filter) => filter.id === id);
+  return match ? t(match.label) : id;
+}
+
 const DEVICE_EVENT_PRESETS: Array<{
   id: DeviceEventPresetId;
-  label: string;
+  label: Message;
   severity: DeviceEventFilter;
   eventType: DeviceEventTypeFilter;
   timeRange: DeviceEventTimeRange;
 }> = [
   {
     id: "error-latest",
-    label: "Error Terbaru",
+    label: lm.presetErrorLatest,
     severity: "error",
     eventType: "all",
     timeRange: "7d",
   },
   {
     id: "audit-failures",
-    label: "Audit Gagal",
+    label: lm.presetAuditFailures,
     severity: "error",
     eventType: "all",
     timeRange: "30d",
   },
   {
     id: "fallback-events",
-    label: "Fallback",
+    label: lm.presetFallback,
     severity: "all",
     eventType: "fallback",
     timeRange: "30d",
   },
   {
     id: "capture-failures",
-    label: "Capture Gagal",
+    label: lm.presetCaptureFailures,
     severity: "error",
     eventType: "capture",
     timeRange: "30d",
   },
   {
     id: "autofocus-failures",
-    label: "Autofocus Gagal",
+    label: lm.presetAutofocusFailures,
     severity: "error",
     eventType: "autofocus",
     timeRange: "30d",
@@ -503,17 +545,19 @@ function matchesDeviceEventSavedView(
   );
 }
 
-function summarizeDeviceEventSavedView(state: DeviceEventSavedViewState | null) {
-  if (!state) return "Belum ada filter tersimpan.";
+function summarizeDeviceEventSavedView(state: DeviceEventSavedViewState | null, t: Translator) {
+  if (!state) return t(lm.savedViewNoFilter);
 
   const parts = [
-    state.severity === "all" ? null : `Severity ${state.severity}`,
-    state.eventType === "all" ? null : `Tipe ${state.eventType}`,
-    state.timeRange === "all" ? null : `Waktu ${state.timeRange}`,
-    state.searchQuery.trim() ? `Cari "${state.searchQuery.trim()}"` : null,
+    state.severity === "all"
+      ? null
+      : t(lm.filterSeverity, { value: formatDeviceEventSeverity(state.severity, t) }),
+    state.eventType === "all" ? null : t(lm.filterType, { value: state.eventType }),
+    state.timeRange === "all" ? null : t(lm.filterTime, { value: state.timeRange }),
+    state.searchQuery.trim() ? t(lm.filterSearch, { query: state.searchQuery.trim() }) : null,
   ].filter(Boolean);
 
-  return parts.length > 0 ? parts.join(" • ") : "Semua log tanpa filter tambahan.";
+  return parts.length > 0 ? parts.join(" • ") : t(lm.savedViewAllLogs);
 }
 
 function normalizeDeviceEventSavedViewLabel(value: string) {
@@ -538,27 +582,28 @@ function formatDeviceEventPayloadKey(key: string) {
     .replace(/^./, (char) => char.toUpperCase());
 }
 
-function formatDeviceEventPayloadValue(value: unknown): string {
+function formatDeviceEventPayloadValue(value: unknown, t: Translator): string {
   if (value === null || value === undefined) return "—";
-  if (typeof value === "boolean") return value ? "Ya" : "Tidak";
+  if (typeof value === "boolean") return value ? t(lm.payloadYes) : t(lm.payloadNo);
   if (typeof value === "string") return value.trim() === "" ? "—" : value;
   if (typeof value === "number") return String(value);
   return JSON.stringify(value);
 }
 
-function matchesDeviceEventSearch(event: DeviceEventView, query: string) {
+// Pencarian mencocokkan teks yang tampil di layar, jadi ikut bahasa antarmuka.
+function matchesDeviceEventSearch(event: DeviceEventView, query: string, t: Translator) {
   const normalizedQuery = query.trim().toLowerCase();
   if (normalizedQuery === "") return true;
 
   const payloadTerms = event.payload
     ? Object.entries(event.payload).flatMap(([key, value]) => [
         formatDeviceEventPayloadKey(key),
-        formatDeviceEventPayloadValue(value),
+        formatDeviceEventPayloadValue(value, t),
       ])
     : [];
 
   return [
-    formatDeviceEventLabel(event.eventType),
+    formatDeviceEventLabel(event.eventType, t),
     event.eventType,
     event.severity,
     event.message,
@@ -571,8 +616,8 @@ function matchesDeviceEventSearch(event: DeviceEventView, query: string) {
     .includes(normalizedQuery);
 }
 
-function formatDeviceEventGroupDate(date: Date) {
-  return date.toLocaleDateString("id-ID", {
+function formatDeviceEventGroupDate(date: Date, locale: string) {
+  return date.toLocaleDateString(locale, {
     day: "2-digit",
     month: "long",
     year: "numeric",
@@ -681,10 +726,21 @@ function matchesApplyHistoryFilter(entry: ApplyHistoryEntry, filter: ApplyHistor
 }
 
 function NotAvailable() {
-  return <span className="text-muted-foreground">Belum tersedia</span>;
+  const t = useT();
+  return <span className="text-muted-foreground">{t(m.notAvailableYet)}</span>;
 }
 
 function DevicesPage() {
+  const t = useT();
+  const rich = useRichT();
+  const locale = useLocale();
+  const nativeLocale = useNativeLocale();
+  // Callback pemuat data (useCallback) membaca penerjemah lewat ref, supaya
+  // berganti bahasa tidak ikut memuat ulang registry, status, dan log.
+  const translate = useRef(t);
+  useEffect(() => {
+    translate.current = t;
+  }, [t]);
   const [rawStatus, setStatus] = useState<DeviceStatus | null>(null);
   const [profile, setProfile] = useState<DeviceProfile | null>(null);
   const [registeredDevices, setRegisteredDevices] = useState<RegisteredDevice[]>([]);
@@ -756,14 +812,14 @@ function DevicesPage() {
   const [cameraDetails, setCameraDetails] = useState<CameraDetails | null>(null);
   const [detailsError, setDetailsError] = useState<string | null>(null);
   const missingCameraDetail = loading
-    ? "Memuat..."
+    ? t(m.loadingEllipsis)
     : detailsError
-      ? "Gagal dimuat"
+      ? t(m.loadFailedShort)
       : !status?.online
-        ? "Device tidak terhubung"
+        ? t(m.deviceNotConnected)
         : !status.camera?.connected
-          ? "Kamera tidak terhubung"
-          : "Tidak dilaporkan kamera";
+          ? t(m.cameraNotConnected)
+          : t(m.notReportedByCamera);
   const [stateBusy, setStateBusy] = useState(false);
   const [profileSaving, setProfileSaving] = useState(false);
   const [cameraOperationBusy, setCameraOperationBusy] = useState(false);
@@ -792,11 +848,13 @@ function DevicesPage() {
         const detail = await getCameraDetails({ data });
         if (request !== runtimeRequest.current) return;
         if (detail.ok) setCameraDetails(detail.details);
-        else setDetailsError(detail.message);
+        else setDetailsError(failureText(translate.current, detail));
       }
     } catch (error) {
       if (request === runtimeRequest.current)
-        setDetailsError(error instanceof Error ? error.message : "Status gagal dimuat.");
+        setDetailsError(
+          error instanceof Error ? error.message : translate.current(m.statusLoadFailed),
+        );
     }
     if (request === runtimeRequest.current) setLoading(false);
   }, [selectedDevice?.id, selectedDevice?.isActive]);
@@ -824,14 +882,16 @@ function DevicesPage() {
       try {
         result = await listRegisteredDevices();
       } catch (error) {
-        setRegistryError(error instanceof Error ? error.message : "Registry gagal dimuat.");
+        setRegistryError(
+          error instanceof Error ? error.message : translate.current(m.registryLoadFailed),
+        );
         setRegistryLoading(false);
         return;
       }
       setRegistryLoading(false);
 
       if (!result.ok) {
-        setRegistryError(result.message);
+        setRegistryError(failureText(translate.current, result));
         setRegisteredDevices([]);
         setSelectedDeviceId(null);
         setProfile(null);
@@ -880,13 +940,13 @@ function DevicesPage() {
       const result = await changeRegisteredDeviceState({
         data: { deviceId: selectedDevice.id, action: pendingStateAction },
       });
-      if (!result.ok) throw new Error(result.message);
-      toast.success("Status registry device diperbarui");
+      if (!result.ok) throw new Error(failureText(t, result));
+      toast.success(t(m.toastRegistryStateUpdated));
       setPendingStateAction(null);
       await loadRegistry(null, selectedDevice.id);
     } catch (error) {
-      toast.error("Perubahan gagal", {
-        description: error instanceof Error ? error.message : "Coba lagi.",
+      toast.error(t(m.toastChangeFailed), {
+        description: error instanceof Error ? error.message : t(m.tryAgainShort),
       });
     } finally {
       setStateBusy(false);
@@ -940,7 +1000,7 @@ function DevicesPage() {
           setDeviceEventsHasMore(false);
           setDeviceEventsNextCursor(null);
         }
-        setDeviceEventsError(result.message);
+        setDeviceEventsError(failureText(translate.current, result));
         return;
       }
 
@@ -1156,107 +1216,114 @@ function DevicesPage() {
   const cameraConnected = !!status?.camera?.connected;
   const cameraLabel = status?.camera
     ? [status.camera.manufacturer, status.camera.model].filter(Boolean).join(" ") ||
-      "Model tidak diketahui"
-    : "Belum terdeteksi";
+      t(m.unknownModel)
+    : t(m.notDetectedYet);
   const profileTemplate = profile ? getTemplateById(profile.templateId) : null;
   const runtimePaused = !selectedDevice?.isActive;
   const readinessLabel = runtimePaused
-    ? "Device nonaktif / belum dipilih"
+    ? t(m.readinessInactive)
     : !status?.online
-      ? "Perlu perhatian"
+      ? t(m.readinessAttention)
       : cameraConnected
-        ? "Siap"
-        : "Edge siap, kamera perlu dicek";
+        ? t(m.readinessReady)
+        : t(m.readinessEdgeReadyCameraCheck);
   const deviceAttentionItems = [
     runtimePaused
       ? {
-          title: "Pemeriksaan runtime tidak dijalankan",
-          detail: "Pilih device aktif atau aktifkan device ini untuk memeriksa koneksi.",
-          actionLabel: "Buka Ringkasan",
+          title: m.attentionRuntimeSkippedTitle,
+          detail: m.attentionRuntimeSkippedDetail,
+          actionLabel: m.actionOpenOverview,
           action: () => setActiveTab("overview"),
         }
       : !status?.online
         ? {
-            title: "Edge device sedang offline",
-            detail:
-              "Status Mini PC belum reachable. Refresh koneksi lalu cek tab Ringkasan untuk detail koneksi edge.",
-            actionLabel: "Buka Ringkasan",
+            title: m.attentionEdgeOfflineTitle,
+            detail: m.attentionEdgeOfflineDetail,
+            actionLabel: m.actionOpenOverview,
             action: () => setActiveTab("overview"),
           }
         : null,
     status?.online && !cameraConnected
       ? {
-          title: "Camera belum terhubung",
-          detail: "Preset belum bisa diterapkan sampai kamera USB kembali terhubung dan sesi siap.",
-          actionLabel: "Buka Pengaturan Kamera",
+          title: m.attentionCameraDisconnectedTitle,
+          detail: m.attentionCameraDisconnectedDetail,
+          actionLabel: m.actionOpenCameraSettings,
           action: () => setActiveTab("camera-settings"),
         }
       : null,
     registeredDevices.length === 0 && !registryLoading
       ? {
-          title: "Profil device belum lengkap",
-          detail:
-            "Registrasi device di database diperlukan agar preset, plant, dan bin punya konteks operasional yang jelas.",
-          actionLabel: "Daftarkan Device",
+          title: m.attentionProfileIncompleteTitle,
+          detail: m.attentionProfileIncompleteDetail,
+          actionLabel: m.registerDevice,
           action: () => {},
         }
       : null,
   ].filter(Boolean) as Array<{
-    title: string;
-    detail: string;
-    actionLabel: string;
+    title: Message;
+    detail: Message;
+    actionLabel: Message;
     action: () => void;
   }>;
   const readinessCards = [
     {
       title: "Edge API",
-      status: runtimePaused ? "Tidak diperiksa" : status?.online ? "Terhubung" : "Offline",
+      status: runtimePaused
+        ? t(m.statusNotChecked)
+        : status?.online
+          ? t(m.statusConnected)
+          : t(m.statusOffline),
       detail: runtimePaused
-        ? "Device nonaktif atau belum dipilih."
+        ? t(m.edgeDetailInactive)
         : status?.online
-          ? `Terakhir sinkron ${lastSync ? formatRelativeTime(lastSync.getTime()) : "baru saja"}.`
-          : (status?.statusMessage ?? "App belum bisa menjangkau edge API pada refresh terakhir."),
+          ? t(m.edgeDetailSynced, {
+              when: lastSync ? formatRelativeTime(lastSync.getTime(), t) : t(m.justNowLower),
+            })
+          : (deviceStatusText(t, status) ?? t(m.edgeDetailUnreachable)),
       hint: runtimePaused
-        ? "Aktifkan device untuk memeriksa koneksi."
+        ? t(m.edgeHintInactive)
         : status?.online
-          ? `Status koneksi: ${status.connectionState ?? "unknown"}.`
-          : (status?.statusMessage ??
-            "Periksa jaringan LAN, service edge API, atau status Mini PC."),
+          ? t(m.edgeHintConnectionState, { state: status.connectionState ?? "unknown" })
+          : (deviceStatusText(t, status) ?? t(m.edgeHintCheckNetwork)),
       icon: Wifi,
       tone: status?.online ? ("success" as const) : ("warning" as const),
-      actionLabel: "Buka Ringkasan",
+      actionLabel: t(m.actionOpenOverview),
       onAction: () => setActiveTab("overview"),
     },
     {
-      title: "Koneksi Kamera",
-      status: runtimePaused ? "Tidak diperiksa" : cameraConnected ? "USB terhubung" : "Terputus",
-      detail: runtimePaused
-        ? "Device nonaktif atau belum dipilih."
+      title: t(m.cameraConnectionTitle),
+      status: runtimePaused
+        ? t(m.statusNotChecked)
         : cameraConnected
-          ? "Kamera siap dipakai untuk capture dan apply preset."
-          : "Koneksi kamera belum siap untuk operasi config write.",
+          ? t(m.usbConnected)
+          : t(m.statusDisconnected),
+      detail: runtimePaused
+        ? t(m.edgeDetailInactive)
+        : cameraConnected
+          ? t(m.cameraDetailReady)
+          : t(m.cameraDetailNotReady),
       hint: runtimePaused
-        ? "Aktifkan device untuk membaca kamera."
+        ? t(m.cameraHintInactive)
         : cameraConnected
           ? cameraLabel
-          : "Cek kabel USB, power kamera, atau sesi edge device.",
+          : t(m.cameraHintCheckCable),
       icon: Camera,
       tone: cameraConnected ? ("success" as const) : ("warning" as const),
-      actionLabel: "Buka Pengaturan Kamera",
+      actionLabel: t(m.actionOpenCameraSettings),
       onAction: () => setActiveTab("camera-settings"),
     },
     {
-      title: "Freshness Capture Lokal",
-      status: lastCaptureAt ? "Ada data terbaru" : "Belum ada capture",
+      title: t(m.freshnessTitle),
+      status: lastCaptureAt ? t(m.freshnessHasData) : t(m.freshnessNoCapture),
       detail: lastCaptureAt
-        ? `Capture terakhir ${formatRelativeTime(lastCaptureAt)}.`
-        : "Belum ada capture lokal yang bisa dipakai untuk audit device ini.",
+        ? t(m.freshnessDetailLast, { when: formatRelativeTime(lastCaptureAt, t) })
+        : t(m.freshnessDetailNone),
       hint: lastCaptureAt
-        ? `Total capture hari ini: ${capturesToday ?? 0}.`
-        : "Gunakan halaman Capture untuk mengambil sample baru.",
+        ? t(m.freshnessHintTotal, { count: capturesToday ?? 0 })
+        : t(m.freshnessHintUseCapture),
       icon: Activity,
       tone: lastCaptureAt ? ("success" as const) : ("warning" as const),
-      actionLabel: "Buka Ringkasan",
+      actionLabel: t(m.actionOpenOverview),
       onAction: () => setActiveTab("overview"),
     },
   ];
@@ -1272,10 +1339,13 @@ function DevicesPage() {
   };
   const customStartMs = parseDateTimeLocalValue(deviceEventCustomStart);
   const customEndMs = parseDateTimeLocalValue(deviceEventCustomEnd);
-  const customRangeLabel =
+  const buildCustomRangeLabel = (translator: Translator, dateLocale: string) =>
     customStartMs || customEndMs
-      ? `${deviceEventCustomStart ? new Date(customStartMs ?? 0).toLocaleString("id-ID") : "Awal"} - ${deviceEventCustomEnd ? new Date(customEndMs ?? 0).toLocaleString("id-ID") : "Sekarang"}`
-      : "Rentang belum diisi";
+      ? `${deviceEventCustomStart ? new Date(customStartMs ?? 0).toLocaleString(dateLocale) : translator(lm.rangeStartOpen)} - ${deviceEventCustomEnd ? new Date(customEndMs ?? 0).toLocaleString(dateLocale) : translator(lm.rangeEndNow)}`
+      : translator(lm.rangeNotSet);
+  const customRangeLabel = buildCustomRangeLabel(t, nativeLocale);
+  // Nama berkas ekspor tidak ikut bahasa antarmuka: tetap bentuk Indonesianya.
+  const customRangeFileLabel = buildCustomRangeLabel(translateId, "id-ID");
   const visibleDeviceEvents = deviceEvents.filter(
     (event) =>
       (deviceEventFilter === "all" ? true : event.severity === deviceEventFilter) &&
@@ -1283,7 +1353,7 @@ function DevicesPage() {
         ? true
         : getDeviceEventTypeGroup(event.eventType) === deviceEventTypeFilter) &&
       matchesDeviceEventTimeRange(event, deviceEventTimeRange, nowMs, customStartMs, customEndMs) &&
-      matchesDeviceEventSearch(event, deviceEventSearchQuery),
+      matchesDeviceEventSearch(event, deviceEventSearchQuery, t),
   );
   const selectedDeviceEvent =
     visibleDeviceEvents.find((event) => event.id === selectedDeviceEventId) ??
@@ -1316,7 +1386,7 @@ function DevicesPage() {
       if (!currentGroup || currentGroup.dateKey !== dateKey) {
         groups.push({
           dateKey,
-          label: formatDeviceEventGroupDate(eventDate),
+          label: formatDeviceEventGroupDate(eventDate, nativeLocale),
           events: [event],
         });
         return groups;
@@ -1389,7 +1459,7 @@ function DevicesPage() {
                   parseDateTimeLocalValue(state.customStart),
                   parseDateTimeLocalValue(state.customEnd),
                 ) &&
-                matchesDeviceEventSearch(event, state.searchQuery),
+                matchesDeviceEventSearch(event, state.searchQuery, t),
             ).length
           : 0,
       ];
@@ -1424,30 +1494,34 @@ function DevicesPage() {
       (view) => view.state && matchesDeviceEventSavedView(view.state, currentDeviceEventViewState),
     ) ?? null;
   const activeDeviceLogFilters = [
-    hasPinnedErrorView ? "Preset error terbaru" : null,
-    activeDeviceSavedView ? `Saved view ${activeDeviceSavedView.label}` : null,
+    hasPinnedErrorView ? t(lm.activeFilterPinnedError) : null,
+    activeDeviceSavedView
+      ? t(lm.activeFilterSavedView, {
+          name: getDeviceEventSavedViewLabel(activeDeviceSavedView, t),
+        })
+      : null,
     deviceEventFilter !== "all"
-      ? `Severity ${
-          DEVICE_EVENT_FILTERS.find((filter) => filter.id === deviceEventFilter)?.label ??
-          deviceEventFilter
-        }`
+      ? t(lm.filterSeverity, {
+          value: filterLabel(DEVICE_EVENT_FILTERS, deviceEventFilter, t),
+        })
       : null,
     hasDeviceEventTypeFilter
-      ? `Tipe ${
-          DEVICE_EVENT_TYPE_FILTERS.find((filter) => filter.id === deviceEventTypeFilter)?.label ??
-          deviceEventTypeFilter
-        }`
+      ? t(lm.filterType, {
+          value: filterLabel(DEVICE_EVENT_TYPE_FILTERS, deviceEventTypeFilter, t),
+        })
       : null,
     hasDeviceEventTimeRangeFilter
-      ? `Waktu ${
-          deviceEventTimeRange === "custom"
-            ? customRangeLabel
-            : (DEVICE_EVENT_TIME_FILTERS.find((filter) => filter.id === deviceEventTimeRange)
-                ?.label ?? deviceEventTimeRange)
-        }`
+      ? t(lm.filterTime, {
+          value:
+            deviceEventTimeRange === "custom"
+              ? customRangeLabel
+              : filterLabel(DEVICE_EVENT_TIME_FILTERS, deviceEventTimeRange, t),
+        })
       : null,
-    activeDeviceEventPreset ? `Preset ${activeDeviceEventPreset.label}` : null,
-    hasDeviceEventSearch ? `Cari "${deviceEventSearchQuery.trim()}"` : null,
+    activeDeviceEventPreset
+      ? t(lm.activeFilterPreset, { name: t(activeDeviceEventPreset.label) })
+      : null,
+    hasDeviceEventSearch ? t(lm.filterSearch, { query: deviceEventSearchQuery.trim() }) : null,
   ].filter(Boolean) as string[];
 
   const visibleDevices = registeredDevices.filter((device) => {
@@ -1474,16 +1548,16 @@ function DevicesPage() {
       const result = await upsertRegisteredDeviceProfile({
         data: { ...toUpsertRegisteredDeviceInput(nextProfile), deviceId: selectedDevice.id },
       });
-      if (!result.ok) throw new Error(result.message);
+      if (!result.ok) throw new Error(failureText(t, result));
       const savedProfile = buildDeviceProfileFromRegisteredDevice(result.device, nextProfile);
       saveDeviceProfile(savedProfile);
       setProfile(savedProfile);
       await loadRegistry(savedProfile, result.device.id);
-      toast.success("Profil tersimpan di database");
+      toast.success(t(m.toastProfileSaved));
       return true;
     } catch (error) {
-      toast.error("Profil belum tersimpan", {
-        description: error instanceof Error ? error.message : "Coba lagi.",
+      toast.error(t(m.toastProfileNotSaved), {
+        description: error instanceof Error ? error.message : t(m.tryAgainShort),
       });
       return false;
     } finally {
@@ -1501,8 +1575,8 @@ function DevicesPage() {
   function applyDeviceEventSavedView(viewId: DeviceEventSavedViewId) {
     const view = deviceEventSavedViews.find((item) => item.id === viewId);
     if (!view?.state) {
-      toast.message("Slot saved view masih kosong", {
-        description: "Simpan kombinasi filter aktif ke slot ini terlebih dahulu.",
+      toast.message(t(lm.toastSavedViewEmptySlot), {
+        description: t(lm.toastSavedViewEmptySlotDesc),
       });
       return;
     }
@@ -1513,8 +1587,8 @@ function DevicesPage() {
     setDeviceEventSearchQuery(view.state.searchQuery);
     setDeviceEventCustomStart(view.state.customStart);
     setDeviceEventCustomEnd(view.state.customEnd);
-    toast.success(`Saved view "${view.label}" diterapkan`, {
-      description: "Filter log mengikuti konfigurasi audit yang tersimpan.",
+    toast.success(t(lm.toastSavedViewApplied, { name: getDeviceEventSavedViewLabel(view, t) }), {
+      description: t(lm.toastSavedViewAppliedDesc),
     });
   }
 
@@ -1533,9 +1607,14 @@ function DevicesPage() {
     saveDeviceEventSavedViews(nextViews);
 
     const view = nextViews.find((item) => item.id === viewId);
-    toast.success(`Saved view "${view?.label ?? viewId}" diperbarui`, {
-      description: "Kombinasi filter aktif tersimpan untuk audit berikutnya.",
-    });
+    toast.success(
+      t(lm.toastSavedViewUpdated, {
+        name: view ? getDeviceEventSavedViewLabel(view, t) : viewId,
+      }),
+      {
+        description: t(lm.toastSavedViewUpdatedDesc),
+      },
+    );
   }
 
   function clearDeviceEventSavedView(viewId: DeviceEventSavedViewId) {
@@ -1553,22 +1632,28 @@ function DevicesPage() {
     saveDeviceEventSavedViews(nextViews);
 
     const view = nextViews.find((item) => item.id === viewId);
-    toast.success(`Saved view "${view?.label ?? viewId}" dibersihkan`, {
-      description: "Slot kembali kosong dan siap dipakai untuk kombinasi filter lain.",
-    });
+    toast.success(
+      t(lm.toastSavedViewCleared, {
+        name: view ? getDeviceEventSavedViewLabel(view, t) : viewId,
+      }),
+      {
+        description: t(lm.toastSavedViewClearedDesc),
+      },
+    );
   }
 
   function renameDeviceEventSavedView(viewId: DeviceEventSavedViewId) {
     const currentView = deviceEventSavedViews.find((view) => view.id === viewId);
     if (!currentView || typeof window === "undefined") return;
 
-    const nextLabel = window.prompt("Masukkan nama baru untuk saved view ini:", currentView.label);
+    const currentLabel = getDeviceEventSavedViewLabel(currentView, t);
+    const nextLabel = window.prompt(t(lm.promptRenameSavedView), currentLabel);
     if (nextLabel === null) return;
 
     const normalizedLabel = normalizeDeviceEventSavedViewLabel(nextLabel);
     if (normalizedLabel === "") {
-      toast.error("Nama saved view tidak boleh kosong", {
-        description: "Masukkan nama singkat yang mudah dikenali operator.",
+      toast.error(t(lm.toastSavedViewNameEmpty), {
+        description: t(lm.toastSavedViewNameEmptyDesc),
       });
       return;
     }
@@ -1577,15 +1662,17 @@ function DevicesPage() {
       view.id === viewId
         ? {
             ...view,
-            label: normalizedLabel,
+            // Nama bawaan yang tampil terjemahannya tidak ikut tersimpan sebagai
+            // nama kustom kalau pengguna tidak mengubahnya.
+            label: normalizedLabel === currentLabel ? view.label : normalizedLabel,
           }
         : view,
     );
 
     setDeviceEventSavedViews(nextViews);
     saveDeviceEventSavedViews(nextViews);
-    toast.success(`Saved view diubah menjadi "${normalizedLabel}"`, {
-      description: "Nama baru langsung dipakai pada slot audit ini.",
+    toast.success(t(lm.toastSavedViewRenamed, { name: normalizedLabel }), {
+      description: t(lm.toastSavedViewRenamedDesc),
     });
   }
 
@@ -1594,18 +1681,21 @@ function DevicesPage() {
 
     const sourceView = deviceEventSavedViews.find((view) => view.id === sourceViewId);
     if (!sourceView?.state) {
-      toast.message("Saved view sumber masih kosong", {
-        description: "Simpan filter dulu sebelum menduplikasi ke slot lain.",
+      toast.message(t(lm.toastSavedViewSourceEmpty), {
+        description: t(lm.toastSavedViewSourceEmptyDesc),
       });
       return;
     }
 
     const targetOptions = deviceEventSavedViews
       .filter((view) => view.id !== sourceViewId)
-      .map((view, index) => `${index + 1}. ${view.label}`)
+      .map((view, index) => `${index + 1}. ${getDeviceEventSavedViewLabel(view, t)}`)
       .join("\n");
     const selectedTarget = window.prompt(
-      `Duplikat "${sourceView.label}" ke slot mana?\n${targetOptions}`,
+      t(lm.promptDuplicateSavedView, {
+        name: getDeviceEventSavedViewLabel(sourceView, t),
+        options: targetOptions,
+      }),
       "1",
     );
 
@@ -1616,8 +1706,8 @@ function DevicesPage() {
     const targetView = targetCandidates[targetIndex];
 
     if (!targetView) {
-      toast.error("Pilihan slot tujuan tidak valid", {
-        description: "Gunakan nomor slot tujuan yang tersedia di daftar.",
+      toast.error(t(lm.toastDuplicateInvalidTarget), {
+        description: t(lm.toastDuplicateInvalidTargetDesc),
       });
       return;
     }
@@ -1634,9 +1724,14 @@ function DevicesPage() {
 
     setDeviceEventSavedViews(nextViews);
     saveDeviceEventSavedViews(nextViews);
-    toast.success(`Saved view "${sourceView.label}" diduplikasi`, {
-      description: `Isi filter berhasil disalin ke slot "${targetView.label}".`,
-    });
+    toast.success(
+      t(lm.toastSavedViewDuplicated, { name: getDeviceEventSavedViewLabel(sourceView, t) }),
+      {
+        description: t(lm.toastSavedViewDuplicatedDesc, {
+          name: getDeviceEventSavedViewLabel(targetView, t),
+        }),
+      },
+    );
   }
 
   async function handleLoadMoreDeviceEvents() {
@@ -1653,10 +1748,8 @@ function DevicesPage() {
   function toggleDeviceEventAutoRefresh() {
     setDeviceEventAutoRefreshPaused((current) => {
       const nextValue = !current;
-      toast.message(nextValue ? "Auto-sync log dibekukan" : "Auto-sync log diaktifkan kembali", {
-        description: nextValue
-          ? "Filter lokal tetap aktif, tetapi refresh server menunggu sampai kamu lanjutkan atau refresh manual."
-          : "Panel log akan kembali mengikuti filter, device, dan query terbaru.",
+      toast.message(nextValue ? t(lm.toastAutoSyncPaused) : t(lm.toastAutoSyncResumed), {
+        description: nextValue ? t(lm.toastAutoSyncPausedDesc) : t(lm.toastAutoSyncResumedDesc),
       });
       return nextValue;
     });
@@ -1669,13 +1762,13 @@ function DevicesPage() {
       deviceEventTimeRange === "all"
         ? "all-time"
         : deviceEventTimeRange === "custom"
-          ? `custom-${toAuditFileSlug(customRangeLabel)}`
+          ? `custom-${toAuditFileSlug(customRangeFileLabel)}`
           : deviceEventTimeRange;
     const savedViewSuffix = activeDeviceSavedView
       ? `-${toAuditFileSlug(activeDeviceSavedView.label)}`
       : "";
     const presetSuffix = activeDeviceEventPreset
-      ? `-${toAuditFileSlug(activeDeviceEventPreset.label)}`
+      ? `-${toAuditFileSlug(activeDeviceEventPreset.label.id)}`
       : "";
     const searchSuffix = hasDeviceEventSearch ? "-search" : "";
     return `device-events${savedViewSuffix}${presetSuffix}-${filterSuffix}-${eventTypeSuffix}-${timeRangeSuffix}${searchSuffix}-${timestamp}`;
@@ -1743,8 +1836,8 @@ function DevicesPage() {
     const { blob, fileName } = buildDeviceEventExportFile(format, timestamp);
     downloadBlobFile(blob, fileName);
 
-    toast.success(`Log device diekspor ke ${format.toUpperCase()}`, {
-      description: `Mengekspor ${visibleDeviceEvents.length} log sesuai filter aktif.`,
+    toast.success(t(lm.toastLogExported, { format: format.toUpperCase() }), {
+      description: t(lm.toastLogExportedDesc, { count: visibleDeviceEvents.length }),
     });
   }
 
@@ -1757,8 +1850,8 @@ function DevicesPage() {
     downloadBlobFile(jsonFile.blob, jsonFile.fileName);
     downloadBlobFile(csvFile.blob, csvFile.fileName);
 
-    toast.success("Paket log device diekspor", {
-      description: `JSON dan CSV untuk ${visibleDeviceEvents.length} log berhasil diunduh.`,
+    toast.success(t(lm.toastLogBundleExported), {
+      description: t(lm.toastLogBundleExportedDesc, { count: visibleDeviceEvents.length }),
     });
   }
 
@@ -1766,17 +1859,14 @@ function DevicesPage() {
     <div className="p-6">
       <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <PageTitle
-            title="Devices"
-            description="Kelola dan pantau semua Mini PC serta kamera operasional."
-          />
+          <PageTitle title={t(c.navDevices)} description={t(m.pageDescription)} />
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <StatusChip
               label={readinessLabel}
               tone={!status?.online ? "warning" : cameraConnected ? "success" : "warning"}
             />
             <span className="text-xs text-muted-foreground">
-              Sinkron terakhir {lastSync ? formatDateTime(lastSync) : "—"}
+              {t(m.lastSyncInline, { when: lastSync ? formatDateTime(lastSync, locale) : "—" })}
             </span>
           </div>
         </div>
@@ -1784,7 +1874,7 @@ function DevicesPage() {
           <button
             onClick={refresh}
             disabled={loading}
-            title="Refresh status"
+            title={t(m.refreshStatusTitle)}
             className="rounded-md border border-input bg-background p-2 hover:bg-accent disabled:opacity-50"
           >
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
@@ -1793,7 +1883,7 @@ function DevicesPage() {
             to="/devices/register"
             className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
           >
-            <Plus className="h-4 w-4" /> Daftarkan Device
+            <Plus className="h-4 w-4" /> {t(m.registerDevice)}
           </Link>
         </div>
       </header>
@@ -1803,18 +1893,15 @@ function DevicesPage() {
           <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
             <div>
               <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Kesiapan Device
+                {t(m.readinessHeading)}
               </div>
               <h2 className="mt-1 text-xl font-semibold">{readinessLabel}</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Halaman ini merangkum status edge, koneksi kamera, dan freshness capture lokal untuk
-                operator sebelum masuk ke detail tab.
-              </p>
+              <p className="mt-1 text-sm text-muted-foreground">{t(m.readinessIntro)}</p>
             </div>
             <div className="rounded-lg border bg-background px-3 py-2 text-right text-xs">
-              <div className="text-muted-foreground">Profil aktif</div>
+              <div className="text-muted-foreground">{t(m.activeProfile)}</div>
               <div className="mt-1 font-medium text-foreground">
-                {profileTemplate?.label ?? "Belum ada profil"}
+                {profileTemplate ? getTemplateLabel(profileTemplate, t) : t(m.noProfileYet)}
               </div>
             </div>
           </div>
@@ -1829,34 +1916,34 @@ function DevicesPage() {
         <section className="rounded-xl border bg-card shadow-sm p-5">
           <div className="mb-3 flex items-center gap-2">
             <AlertTriangle className="h-4 w-4 text-primary" />
-            <h2 className="text-sm font-semibold">Perhatian & Tindakan Berikutnya</h2>
+            <h2 className="text-sm font-semibold">{t(m.attentionHeading)}</h2>
           </div>
           {deviceAttentionItems.length > 0 ? (
             <div className="space-y-3">
               {deviceAttentionItems.map((item) =>
-                item.actionLabel === "Daftarkan Device" ? (
+                item.actionLabel === m.registerDevice ? (
                   <Link
-                    key={item.title}
+                    key={item.title.id}
                     to="/devices/register"
                     className="group block rounded-lg border bg-background p-3 transition-colors hover:border-primary/40 hover:bg-accent/20"
                   >
-                    <div className="text-sm font-medium text-foreground">{item.title}</div>
-                    <div className="mt-1 text-sm text-muted-foreground">{item.detail}</div>
+                    <div className="text-sm font-medium text-foreground">{t(item.title)}</div>
+                    <div className="mt-1 text-sm text-muted-foreground">{t(item.detail)}</div>
                     <div className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary">
-                      <span>{item.actionLabel}</span>
+                      <span>{t(item.actionLabel)}</span>
                     </div>
                   </Link>
                 ) : (
                   <button
-                    key={item.title}
+                    key={item.title.id}
                     type="button"
                     onClick={item.action}
                     className="w-full rounded-lg border bg-background p-3 text-left transition-colors hover:border-primary/40 hover:bg-accent/20"
                   >
-                    <div className="text-sm font-medium text-foreground">{item.title}</div>
-                    <div className="mt-1 text-sm text-muted-foreground">{item.detail}</div>
+                    <div className="text-sm font-medium text-foreground">{t(item.title)}</div>
+                    <div className="mt-1 text-sm text-muted-foreground">{t(item.detail)}</div>
                     <div className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary">
-                      <span>{item.actionLabel}</span>
+                      <span>{t(item.actionLabel)}</span>
                     </div>
                   </button>
                 ),
@@ -1864,13 +1951,11 @@ function DevicesPage() {
             </div>
           ) : (
             <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3 text-sm text-muted-foreground">
-              Profil device tersimpan, edge device reachable, dan kamera tidak menunjukkan blocker
-              utama saat ini.
+              {t(m.attentionAllClear)}
             </div>
           )}
           <div className="mt-4 rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
-            Data capture di sini tetap berbasis browser lokal operator. Jika operator berpindah
-            browser/profile, freshness capture bisa berbeda walau device yang dipakai sama.
+            {t(m.localDataNote)}
           </div>
         </section>
       </section>
@@ -1882,7 +1967,7 @@ function DevicesPage() {
           <input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Cari device..."
+            placeholder={t(m.searchDevicePlaceholder)}
             className="w-full rounded-md border border-input bg-background py-1.5 pl-8 pr-2 text-sm"
           />
         </div>
@@ -1890,19 +1975,19 @@ function DevicesPage() {
           className="rounded-md border border-input bg-background px-2 py-1.5 text-sm"
           disabled
         >
-          <option>Lokasi: Semua</option>
+          <option>{t(m.filterLocationAll)}</option>
         </select>
         <select
           className="rounded-md border border-input bg-background px-2 py-1.5 text-sm"
           disabled
         >
-          <option>Status: Semua</option>
+          <option>{t(m.filterStatusAll)}</option>
         </select>
         <select
           className="rounded-md border border-input bg-background px-2 py-1.5 text-sm"
           disabled
         >
-          <option>Koneksi: Semua</option>
+          <option>{t(m.filterConnectionAll)}</option>
         </select>
         <div className="ml-auto flex overflow-hidden rounded-md border border-input">
           <button
@@ -1922,17 +2007,16 @@ function DevicesPage() {
 
       {registryError && (
         <div className="mb-4 rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-700">
-          Registry database belum bisa dimuat: {registryError}
+          {t(m.registryLoadErrorBanner, { reason: registryError })}
         </div>
       )}
 
       <div className="mb-3 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+        <span>{t(m.registrySourceNote)}</span>
         <span>
-          Registry device berasal dari MSSQL. Status runtime live di bawah mengikuti device yang
-          sedang dipilih sebagai profil aktif.
-        </span>
-        <span>
-          {registryLoading ? "Memuat registry..." : `${registeredDevices.length} device terdaftar`}
+          {registryLoading
+            ? t(m.registryLoading)
+            : t(m.devicesRegisteredCount, { count: registeredDevices.length })}
         </span>
       </div>
 
@@ -1946,12 +2030,12 @@ function DevicesPage() {
             const isSelected = selectedDevice?.id === device.id;
             const isActiveRuntime = status?.target?.deviceId === device.id;
             const cardStatus = !device.isActive
-              ? "Nonaktif"
+              ? t(m.cardInactive)
               : isActiveRuntime
                 ? status?.online
-                  ? "Terhubung"
-                  : "Offline"
-                : "Terdaftar";
+                  ? t(m.statusConnected)
+                  : t(m.statusOffline)
+                : t(m.cardRegistered);
             const cardTone = isActiveRuntime
               ? status?.online
                 ? "bg-emerald-500/10 text-emerald-600"
@@ -1980,9 +2064,7 @@ function DevicesPage() {
                       <Cpu className="h-4 w-4" />
                     </span>
                     <div>
-                      <div className="font-semibold">
-                        {device.deviceName || "Device tidak dikenal"}
-                      </div>
+                      <div className="font-semibold">{device.deviceName || t(m.unknownDevice)}</div>
                       <div className="text-xs text-muted-foreground">
                         {device.plant} • {device.bin}
                       </div>
@@ -2005,35 +2087,41 @@ function DevicesPage() {
                     <Wifi className="h-3 w-3" />{" "}
                     {isActiveRuntime
                       ? cameraConnected
-                        ? "USB terhubung"
-                        : "Belum terhubung"
-                      : "Status runtime mengikuti device aktif"}
+                        ? t(m.usbConnected)
+                        : t(m.notConnectedYet)
+                      : t(m.runtimeFollowsActive)}
                   </div>
                   <div>
-                    Template:{" "}
-                    <span className="font-medium text-foreground">
-                      {getTemplateById(device.templateId).label}
-                    </span>
+                    {rich(m.cardTemplate, {
+                      value: (
+                        <span className="font-medium text-foreground">
+                          {getTemplateLabel(getTemplateById(device.templateId), t)}
+                        </span>
+                      ),
+                    })}
                   </div>
                   <div>
-                    Device Code:{" "}
-                    <span className="font-medium text-foreground">{device.deviceCode}</span>
+                    {rich(m.cardDeviceCode, {
+                      value: (
+                        <span className="font-medium text-foreground">{device.deviceCode}</span>
+                      ),
+                    })}
                   </div>
                 </div>
 
                 <div className="grid grid-cols-3 gap-2 border-t pt-3 text-center text-xs">
                   <div>
-                    <div className="text-muted-foreground">Station</div>
+                    <div className="text-muted-foreground">{t(m.cardStation)}</div>
                     <div className="font-semibold">{device.station || "—"}</div>
                   </div>
                   <div>
-                    <div className="text-muted-foreground">Capture Hari Ini</div>
+                    <div className="text-muted-foreground">{t(m.cardCapturesToday)}</div>
                     <div className="font-semibold">
                       {isActiveRuntime ? (capturesToday ?? "—") : "—"}
                     </div>
                   </div>
                   <div>
-                    <div className="text-muted-foreground">Kamera</div>
+                    <div className="text-muted-foreground">{t(m.cardCamera)}</div>
                     <div className="font-semibold">{device.cameraModel ?? "—"}</div>
                   </div>
                 </div>
@@ -2044,8 +2132,8 @@ function DevicesPage() {
       ) : (
         <div className="mb-6 rounded-md border border-dashed py-10 text-center text-sm text-muted-foreground">
           {registeredDevices.length === 0
-            ? "Belum ada device yang terdaftar di registry database."
-            : `Tidak ada device yang cocok dengan "${searchQuery}".`}
+            ? t(m.emptyNoDevices)
+            : t(m.emptyNoMatch, { query: searchQuery })}
         </div>
       )}
 
@@ -2056,7 +2144,7 @@ function DevicesPage() {
             {selectedDevice?.deviceName ||
               profile?.deviceName ||
               status?.deviceId ||
-              "Device tidak dikenal"}
+              t(m.unknownDevice)}
           </span>
           <span
             className={`ml-1 h-2 w-2 rounded-full ${status?.online ? "bg-emerald-500" : "bg-muted-foreground/40"}`}
@@ -2071,7 +2159,7 @@ function DevicesPage() {
                 }}
                 className="rounded-md border px-3 py-2"
               >
-                Edit device
+                {t(m.editDevice)}
               </Link>
               <button
                 type="button"
@@ -2081,7 +2169,7 @@ function DevicesPage() {
                 }
                 className="rounded-md border px-3 py-2 disabled:opacity-50"
               >
-                {selectedDevice.isActive ? "Nonaktifkan" : "Aktifkan"}
+                {selectedDevice.isActive ? t(m.deactivate) : t(m.activate)}
               </button>
               <button
                 type="button"
@@ -2089,14 +2177,12 @@ function DevicesPage() {
                   stateBusy || profileSaving || cameraOperationBusy || selectedDevice.isActive
                 }
                 title={
-                  selectedDevice.isActive
-                    ? "Nonaktifkan device terlebih dahulu"
-                    : "Hapus dari registry aktif"
+                  selectedDevice.isActive ? t(m.deleteTitleDeactivateFirst) : t(m.deleteTitleRemove)
                 }
                 onClick={() => setPendingStateAction("delete")}
                 className="rounded-md border px-3 py-2 text-destructive disabled:opacity-50"
               >
-                Hapus device
+                {t(m.deleteDevice)}
               </button>
             </div>
           )}
@@ -2112,23 +2198,23 @@ function DevicesPage() {
             <AlertDialogHeader>
               <AlertDialogTitle>
                 {pendingStateAction === "delete"
-                  ? "Hapus device dari registry?"
+                  ? t(m.confirmDeleteTitle)
                   : pendingStateAction === "activate"
-                    ? "Aktifkan device?"
-                    : "Nonaktifkan device?"}
+                    ? t(m.confirmActivateTitle)
+                    : t(m.confirmDeactivateTitle)}
               </AlertDialogTitle>
               <AlertDialogDescription>
                 {selectedDevice?.deviceName} ({selectedDevice?.deviceCode}).{" "}
                 {pendingStateAction === "delete"
-                  ? "Device disembunyikan dari daftar dan assignment ditutup. Riwayat capture tetap tersimpan."
+                  ? t(m.confirmDeleteBody)
                   : pendingStateAction === "activate"
-                    ? "Device dapat digunakan kembali oleh operator pada plant ini. Pastikan tidak ada assignment kamera aktif yang ambigu."
-                    : "Device tidak dapat digunakan untuk capture. Pastikan seluruh sesi capture pada device ini sudah selesai."}
+                    ? t(m.confirmActivateBody)
+                    : t(m.confirmDeactivateBody)}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel disabled={stateBusy || profileSaving || cameraOperationBusy}>
-                Batal
+                {t(m.cancel)}
               </AlertDialogCancel>
               <button
                 type="button"
@@ -2136,7 +2222,7 @@ function DevicesPage() {
                 onClick={() => void confirmStateChange()}
                 className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground disabled:opacity-50"
               >
-                {stateBusy ? "Menyimpan..." : "Konfirmasi"}
+                {stateBusy ? t(m.saving) : t(m.confirm)}
               </button>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -2144,10 +2230,10 @@ function DevicesPage() {
         {(detailsError || status?.statusMessage || !selectedDevice?.isActive) && (
           <p className="px-4 pt-3 text-xs text-muted-foreground" role="status">
             {!selectedDevice
-              ? "Pilih atau daftarkan device."
+              ? t(m.selectOrRegisterDevice)
               : !selectedDevice.isActive
-                ? "Device nonaktif; pemeriksaan kamera tidak dijalankan."
-                : (detailsError ?? status?.statusMessage)}
+                ? t(m.deviceInactiveNoCheck)
+                : (detailsError ?? deviceStatusText(t, status))}
           </p>
         )}
 
@@ -2162,7 +2248,7 @@ function DevicesPage() {
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              {tab.label}
+              {t(tab.label)}
             </button>
           ))}
         </div>
@@ -2173,114 +2259,127 @@ function DevicesPage() {
               <>
                 <div className="rounded-md border p-4">
                   <h3 className="mb-3 flex items-center gap-1.5 text-sm font-semibold">
-                    <Package className="h-3.5 w-3.5" /> Informasi Device
+                    <Package className="h-3.5 w-3.5" /> {t(m.deviceInfoHeading)}
                   </h3>
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
-                    <dt className="text-muted-foreground">Nama Device</dt>
+                    <dt className="text-muted-foreground">{t(m.deviceNameLabel)}</dt>
                     <dd className="text-right font-medium">{profile?.deviceName ?? "—"}</dd>
-                    <dt className="text-muted-foreground">Kode Device</dt>
+                    <dt className="text-muted-foreground">{t(m.deviceCodeLabel)}</dt>
                     <dd className="text-right font-medium">
                       {selectedDevice?.deviceCode ?? profile?.deviceCode ?? "—"}
                     </dd>
-                    <dt className="text-muted-foreground">ID dari Edge API</dt>
+                    <dt className="text-muted-foreground">{t(m.edgeApiIdLabel)}</dt>
                     <dd className="text-right font-medium">{status?.deviceId ?? "—"}</dd>
-                    <dt className="text-muted-foreground">Agent Version</dt>
+                    <dt className="text-muted-foreground">{t(m.agentVersionLabel)}</dt>
                     <dd className="text-right font-medium">{status?.agentVersion ?? "—"}</dd>
-                    <dt className="text-muted-foreground">Plant / Lokasi</dt>
+                    <dt className="text-muted-foreground">{t(m.plantLocationLabel)}</dt>
                     <dd className="text-right font-medium">{profile?.plant ?? "—"}</dd>
-                    <dt className="text-muted-foreground">Sumber Bin</dt>
+                    <dt className="text-muted-foreground">{t(m.binSourceLabel)}</dt>
                     <dd className="text-right font-medium">{profile?.bin ?? "—"}</dd>
-                    <dt className="text-muted-foreground">Jadwal</dt>
+                    <dt className="text-muted-foreground">{t(m.scheduleLabel)}</dt>
                     <dd className="text-right font-medium">{profile?.schedule ?? "—"}</dd>
-                    <dt className="text-muted-foreground">Alamat endpoint (host/IP)</dt>
+                    <dt className="text-muted-foreground">{t(m.endpointAddressLabel)}</dt>
                     <dd className="text-right font-medium">
                       {status?.target?.host ??
-                        deviceEndpointHost(selectedDevice?.edgeApiUrl, selectedDevice?.ipAddress)}
+                        deviceEndpointHost(
+                          selectedDevice?.edgeApiUrl,
+                          selectedDevice?.ipAddress,
+                          t,
+                        )}
                     </dd>
                     <dt className="text-muted-foreground">
-                      OS ({telemetry?.identity.scope === "host" ? "host" : "runtime"})
+                      {t(m.osLabel, {
+                        scope: telemetry?.identity.scope === "host" ? "host" : "runtime",
+                      })}
                     </dt>
                     <dd className="text-right font-medium">
-                      {telemetry?.identity.osName ?? "Tidak tersedia"}
+                      {telemetry?.identity.osName ?? t(m.notAvailable)}
                     </dd>
                     <dt className="text-muted-foreground">
-                      Hostname ({telemetry?.identity.scope === "host" ? "host" : "runtime"})
+                      {t(m.hostnameLabel, {
+                        scope: telemetry?.identity.scope === "host" ? "host" : "runtime",
+                      })}
                     </dt>
                     <dd className="text-right font-medium">
-                      {telemetry?.identity.hostname ?? "Tidak tersedia"}
+                      {telemetry?.identity.hostname ?? t(m.notAvailable)}
                     </dd>
                     <dt className="text-muted-foreground">
-                      Alamat jaringan ({telemetry?.network.scope === "host" ? "host" : "runtime"})
+                      {t(m.networkAddressLabel, {
+                        scope: telemetry?.network.scope === "host" ? "host" : "runtime",
+                      })}
                     </dt>
                     <dd className="break-all text-right font-medium">
                       {telemetry?.network.addresses
                         .map((item) => `${item.interface}: ${item.address}`)
-                        .join("; ") || "Tidak tersedia"}
+                        .join("; ") || t(m.notAvailable)}
                     </dd>
                   </dl>
                 </div>
 
                 <div className="rounded-md border p-4">
                   <h3 className="mb-3 flex items-center gap-1.5 text-sm font-semibold">
-                    <Camera className="h-3.5 w-3.5" /> Informasi Kamera
+                    <Camera className="h-3.5 w-3.5" /> {t(m.cameraInfoHeading)}
                   </h3>
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
-                    <dt className="text-muted-foreground">Model Kamera</dt>
+                    <dt className="text-muted-foreground">{t(m.cameraModelLabel)}</dt>
                     <dd className="text-right font-medium">
                       {selectedDevice?.cameraModel ?? cameraLabel}
                     </dd>
-                    <dt className="text-muted-foreground">Nomor Serial</dt>
+                    <dt className="text-muted-foreground">{t(m.serialNumberLabel)}</dt>
                     <dd className="text-right font-medium">
                       {status?.camera?.serialNumber ?? selectedDevice?.serialNumber ?? "—"}
                     </dd>
-                    <dt className="text-muted-foreground">Versi Firmware</dt>
+                    <dt className="text-muted-foreground">{t(m.firmwareVersionLabel)}</dt>
                     <dd className="text-right font-medium">
                       {status?.camera?.firmwareVersion ?? "—"}
                     </dd>
-                    <dt className="text-muted-foreground">Baterai / Daya</dt>
+                    <dt className="text-muted-foreground">{t(m.batteryPowerLabel)}</dt>
                     <dd className="text-right font-medium">
                       {cameraDetails?.batteryLevel != null
                         ? `${cameraDetails.batteryLevel}${typeof cameraDetails.batteryLevel === "number" ? "%" : ""}`
                         : missingCameraDetail}
                     </dd>
-                    <dt className="text-muted-foreground">Lensa</dt>
+                    <dt className="text-muted-foreground">{t(m.lensLabel)}</dt>
                     <dd className="text-right font-medium">
                       {cameraDetails?.lensName ?? missingCameraDetail}
                     </dd>
-                    <dt className="text-muted-foreground">Penyimpanan kamera</dt>
+                    <dt className="text-muted-foreground">{t(m.cameraStorageLabel)}</dt>
                     <dd className="text-right font-medium">
                       {cameraDetails?.storage.length
                         ? cameraDetails.storage
-                            .map(
-                              (store) =>
-                                `${store.description}: ${(store.freeBytes / 1e9).toFixed(2)} / ${(store.totalBytes / 1e9).toFixed(2)} GB kosong`,
+                            .map((store) =>
+                              t(m.cameraStorageEntry, {
+                                name: store.description,
+                                free: (store.freeBytes / 1e9).toFixed(2),
+                                total: (store.totalBytes / 1e9).toFixed(2),
+                              }),
                             )
                             .join("; ")
                         : missingCameraDetail}
                     </dd>
-                    <dt className="text-muted-foreground">Koneksi USB</dt>
+                    <dt className="text-muted-foreground">{t(m.usbConnectionLabel)}</dt>
                     <dd className="text-right font-medium">
-                      {cameraConnected ? "Terhubung" : "Belum terhubung"}
+                      {cameraConnected ? t(m.statusConnected) : t(m.notConnectedYet)}
                     </dd>
                   </dl>
                 </div>
 
                 <div className="rounded-md border p-4">
                   <h3 className="mb-3 flex items-center gap-1.5 text-sm font-semibold">
-                    <Wifi className="h-3.5 w-3.5" /> Status Koneksi
+                    <Wifi className="h-3.5 w-3.5" /> {t(m.connectionStatusHeading)}
                   </h3>
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
                     <dt className="text-muted-foreground">Edge API</dt>
                     <dd
                       className={`text-right font-medium ${status?.online ? "text-emerald-600" : ""}`}
                     >
-                      {status?.online ? "Terhubung" : "Tidak terhubung"}
+                      {status?.online ? t(m.statusConnected) : t(m.statusNotConnected)}
                     </dd>
-                    <dt className="text-muted-foreground">Kamera (USB)</dt>
+                    <dt className="text-muted-foreground">{t(m.cameraUsbLabel)}</dt>
                     <dd
                       className={`text-right font-medium ${cameraConnected ? "text-emerald-600" : ""}`}
                     >
-                      {cameraConnected ? "Terhubung" : "Belum terhubung"}
+                      {cameraConnected ? t(m.statusConnected) : t(m.notConnectedYet)}
                     </dd>
                   </dl>
                   <button
@@ -2288,34 +2387,32 @@ function DevicesPage() {
                     disabled={loading}
                     className="mt-3 w-full rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:opacity-50"
                   >
-                    {loading ? "Mengecek…" : "Tes Koneksi"}
+                    {loading ? t(m.checking) : t(m.testConnection)}
                   </button>
                 </div>
 
                 <div className="rounded-md border p-4">
                   <h3 className="mb-3 flex items-center gap-1.5 text-sm font-semibold">
-                    <Settings2 className="h-3.5 w-3.5" /> Aksi Cepat
+                    <Settings2 className="h-3.5 w-3.5" /> {t(m.quickActionsHeading)}
                   </h3>
                   <div className="grid grid-cols-2 gap-2">
                     {[
-                      "Restart Kamera",
-                      "Restart API Service",
-                      "Restart Mini PC",
-                      "Sinkronkan Pengaturan",
+                      m.quickRestartCamera,
+                      m.quickRestartApi,
+                      m.quickRestartMiniPc,
+                      m.quickSyncSettings,
                     ].map((action) => (
                       <button
-                        key={action}
+                        key={action.id}
                         disabled
-                        title="Belum tersedia"
+                        title={t(m.notAvailableYet)}
                         className="rounded-md border border-input bg-muted px-2 py-1.5 text-xs opacity-50"
                       >
-                        {action}
+                        {t(action)}
                       </button>
                     ))}
                   </div>
-                  <p className="mt-2 text-[11px] text-muted-foreground">
-                    Aksi device jarak jauh belum tersedia saat ini.
-                  </p>
+                  <p className="mt-2 text-[11px] text-muted-foreground">{t(m.remoteActionsNote)}</p>
                 </div>
               </>
             )}
@@ -2334,7 +2431,7 @@ function DevicesPage() {
             {activeTab === "health" && (
               <div className="rounded-md border p-4">
                 <h3 className="mb-3 flex items-center gap-1.5 text-sm font-semibold">
-                  <Activity className="h-3.5 w-3.5" /> Kesehatan Device
+                  <Activity className="h-3.5 w-3.5" /> {t(m.deviceHealthHeading)}
                 </h3>
                 <DeviceTelemetryPanel
                   telemetry={telemetry}
@@ -2348,7 +2445,7 @@ function DevicesPage() {
               <div className="rounded-md border p-4">
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <h3 className="flex items-center gap-1.5 text-sm font-semibold">
-                    <FileText className="h-3.5 w-3.5" /> Log Device Terbaru
+                    <FileText className="h-3.5 w-3.5" /> {t(lm.recentLogsHeading)}
                   </h3>
                   <div className="flex flex-wrap items-center gap-2">
                     <button
@@ -2357,7 +2454,7 @@ function DevicesPage() {
                       disabled={visibleDeviceEvents.length === 0}
                       className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:opacity-60"
                     >
-                      <Download className="h-3.5 w-3.5" /> Export Paket
+                      <Download className="h-3.5 w-3.5" /> {t(lm.exportBundle)}
                     </button>
                     <button
                       type="button"
@@ -2365,7 +2462,7 @@ function DevicesPage() {
                       disabled={visibleDeviceEvents.length === 0}
                       className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:opacity-60"
                     >
-                      <Download className="h-3.5 w-3.5" /> Export JSON
+                      <Download className="h-3.5 w-3.5" /> {t(lm.exportJson)}
                     </button>
                     <button
                       type="button"
@@ -2373,14 +2470,14 @@ function DevicesPage() {
                       disabled={visibleDeviceEvents.length === 0}
                       className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:opacity-60"
                     >
-                      <Download className="h-3.5 w-3.5" /> Export CSV
+                      <Download className="h-3.5 w-3.5" /> {t(lm.exportCsv)}
                     </button>
                     <button
                       type="button"
                       onClick={toggleDeviceEventAutoRefresh}
                       className="rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent"
                     >
-                      {deviceEventAutoRefreshPaused ? "Lanjut Sync" : "Bekukan Sync"}
+                      {deviceEventAutoRefreshPaused ? t(lm.resumeSync) : t(lm.pauseSync)}
                     </button>
                     <button
                       type="button"
@@ -2394,15 +2491,15 @@ function DevicesPage() {
                       disabled={deviceEventsLoading}
                       className="rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:opacity-60"
                     >
-                      {deviceEventsLoading ? "Menyegarkan…" : "Refresh Log"}
+                      {deviceEventsLoading ? t(lm.refreshing) : t(lm.refreshLog)}
                     </button>
                   </div>
                 </div>
                 {deviceEventAutoRefreshPaused ? (
                   <div className="mb-3 rounded-md border border-dashed border-amber-300 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
-                    Tampilan log sedang dibekukan untuk investigasi. Filter lokal tetap berjalan,
-                    tetapi sinkron server menunggu sampai kamu lanjutkan atau tekan{" "}
-                    <span className="font-semibold">Refresh Log</span>.
+                    {rich(lm.pausedNotice, {
+                      button: <span className="font-semibold">{t(lm.refreshLog)}</span>,
+                    })}
                   </div>
                 ) : null}
                 <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -2424,7 +2521,7 @@ function DevicesPage() {
                         }`}
                       >
                         {isErrorPreset ? <AlertTriangle className="h-3.5 w-3.5" /> : null}
-                        <span>{preset.label}</span>
+                        <span>{t(preset.label)}</span>
                         <CountBadge
                           value={
                             preset.id === "error-latest"
@@ -2456,7 +2553,7 @@ function DevicesPage() {
                       }}
                       className="inline-flex items-center gap-1.5 rounded-full border border-input bg-background px-3 py-1 text-xs font-medium hover:bg-accent"
                     >
-                      Reset Filter
+                      {t(lm.resetFilter)}
                     </button>
                   ) : null}
                 </div>
@@ -2473,9 +2570,11 @@ function DevicesPage() {
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div>
-                            <div className="text-xs font-semibold">{view.label}</div>
+                            <div className="text-xs font-semibold">
+                              {getDeviceEventSavedViewLabel(view, t)}
+                            </div>
                             <div className="mt-1 text-[11px] text-muted-foreground">
-                              {DEVICE_EVENT_SAVED_VIEW_DESCRIPTIONS[view.id]}
+                              {t(DEVICE_EVENT_SAVED_VIEW_DESCRIPTIONS[view.id])}
                             </div>
                           </div>
                           <CountBadge
@@ -2485,7 +2584,7 @@ function DevicesPage() {
                           />
                         </div>
                         <div className="mt-2 min-h-[32px] text-[11px] text-muted-foreground">
-                          {summarizeDeviceEventSavedView(view.state)}
+                          {summarizeDeviceEventSavedView(view.state, t)}
                         </div>
                         <div className="mt-2 flex flex-wrap items-center gap-2">
                           <button
@@ -2494,21 +2593,21 @@ function DevicesPage() {
                             disabled={!view.state}
                             className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-2.5 py-1 text-[11px] font-medium hover:bg-accent disabled:opacity-50"
                           >
-                            Pakai
+                            {t(lm.use)}
                           </button>
                           <button
                             type="button"
                             onClick={() => saveCurrentDeviceEventView(view.id)}
                             className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-2.5 py-1 text-[11px] font-medium hover:bg-accent"
                           >
-                            Simpan Filter Saat Ini
+                            {t(lm.saveCurrentFilter)}
                           </button>
                           <button
                             type="button"
                             onClick={() => renameDeviceEventSavedView(view.id)}
                             className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-2.5 py-1 text-[11px] font-medium hover:bg-accent"
                           >
-                            Ganti Nama
+                            {t(lm.rename)}
                           </button>
                           <button
                             type="button"
@@ -2516,7 +2615,7 @@ function DevicesPage() {
                             disabled={!view.state}
                             className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-2.5 py-1 text-[11px] font-medium hover:bg-accent disabled:opacity-50"
                           >
-                            Duplikat ke...
+                            {t(lm.duplicateTo)}
                           </button>
                           <button
                             type="button"
@@ -2524,13 +2623,13 @@ function DevicesPage() {
                             disabled={!view.state}
                             className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-2.5 py-1 text-[11px] font-medium hover:bg-accent disabled:opacity-50"
                           >
-                            Hapus
+                            {t(lm.clear)}
                           </button>
                         </div>
                         <div className="mt-2 text-[11px] text-muted-foreground">
                           {view.updatedAt
-                            ? `Diperbarui ${formatRelativeTime(view.updatedAt)}`
-                            : "Slot masih kosong"}
+                            ? t(lm.updatedWhen, { when: formatRelativeTime(view.updatedAt, t) })
+                            : t(lm.slotEmpty)}
                         </div>
                       </div>
                     );
@@ -2548,7 +2647,7 @@ function DevicesPage() {
                           : "border-input bg-background hover:bg-accent"
                       }`}
                     >
-                      <span>{filter.label}</span>
+                      <span>{t(filter.label)}</span>
                       <CountBadge
                         value={eventCounts[filter.id]}
                         loading={deviceEventAggregatesLoading || isDeviceEventSearchDebouncing}
@@ -2573,7 +2672,7 @@ function DevicesPage() {
                           : "border-input bg-background hover:bg-accent"
                       }`}
                     >
-                      <span>{filter.label}</span>
+                      <span>{t(filter.label)}</span>
                       <CountBadge
                         value={eventTypeCounts[filter.id]}
                         loading={deviceEventAggregatesLoading || isDeviceEventSearchDebouncing}
@@ -2610,7 +2709,7 @@ function DevicesPage() {
                           : "border-input bg-background hover:bg-accent"
                       }`}
                     >
-                      <span>{filter.label}</span>
+                      <span>{t(filter.label)}</span>
                       <CountBadge
                         value={eventTimeCounts[filter.id]}
                         loading={deviceEventAggregatesLoading || isDeviceEventSearchDebouncing}
@@ -2626,7 +2725,9 @@ function DevicesPage() {
                 {deviceEventTimeRange === "custom" ? (
                   <div className="mb-3 grid gap-2 rounded-md border border-dashed bg-muted/20 p-3 md:grid-cols-2">
                     <label className="space-y-1">
-                      <span className="text-[11px] font-medium text-muted-foreground">Mulai</span>
+                      <span className="text-[11px] font-medium text-muted-foreground">
+                        {t(lm.rangeFrom)}
+                      </span>
                       <input
                         type="datetime-local"
                         value={deviceEventCustomStart}
@@ -2635,7 +2736,9 @@ function DevicesPage() {
                       />
                     </label>
                     <label className="space-y-1">
-                      <span className="text-[11px] font-medium text-muted-foreground">Sampai</span>
+                      <span className="text-[11px] font-medium text-muted-foreground">
+                        {t(lm.rangeTo)}
+                      </span>
                       <input
                         type="datetime-local"
                         value={deviceEventCustomEnd}
@@ -2644,7 +2747,7 @@ function DevicesPage() {
                       />
                     </label>
                     <div className="md:col-span-2 text-[11px] text-muted-foreground">
-                      Audit aktif: {customRangeLabel}
+                      {t(lm.auditActiveRange, { range: customRangeLabel })}
                     </div>
                   </div>
                 ) : null}
@@ -2654,62 +2757,68 @@ function DevicesPage() {
                     <input
                       value={deviceEventSearchQuery}
                       onChange={(e) => setDeviceEventSearchQuery(e.target.value)}
-                      placeholder="Cari pesan, event, device, atau payload..."
+                      placeholder={t(lm.searchLogPlaceholder)}
                       className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-3 text-xs outline-none ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
                     />
                     {isDeviceEventSearchDebouncing ? (
                       <div className="mt-1 text-[11px] text-muted-foreground">
-                        Menunggu jeda ketik sebelum sinkron ke server...
+                        {t(lm.searchDebouncing)}
                       </div>
                     ) : null}
                   </div>
                   <div className="text-[11px] text-muted-foreground">
-                    Menampilkan {visibleDeviceEvents.length} dari {eventCounts[deviceEventFilter]}{" "}
-                    log
-                    {hasDeviceEventTypeFilter
-                      ? ` tipe ${DEVICE_EVENT_TYPE_FILTERS.find((filter) => filter.id === deviceEventTypeFilter)?.label ?? deviceEventTypeFilter}`
-                      : ""}
-                    {hasDeviceEventTimeRangeFilter
-                      ? ` dalam ${
-                          deviceEventTimeRange === "custom"
-                            ? customRangeLabel
-                            : (DEVICE_EVENT_TIME_FILTERS.find(
-                                (filter) => filter.id === deviceEventTimeRange,
-                              )?.label ?? deviceEventTimeRange)
-                        }`
-                      : ""}
-                    {hasDeviceEventSearch ? ` untuk "${deviceEventSearchQuery.trim()}"` : ""}.
+                    {t(lm.showingSummary, {
+                      shown: visibleDeviceEvents.length,
+                      total: eventCounts[deviceEventFilter],
+                      type: hasDeviceEventTypeFilter
+                        ? t(lm.showingSummaryType, {
+                            type: filterLabel(DEVICE_EVENT_TYPE_FILTERS, deviceEventTypeFilter, t),
+                          })
+                        : "",
+                      range: hasDeviceEventTimeRangeFilter
+                        ? t(lm.showingSummaryRange, {
+                            range:
+                              deviceEventTimeRange === "custom"
+                                ? customRangeLabel
+                                : filterLabel(DEVICE_EVENT_TIME_FILTERS, deviceEventTimeRange, t),
+                          })
+                        : "",
+                      search: hasDeviceEventSearch
+                        ? t(lm.showingSummarySearch, { query: deviceEventSearchQuery.trim() })
+                        : "",
+                    })}
                   </div>
                 </div>
                 {deviceEventsError ? (
                   <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-700">
-                    Log device belum bisa dimuat: {deviceEventsError}
+                    {t(lm.logLoadErrorBanner, { reason: deviceEventsError })}
                   </div>
                 ) : deviceEvents.length === 0 ? (
                   <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                    Belum ada log aktivitas untuk device ini.
+                    {t(lm.logEmpty)}
                   </div>
                 ) : visibleDeviceEvents.length === 0 ? (
                   <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                    Tidak ada log yang cocok dengan filter saat ini
-                    {deviceEventFilter !== "all"
-                      ? ` (severity ${deviceEventFilter.toUpperCase()})`
-                      : ""}
-                    {hasDeviceEventTypeFilter
-                      ? ` (tipe ${DEVICE_EVENT_TYPE_FILTERS.find((filter) => filter.id === deviceEventTypeFilter)?.label ?? deviceEventTypeFilter})`
-                      : ""}
-                    {hasDeviceEventTimeRangeFilter
-                      ? ` (rentang ${
-                          deviceEventTimeRange === "custom"
-                            ? customRangeLabel
-                            : (DEVICE_EVENT_TIME_FILTERS.find(
-                                (filter) => filter.id === deviceEventTimeRange,
-                              )?.label ?? deviceEventTimeRange)
-                        })`
-                      : ""}
-                    {hasDeviceEventSearch
-                      ? ` dan kata kunci "${deviceEventSearchQuery.trim()}".`
-                      : "."}
+                    {t(hasDeviceEventSearch ? lm.logNoMatchWithSearch : lm.logNoMatch, {
+                      severity:
+                        deviceEventFilter !== "all"
+                          ? t(lm.logNoMatchSeverity, { severity: deviceEventFilter.toUpperCase() })
+                          : "",
+                      type: hasDeviceEventTypeFilter
+                        ? t(lm.logNoMatchType, {
+                            type: filterLabel(DEVICE_EVENT_TYPE_FILTERS, deviceEventTypeFilter, t),
+                          })
+                        : "",
+                      range: hasDeviceEventTimeRangeFilter
+                        ? t(lm.logNoMatchRange, {
+                            range:
+                              deviceEventTimeRange === "custom"
+                                ? customRangeLabel
+                                : filterLabel(DEVICE_EVENT_TIME_FILTERS, deviceEventTimeRange, t),
+                          })
+                        : "",
+                      query: deviceEventSearchQuery.trim(),
+                    })}
                   </div>
                 ) : (
                   <div className="grid gap-3 xl:grid-cols-[1.25fr_0.85fr]">
@@ -2718,29 +2827,36 @@ function DevicesPage() {
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div>
                             <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                              Ringkasan Aktif
+                              {t(lm.activeSummaryHeading)}
                             </div>
                             <div className="mt-1 text-sm font-semibold text-foreground">
-                              {visibleDeviceEvents.length} log tampil dari {deviceEvents.length}{" "}
-                              total
+                              {t(lm.visibleOfTotal, {
+                                shown: visibleDeviceEvents.length,
+                                total: deviceEvents.length,
+                              })}
                             </div>
                             <div className="mt-1 text-[11px] text-muted-foreground">
-                              Total termuat saat ini: {deviceEvents.length} log, batch berikutnya{" "}
-                              {DEVICE_EVENT_FETCH_STEP} log.
-                              {canLoadMoreDeviceEvents
-                                ? " Masih ada halaman berikutnya."
-                                : " Sudah mencapai akhir data saat ini."}
+                              {t(
+                                canLoadMoreDeviceEvents
+                                  ? lm.loadedSummaryMore
+                                  : lm.loadedSummaryEnd,
+                                { loaded: deviceEvents.length, step: DEVICE_EVENT_FETCH_STEP },
+                              )}
                             </div>
                           </div>
                           <div className="flex flex-wrap gap-2 text-[11px]">
                             <span className="rounded-full border border-destructive/30 bg-destructive/5 px-2.5 py-1 font-medium text-destructive">
-                              Error {visibleEventSeverityCounts.error}
+                              {t(lm.severityErrorCount, {
+                                count: visibleEventSeverityCounts.error,
+                              })}
                             </span>
                             <span className="rounded-full border border-amber-500/30 bg-amber-500/5 px-2.5 py-1 font-medium text-amber-700">
-                              Warning {visibleEventSeverityCounts.warning}
+                              {t(lm.severityWarningCount, {
+                                count: visibleEventSeverityCounts.warning,
+                              })}
                             </span>
                             <span className="rounded-full border border-muted bg-muted/50 px-2.5 py-1 font-medium text-muted-foreground">
-                              Info {visibleEventSeverityCounts.info}
+                              {t(lm.severityInfoCount, { count: visibleEventSeverityCounts.info })}
                             </span>
                           </div>
                         </div>
@@ -2756,7 +2872,7 @@ function DevicesPage() {
                             ))
                           ) : (
                             <span className="text-[11px] text-muted-foreground">
-                              Tidak ada filter tambahan aktif. Semua log terbaru sedang ditampilkan.
+                              {t(lm.noExtraFilters)}
                             </span>
                           )}
                         </div>
@@ -2782,12 +2898,12 @@ function DevicesPage() {
                                   <div className="flex flex-wrap items-center gap-2">
                                     <span className="font-medium text-foreground">
                                       {highlightHistoryText(
-                                        formatDeviceEventLabel(event.eventType),
+                                        formatDeviceEventLabel(event.eventType, t),
                                         deviceEventSearchQuery,
                                       )}
                                     </span>
                                     <StatusChip
-                                      label={event.severity}
+                                      label={formatDeviceEventSeverity(event.severity, t)}
                                       tone={
                                         event.severity === "error"
                                           ? "error"
@@ -2801,15 +2917,16 @@ function DevicesPage() {
                                     {highlightHistoryText(event.message, deviceEventSearchQuery)}
                                   </div>
                                   <div className="text-[11px] text-muted-foreground">
-                                    Device:{" "}
-                                    {highlightHistoryText(
-                                      event.deviceName ?? event.deviceCode,
-                                      deviceEventSearchQuery,
-                                    )}
+                                    {rich(lm.eventDevice, {
+                                      name: highlightHistoryText(
+                                        event.deviceName ?? event.deviceCode,
+                                        deviceEventSearchQuery,
+                                      ),
+                                    })}
                                   </div>
                                 </div>
                                 <span className="text-[11px] text-muted-foreground">
-                                  {formatDateTime(new Date(event.createdAt))}
+                                  {formatDateTime(new Date(event.createdAt), locale)}
                                 </span>
                               </div>
                             </button>
@@ -2818,9 +2935,7 @@ function DevicesPage() {
                       ))}
                       <div className="flex items-center justify-between gap-3 rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">
                         <span>
-                          {canLoadMoreDeviceEvents
-                            ? "Perlu audit lebih panjang? Muat batch log berikutnya dari server."
-                            : "Semua log yang tersedia untuk query saat ini sudah dimuat."}
+                          {canLoadMoreDeviceEvents ? t(lm.loadMoreHint) : t(lm.allLoaded)}
                         </span>
                         <button
                           type="button"
@@ -2828,20 +2943,20 @@ function DevicesPage() {
                           disabled={!canLoadMoreDeviceEvents || deviceEventsLoading}
                           className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent disabled:opacity-60"
                         >
-                          {deviceEventsLoading ? "Memuat…" : "Load More"}
+                          {deviceEventsLoading ? t(lm.loadingShort) : t(lm.loadMore)}
                         </button>
                       </div>
                     </div>
                     <div className="rounded-md border bg-muted/20 p-3">
                       <h4 className="mb-2 text-xs font-semibold text-muted-foreground">
-                        Detail Event
+                        {t(lm.eventDetailHeading)}
                       </h4>
                       {selectedDeviceEvent ? (
                         <div className="space-y-3 text-xs">
                           <div>
                             <div className="font-medium text-foreground">
                               {highlightHistoryText(
-                                formatDeviceEventLabel(selectedDeviceEvent.eventType),
+                                formatDeviceEventLabel(selectedDeviceEvent.eventType, t),
                                 deviceEventSearchQuery,
                               )}
                             </div>
@@ -2853,10 +2968,10 @@ function DevicesPage() {
                             </div>
                           </div>
                           <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2">
-                            <dt className="text-muted-foreground">Severity</dt>
+                            <dt className="text-muted-foreground">{t(lm.severityDt)}</dt>
                             <dd className="text-right">
                               <StatusChip
-                                label={selectedDeviceEvent.severity}
+                                label={formatDeviceEventSeverity(selectedDeviceEvent.severity, t)}
                                 tone={
                                   selectedDeviceEvent.severity === "error"
                                     ? "error"
@@ -2866,21 +2981,21 @@ function DevicesPage() {
                                 }
                               />
                             </dd>
-                            <dt className="text-muted-foreground">Device</dt>
+                            <dt className="text-muted-foreground">{t(lm.deviceDt)}</dt>
                             <dd className="text-right font-medium">
                               {highlightHistoryText(
                                 selectedDeviceEvent.deviceName ?? selectedDeviceEvent.deviceCode,
                                 deviceEventSearchQuery,
                               )}
                             </dd>
-                            <dt className="text-muted-foreground">Waktu</dt>
+                            <dt className="text-muted-foreground">{t(lm.timeDt)}</dt>
                             <dd className="text-right font-medium">
-                              {formatDateTime(new Date(selectedDeviceEvent.createdAt))}
+                              {formatDateTime(new Date(selectedDeviceEvent.createdAt), locale)}
                             </dd>
                           </dl>
                           <div>
                             <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                              Payload
+                              {t(lm.payloadHeading)}
                             </div>
                             {selectedDeviceEvent.payload &&
                             Object.keys(selectedDeviceEvent.payload).length > 0 ? (
@@ -2898,7 +3013,7 @@ function DevicesPage() {
                                     </dt>
                                     <dd className="break-all text-right font-medium">
                                       {highlightHistoryText(
-                                        formatDeviceEventPayloadValue(value),
+                                        formatDeviceEventPayloadValue(value, t),
                                         deviceEventSearchQuery,
                                       )}
                                     </dd>
@@ -2907,14 +3022,14 @@ function DevicesPage() {
                               </dl>
                             ) : (
                               <div className="rounded-md border border-dashed bg-background px-3 py-2 text-muted-foreground">
-                                Event ini tidak membawa payload tambahan.
+                                {t(lm.payloadEmpty)}
                               </div>
                             )}
                           </div>
                         </div>
                       ) : (
                         <div className="rounded-md border border-dashed bg-background px-3 py-8 text-center text-muted-foreground">
-                          Pilih salah satu log untuk melihat detail payload.
+                          {t(lm.selectLogHint)}
                         </div>
                       )}
                     </div>
@@ -2930,16 +3045,13 @@ function DevicesPage() {
             {activeTab === "fallback" && (
               <div className="rounded-md border p-4">
                 <h3 className="mb-3 flex items-center gap-1.5 text-sm font-semibold">
-                  <RotateCcw className="h-3.5 w-3.5" /> Koneksi Cadangan
+                  <RotateCcw className="h-3.5 w-3.5" /> {t(m.tabFallback)}
                 </h3>
                 <div className="flex items-center gap-2 rounded-md border bg-muted/50 p-3 text-xs">
                   <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                  Utama: USB — belum ada metode cadangan yang dikonfigurasi.
+                  {t(m.fallbackPrimary)}
                 </div>
-                <p className="mt-2 text-[11px] text-muted-foreground">
-                  Koneksi cadangan seperti EOS Utility, Bluetooth, atau Wi-Fi belum didukung.
-                  Aplikasi ini saat ini hanya berbicara ke kamera lewat USB via gphoto2.
-                </p>
+                <p className="mt-2 text-[11px] text-muted-foreground">{t(m.fallbackNote)}</p>
               </div>
             )}
           </div>
@@ -2947,7 +3059,9 @@ function DevicesPage() {
           {/* Live telemetry and camera settings remain separate from image QC. */}
           <div className="space-y-4">
             <div className="rounded-md border p-3">
-              <h3 className="mb-2 text-xs font-semibold text-muted-foreground">Kesehatan Device</h3>
+              <h3 className="mb-2 text-xs font-semibold text-muted-foreground">
+                {t(m.deviceHealthHeading)}
+              </h3>
               <DeviceTelemetryPanel
                 telemetry={telemetry}
                 loading={telemetryLoading}
@@ -2957,18 +3071,20 @@ function DevicesPage() {
 
             <div className="rounded-md border p-3">
               <h3 className="mb-2 text-xs font-semibold text-muted-foreground">
-                Setelan Kamera Aktual
+                {t(m.actualSettingsHeading)}
               </h3>
               <div className="space-y-1.5 text-xs">
-                {[
-                  ["ISO", "iso"],
-                  ["Shutter", "shutterSpeed"],
-                  ["Aperture", "aperture"],
-                  ["White balance", "whiteBalance"],
-                  ["Mode fokus", "focusMode"],
-                ].map(([label, key]) => (
-                  <div key={label} className="flex justify-between">
-                    <span className="text-muted-foreground">{label}</span>
+                {(
+                  [
+                    [m.settingIso, "iso"],
+                    [m.settingShutter, "shutterSpeed"],
+                    [m.settingAperture, "aperture"],
+                    [m.settingWhiteBalance, "whiteBalance"],
+                    [m.settingFocusMode, "focusMode"],
+                  ] as const
+                ).map(([label, key]) => (
+                  <div key={key} className="flex justify-between">
+                    <span className="text-muted-foreground">{t(label)}</span>
                     <span className="ml-2 text-right">
                       {cameraDetails?.settings
                         .find((setting) => setting.key === key)
@@ -2977,35 +3093,32 @@ function DevicesPage() {
                   </div>
                 ))}
               </div>
-              <p className="mt-2 text-xs text-muted-foreground">
-                Nilai konfigurasi dari kamera. Penilaian kondisi lensa dan kualitas gambar (QC)
-                belum tersedia.
-              </p>
+              <p className="mt-2 text-xs text-muted-foreground">{t(m.actualSettingsNote)}</p>
             </div>
 
             <div className="rounded-md border p-3">
-              <h3 className="mb-2 text-xs font-semibold text-muted-foreground">Log Terbaru</h3>
+              <h3 className="mb-2 text-xs font-semibold text-muted-foreground">
+                {t(lm.latestLogHeading)}
+              </h3>
               {deviceEventsError ? (
-                <p className="text-xs text-muted-foreground">Log registry belum tersedia.</p>
+                <p className="text-xs text-muted-foreground">{t(lm.registryLogUnavailable)}</p>
               ) : latestDeviceEvent ? (
                 <div className="space-y-1 text-xs">
                   <div className="font-medium text-foreground">
-                    {formatDeviceEventLabel(latestDeviceEvent.eventType)}
+                    {formatDeviceEventLabel(latestDeviceEvent.eventType, t)}
                   </div>
                   <div className="text-muted-foreground">{latestDeviceEvent.message}</div>
                   <div className="text-[11px] text-muted-foreground">
-                    {formatRelativeTime(new Date(latestDeviceEvent.createdAt).getTime())}
+                    {formatRelativeTime(new Date(latestDeviceEvent.createdAt).getTime(), t)}
                   </div>
                 </div>
               ) : (
-                <p className="text-xs text-muted-foreground">
-                  Belum ada aktivitas terbaru yang tercatat.
-                </p>
+                <p className="text-xs text-muted-foreground">{t(lm.noRecentActivity)}</p>
               )}
             </div>
 
             <div className="text-[11px] text-muted-foreground">
-              Sinkron terakhir: {lastSync ? formatDateTime(lastSync) : "—"}
+              {t(m.lastSyncColon, { when: lastSync ? formatDateTime(lastSync, locale) : "—" })}
             </div>
           </div>
         </div>
@@ -3027,6 +3140,15 @@ function CameraSettingsTab({
   onSaveProfile: (profile: DeviceProfile) => Promise<boolean>;
   onOperationBusy: (busy: boolean) => void;
 }) {
+  const t = useT();
+  const rich = useRichT();
+  const locale = useLocale();
+  // Effect pemuat konfigurasi membaca penerjemah lewat ref, supaya berganti
+  // bahasa tidak ikut membaca ulang konfigurasi kamera dari edge device.
+  const translate = useRef(t);
+  useEffect(() => {
+    translate.current = t;
+  }, [t]);
   const [templateId, setTemplateId] = useState(profile?.templateId ?? DEVICE_TEMPLATES[0].id);
   const [templateFilter, setTemplateFilter] = useState<PresetFilter>(PRESET_FILTERS[0]);
   const [compareTemplateId, setCompareTemplateId] = useState(
@@ -3105,7 +3227,7 @@ function CameraSettingsTab({
       if (!deviceId || !deviceStatus?.online) {
         setEdgeConfigs([]);
         setEdgeConfigsLoading(false);
-        setEdgeConfigsError("Pilih device aktif yang terhubung untuk membaca konfigurasi kamera.");
+        setEdgeConfigsError(translate.current(cm.selectActiveDeviceForConfig));
         return;
       }
       setEdgeConfigsLoading(true);
@@ -3114,7 +3236,7 @@ function CameraSettingsTab({
       if (cancelled) return;
       if (!result.ok) {
         setEdgeConfigs([]);
-        setEdgeConfigsError(result.message);
+        setEdgeConfigsError(failureText(translate.current, result));
       } else {
         setEdgeConfigs(result.items);
       }
@@ -3123,7 +3245,9 @@ function CameraSettingsTab({
 
     void loadEdgeConfigs().catch((error) => {
       if (!cancelled) {
-        setEdgeConfigsError(error instanceof Error ? error.message : "Config gagal dimuat.");
+        setEdgeConfigsError(
+          error instanceof Error ? error.message : translate.current(cm.configLoadFailed),
+        );
         setEdgeConfigsLoading(false);
       }
     });
@@ -3135,7 +3259,7 @@ function CameraSettingsTab({
   if (!profile || !draft) {
     return (
       <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-        Daftarkan device dulu untuk menentukan profil pengaturan kameranya.
+        {t(cm.registerFirstForProfile)}
       </div>
     );
   }
@@ -3179,7 +3303,7 @@ function CameraSettingsTab({
     const result = await listCameraConfigs({ data: { deviceId } });
     if (!result.ok) {
       setEdgeConfigs([]);
-      setEdgeConfigsError(result.message);
+      setEdgeConfigsError(failureText(t, result));
     } else {
       setEdgeConfigs(result.items);
     }
@@ -3191,7 +3315,7 @@ function CameraSettingsTab({
     try {
       await performProfileApply(nextProfile);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Gagal menerapkan preset.";
+      const message = error instanceof Error ? error.message : t(cm.applyFailedGeneric);
       setApplyState({ status: "failed", message });
       toast.error(message);
     } finally {
@@ -3202,17 +3326,17 @@ function CameraSettingsTab({
   async function performProfileApply(nextProfile: DeviceProfile) {
     setApplyState({
       status: "applying",
-      message: "Creating/updating edge profile and applying preset to the camera...",
+      message: t(cm.applyingStatus),
     });
-    toast.message("Menerapkan preset ke kamera...", {
-      description: "Edge profile sedang dibuat atau diperbarui.",
+    toast.message(t(cm.toastApplying), {
+      description: t(cm.toastApplyingDesc),
     });
 
     const result = await upsertAndApplyEdgePreset({ data: { ...nextProfile, deviceId } });
     if (!result.ok) {
       setApplyState({
         status: "failed",
-        message: result.message,
+        message: failureText(t, result),
         code: result.code,
       });
       const nextHistory = appendApplyHistory({
@@ -3228,8 +3352,8 @@ function CameraSettingsTab({
         code: result.code,
       });
       setApplyHistory(nextHistory);
-      toast.error("Gagal menerapkan preset ke kamera", {
-        description: result.message,
+      toast.error(t(cm.toastApplyFailed), {
+        description: failureText(t, result),
       });
       return;
     }
@@ -3245,14 +3369,13 @@ function CameraSettingsTab({
     if (!registrySaved) {
       setApplyState({
         status: "failed",
-        message:
-          "Preset diterapkan ke kamera, tetapi sinkronisasi registry gagal. Simpan ulang profil.",
+        message: t(cm.appliedButRegistrySyncFailed),
       });
       return;
     }
     setApplyState({
       status: "applied",
-      message: `Preset applied to camera via edge profile "${result.edgeProfileName}".`,
+      message: t(cm.appliedViaEdgeProfile, { name: result.edgeProfileName }),
       appliedKeys: result.appliedKeys,
       skippedKeys: result.skippedKeys,
     });
@@ -3269,8 +3392,8 @@ function CameraSettingsTab({
       code: null,
     });
     setApplyHistory(nextHistory);
-    toast.success("Preset berhasil diterapkan ke kamera", {
-      description: `Edge profile "${result.edgeProfileName}" sudah aktif.`,
+    toast.success(t(cm.toastApplied), {
+      description: t(cm.toastAppliedDesc, { name: result.edgeProfileName }),
     });
     await refreshEdgeConfigs();
   }
@@ -3290,41 +3413,39 @@ function CameraSettingsTab({
     applyState.status !== "applying";
   const applyActionHint =
     applyState.status === "applying"
-      ? "Preset sedang diterapkan ke kamera."
+      ? t(cm.hintApplying)
       : !deviceStatus?.online
-        ? "Terapkan sekarang belum tersedia karena edge API tidak reachable."
+        ? t(cm.hintEdgeUnreachable)
         : !deviceStatus.camera?.connected
-          ? "Terapkan sekarang belum tersedia karena kamera belum terhubung."
+          ? t(cm.hintCameraNotConnected)
           : !configWriteSupported
-            ? "Terapkan sekarang belum tersedia karena edge API belum expose configWrite."
+            ? t(cm.hintNoConfigWrite)
             : null;
   const applyStatusMeta =
     applyState.status === "applied"
       ? {
-          label: "Berhasil diterapkan",
-          detail: "Preset terakhir berhasil diterapkan ke kamera.",
+          label: t(cm.applyStatusApplied),
+          detail: t(cm.applyStatusAppliedDetail),
           tone: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700",
           icon: CheckCircle2,
         }
       : applyState.status === "failed"
         ? {
-            label: "Gagal diterapkan",
-            detail: applyState.message ?? "Preset gagal diterapkan ke kamera.",
+            label: t(cm.applyStatusFailed),
+            detail: applyState.message ?? t(cm.applyStatusFailedDetail),
             tone: "border-destructive/30 bg-destructive/10 text-destructive",
             icon: AlertTriangle,
           }
         : applyState.status === "applying"
           ? {
-              label: "Sedang diterapkan",
-              detail: "Edge API sedang memproses preset aktif.",
+              label: t(cm.applyStatusApplying),
+              detail: t(cm.applyStatusApplyingDetail),
               tone: "border-primary/30 bg-primary/10 text-primary",
               icon: RefreshCw,
             }
           : {
-              label: canApplyPreset ? "Siap diterapkan" : "Belum bisa diterapkan",
-              detail:
-                applyActionHint ??
-                "Preset bisa diterapkan saat edge API reachable dan kamera mendukung config write.",
+              label: canApplyPreset ? t(cm.applyStatusReady) : t(cm.applyStatusNotReady),
+              detail: applyActionHint ?? t(cm.applyStatusIdleDetail),
               tone: canApplyPreset
                 ? "border-sky-500/30 bg-sky-500/10 text-sky-700"
                 : "border-amber-500/30 bg-amber-500/10 text-amber-700",
@@ -3332,39 +3453,34 @@ function CameraSettingsTab({
             };
   const applyChecklist = [
     {
-      label: "Edge API reachable",
+      id: "edge",
+      label: t(cm.checkEdgeReachable),
       done: !!deviceStatus?.online,
-      detail: deviceStatus?.online
-        ? "Edge API berhasil dijangkau dari aplikasi."
-        : "Terapkan sekarang menunggu edge API kembali reachable.",
+      detail: deviceStatus?.online ? t(cm.checkEdgeReachableDone) : t(cm.checkEdgeReachablePending),
     },
     {
-      label: "Kamera terhubung",
+      id: "camera",
+      label: t(cm.checkCameraConnected),
       done: !!deviceStatus?.camera?.connected,
       detail: deviceStatus?.camera?.connected
-        ? "Kamera USB sudah terdeteksi oleh edge device."
-        : "Hubungkan kamera dulu sebelum apply preset.",
+        ? t(cm.checkCameraConnectedDone)
+        : t(cm.checkCameraConnectedPending),
     },
     {
-      label: "Config write tersedia",
+      id: "config-write",
+      label: t(cm.checkConfigWrite),
       done: configWriteSupported,
-      detail: configWriteSupported
-        ? "Edge API melaporkan capability config write."
-        : "Capability config write belum tersedia untuk kamera ini.",
+      detail: configWriteSupported ? t(cm.checkConfigWriteDone) : t(cm.checkConfigWritePending),
     },
   ];
   const applyNextActions = [
-    !deviceStatus?.online ? "Refresh status device untuk memastikan edge API sudah online." : null,
-    deviceStatus?.online && !deviceStatus.camera?.connected
-      ? "Periksa kabel USB, power kamera, lalu ulangi koneksi."
-      : null,
+    !deviceStatus?.online ? cm.nextRefreshStatus : null,
+    deviceStatus?.online && !deviceStatus.camera?.connected ? cm.nextCheckCable : null,
     deviceStatus?.online && deviceStatus.camera?.connected && !configWriteSupported
-      ? "Capability configWrite belum tersedia; cek edge API/camera support matrix."
+      ? cm.nextConfigWriteMissing
       : null,
-    canApplyPreset
-      ? "Preset siap diterapkan. Simpan draft jika perlu, lalu klik Terapkan Preset ke Kamera."
-      : null,
-  ].filter(Boolean) as string[];
+    canApplyPreset ? cm.nextReadyToApply : null,
+  ].filter(Boolean) as Message[];
   const historyForFilter = applyHistory.filter((entry) =>
     matchesApplyHistoryFilter(entry, applyHistoryFilter),
   );
@@ -3389,9 +3505,10 @@ function CameraSettingsTab({
     "Has skipped keys": historyForFilter.filter((entry) => entry.skippedKeys.length > 0).length,
     "Has edge profile": historyForFilter.filter((entry) => !!entry.edgeProfileId).length,
   };
-  const applyHistoryEmptyMessage =
-    `Tidak ada entri yang cocok untuk filter "${APPLY_HISTORY_FILTER_LABELS[applyHistoryFilter]}" / "${APPLY_HISTORY_QUICK_FILTER_LABELS[applyHistoryQuickFilter]}" ` +
-    "dengan pencarian saat ini.";
+  const applyHistoryEmptyMessage = t(cm.historyNoMatch, {
+    filter: t(APPLY_HISTORY_FILTER_LABELS[applyHistoryFilter]),
+    quick: t(APPLY_HISTORY_QUICK_FILTER_LABELS[applyHistoryQuickFilter]),
+  });
   const activeSavedView =
     applyHistorySearch.trim() === ""
       ? (APPLY_HISTORY_SAVED_VIEWS.find(
@@ -3450,21 +3567,21 @@ function CameraSettingsTab({
     localKey: keyof CameraSettings;
     edgeKey: string | null;
   }> = [
-    { label: "ISO", localKey: "iso", edgeKey: "iso" },
-    { label: "Shutter Speed", localKey: "shutter", edgeKey: "shutterSpeed" },
-    { label: "Aperture", localKey: "aperture", edgeKey: "aperture" },
-    { label: "White Balance", localKey: "whiteBalance", edgeKey: "whiteBalance" },
-    { label: "Focus Mode", localKey: "focusMode", edgeKey: "focusMode" },
-    { label: "Picture Style", localKey: "pictureStyle", edgeKey: null },
+    { label: t(cm.fieldIso), localKey: "iso", edgeKey: "iso" },
+    { label: t(cm.fieldShutterSpeed), localKey: "shutter", edgeKey: "shutterSpeed" },
+    { label: t(cm.fieldAperture), localKey: "aperture", edgeKey: "aperture" },
+    { label: t(cm.fieldWhiteBalance), localKey: "whiteBalance", edgeKey: "whiteBalance" },
+    { label: t(cm.fieldFocusMode), localKey: "focusMode", edgeKey: "focusMode" },
+    { label: t(cm.fieldPictureStyle), localKey: "pictureStyle", edgeKey: null },
   ];
 
   function getSupportLabel(edgeKey: string | null) {
-    if (!edgeKey) return "Belum dipetakan oleh edge API";
+    if (!edgeKey) return t(cm.supportNotMapped);
     const match = edgeConfigs.find((item) => item.key === edgeKey);
-    if (!match) return "Key belum diekspos oleh kamera saat ini";
-    if (!match.supported) return "Dilaporkan tidak didukung";
-    if (!match.writable) return "Hanya-baca";
-    return "Bisa ditulis";
+    if (!match) return t(cm.supportKeyNotExposed);
+    if (!match.supported) return t(cm.supportReportedUnsupported);
+    if (!match.writable) return t(cm.supportReadOnly);
+    return t(cm.supportWritable);
   }
 
   function selectTemplate(nextTemplateId: string) {
@@ -3477,8 +3594,8 @@ function CameraSettingsTab({
   function handleUseTemplate(nextTemplateId: string) {
     selectTemplate(nextTemplateId);
     const nextTemplate = getTemplateById(nextTemplateId);
-    toast.success(`Preset aktif diubah ke "${nextTemplate.label}"`, {
-      description: "Draft pengaturan kamera sudah mengikuti template terpilih.",
+    toast.success(t(cm.toastPresetChanged, { name: getTemplateLabel(nextTemplate, t) }), {
+      description: t(cm.toastPresetChangedDesc),
     });
   }
 
@@ -3490,8 +3607,8 @@ function CameraSettingsTab({
     setApplyHistoryQuickFilter("Any");
     setApplyHistorySearch("");
     setApplyHistorySort("Newest");
-    toast.success("Riwayat apply preset dibersihkan", {
-      description: "Hanya riwayat lokal pada browser ini yang dihapus.",
+    toast.success(t(cm.toastHistoryCleared), {
+      description: t(cm.toastHistoryClearedDesc),
     });
   }
 
@@ -3547,11 +3664,14 @@ function CameraSettingsTab({
     anchor.click();
     URL.revokeObjectURL(url);
 
-    toast.success(`Apply history diekspor ke ${format.toUpperCase()}`, {
+    toast.success(t(cm.toastHistoryExported, { format: format.toUpperCase() }), {
       description:
         scope === "all"
-          ? `Mengekspor seluruh riwayat. Total entri: ${entries.length}.`
-          : `Filter aktif: ${APPLY_HISTORY_FILTER_LABELS[applyHistoryFilter]}. Total entri: ${entries.length}.`,
+          ? t(cm.toastHistoryExportedAll, { count: entries.length })
+          : t(cm.toastHistoryExportedFiltered, {
+              filter: t(APPLY_HISTORY_FILTER_LABELS[applyHistoryFilter]),
+              count: entries.length,
+            }),
     });
   }
 
@@ -3578,12 +3698,9 @@ function CameraSettingsTab({
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="flex items-center gap-1.5 text-sm font-semibold">
-            <Camera className="h-3.5 w-3.5" /> Profil Pengaturan Kamera
+            <Camera className="h-3.5 w-3.5" /> {t(cm.profileHeading)}
           </h3>
-          <p className="text-xs text-muted-foreground">
-            Nilai ini disimpan sebagai profil device aktif dan bisa diterapkan ke kamera melalui
-            edge API saat capability config write tersedia.
-          </p>
+          <p className="text-xs text-muted-foreground">{t(cm.profileIntro)}</p>
         </div>
         <div className="flex max-w-md flex-col items-stretch gap-2">
           <div className="flex flex-wrap gap-2">
@@ -3592,14 +3709,14 @@ function CameraSettingsTab({
               disabled={saveState === "saving"}
               className="rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent"
             >
-              Simpan Pengaturan Device
+              {t(cm.saveDeviceSettings)}
             </button>
             <button
               onClick={() => void applyPresetToCamera()}
               disabled={!canApplyPreset}
               className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {applyState.status === "applying" ? "Menerapkan…" : "Terapkan Preset ke Kamera"}
+              {applyState.status === "applying" ? t(cm.applying) : t(cm.applyPresetToCamera)}
             </button>
           </div>
           <div className={`rounded-md border px-3 py-2 text-xs ${applyStatusMeta.tone}`}>
@@ -3616,19 +3733,21 @@ function CameraSettingsTab({
 
       <div className="mb-4 grid gap-3 md:grid-cols-3">
         <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-          <div className="font-medium text-foreground">Config Write Edge</div>
-          <div>{configWriteSupported ? "Tersedia" : "Belum tersedia"}</div>
+          <div className="font-medium text-foreground">{t(cm.edgeConfigWriteTitle)}</div>
+          <div>{configWriteSupported ? t(cm.available) : t(cm.notAvailableYet)}</div>
         </div>
         <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-          <div className="font-medium text-foreground">Koneksi Kamera</div>
-          <div>{deviceStatus?.camera?.connected ? "USB terhubung" : "Kamera belum terhubung"}</div>
+          <div className="font-medium text-foreground">{t(cm.cameraConnectionTitle)}</div>
+          <div>
+            {deviceStatus?.camera?.connected ? t(cm.usbConnected) : t(cm.cameraNotConnectedYet)}
+          </div>
         </div>
         <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-          <div className="font-medium text-foreground">Terakhir diterapkan</div>
+          <div className="font-medium text-foreground">{t(cm.lastApplied)}</div>
           <div>
             {profile.edgeLastAppliedAt
-              ? formatDateTime(new Date(profile.edgeLastAppliedAt))
-              : "Belum pernah"}
+              ? formatDateTime(new Date(profile.edgeLastAppliedAt), locale)
+              : t(cm.neverApplied)}
           </div>
         </div>
       </div>
@@ -3637,11 +3756,11 @@ function CameraSettingsTab({
         <div className="rounded-md border bg-background/70 p-4">
           <div className="mb-3 flex items-center gap-2">
             <CheckCircle2 className="h-4 w-4 text-primary" />
-            <h4 className="text-sm font-semibold">Checklist Kesiapan Terapkan</h4>
+            <h4 className="text-sm font-semibold">{t(cm.checklistHeading)}</h4>
           </div>
           <div className="space-y-2">
             {applyChecklist.map((item) => (
-              <div key={item.label} className="rounded-md border bg-background px-3 py-2 text-xs">
+              <div key={item.id} className="rounded-md border bg-background px-3 py-2 text-xs">
                 <div className="flex items-center gap-2 font-medium text-foreground">
                   {item.done ? (
                     <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
@@ -3658,15 +3777,15 @@ function CameraSettingsTab({
         <div className="rounded-md border bg-background/70 p-4">
           <div className="mb-3 flex items-center gap-2">
             <Activity className="h-4 w-4 text-primary" />
-            <h4 className="text-sm font-semibold">Tindakan Berikutnya</h4>
+            <h4 className="text-sm font-semibold">{t(cm.nextActionsHeading)}</h4>
           </div>
           <div className="space-y-2">
             {applyNextActions.map((item) => (
               <div
-                key={item}
+                key={item.id}
                 className="rounded-md border bg-background px-3 py-2 text-xs text-muted-foreground"
               >
-                {item}
+                {t(item)}
               </div>
             ))}
           </div>
@@ -3680,7 +3799,7 @@ function CameraSettingsTab({
 
       <div className="grid gap-4 md:grid-cols-3">
         <div>
-          <label className="mb-1 block text-sm font-medium">Template</label>
+          <label className="mb-1 block text-sm font-medium">{t(cm.templateLabel)}</label>
           <select
             value={templateId}
             onChange={(e) => {
@@ -3690,7 +3809,7 @@ function CameraSettingsTab({
           >
             {DEVICE_TEMPLATES.map((template) => (
               <option key={template.id} value={template.id}>
-                {template.label}
+                {getTemplateLabel(template, t)}
               </option>
             ))}
           </select>
@@ -3699,7 +3818,7 @@ function CameraSettingsTab({
           </div>
         </div>
         <div>
-          <label className="mb-1 block text-sm font-medium">Jadwal Capture</label>
+          <label className="mb-1 block text-sm font-medium">{t(cm.captureScheduleLabel)}</label>
           <select
             value={schedule}
             onChange={(e) => {
@@ -3720,7 +3839,9 @@ function CameraSettingsTab({
           <div>
             {profile.plant} • {profile.bin}
           </div>
-          <div>Diperbarui terakhir: {formatDateTime(new Date(profile.updatedAt))}</div>
+          <div>
+            {t(cm.lastUpdated, { when: formatDateTime(new Date(profile.updatedAt), locale) })}
+          </div>
         </div>
         <div className="md:col-span-3">
           <PresetTemplatePreview template={activeTemplate} />
@@ -3728,10 +3849,8 @@ function CameraSettingsTab({
         <div className="md:col-span-3 rounded-md border bg-background/70 p-3">
           <div className="mb-2 flex items-center justify-between gap-3">
             <div>
-              <div className="text-sm font-medium">Filter Preset</div>
-              <p className="text-xs text-muted-foreground">
-                Saring preset explorer berdasarkan skenario sebelum mengganti template aktif.
-              </p>
+              <div className="text-sm font-medium">{t(cm.presetFilterHeading)}</div>
+              <p className="text-xs text-muted-foreground">{t(cm.presetFilterIntro)}</p>
             </div>
           </div>
           <PresetFilterBar value={templateFilter} onChange={setTemplateFilter} />
@@ -3762,7 +3881,7 @@ function CameraSettingsTab({
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-sm font-medium">Shutter Speed</label>
+          <label className="mb-1 block text-sm font-medium">{t(cm.fieldShutterSpeed)}</label>
           <select
             value={draft.shutter}
             onChange={(e) => updateSetting("shutter", e.target.value as CameraSettings["shutter"])}
@@ -3776,7 +3895,7 @@ function CameraSettingsTab({
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-sm font-medium">Aperture</label>
+          <label className="mb-1 block text-sm font-medium">{t(cm.fieldAperture)}</label>
           <select
             value={draft.aperture}
             onChange={(e) =>
@@ -3792,7 +3911,7 @@ function CameraSettingsTab({
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-sm font-medium">White Balance</label>
+          <label className="mb-1 block text-sm font-medium">{t(cm.fieldWhiteBalance)}</label>
           <select
             value={draft.whiteBalance}
             onChange={(e) =>
@@ -3808,7 +3927,7 @@ function CameraSettingsTab({
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-sm font-medium">Picture Style</label>
+          <label className="mb-1 block text-sm font-medium">{t(cm.fieldPictureStyle)}</label>
           <select
             value={draft.pictureStyle}
             onChange={(e) =>
@@ -3824,7 +3943,7 @@ function CameraSettingsTab({
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-sm font-medium">Focus Mode</label>
+          <label className="mb-1 block text-sm font-medium">{t(cm.fieldFocusMode)}</label>
           <select
             value={draft.focusMode}
             onChange={(e) =>
@@ -3843,7 +3962,7 @@ function CameraSettingsTab({
 
       <div className="mt-4">
         <PresetCompareTable
-          title="Perbandingan Preset"
+          title={t(cm.presetComparisonTitle)}
           baseTemplate={activeTemplate}
           compareOptions={compareCandidates}
           compareTemplateId={compareTemplateId}
@@ -3858,23 +3977,20 @@ function CameraSettingsTab({
       <div className="mt-4 rounded-md border bg-muted/20 p-4">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
-            <h4 className="text-sm font-semibold">Dukungan Kamera Edge</h4>
-            <p className="text-xs text-muted-foreground">
-              Baris di bawah menunjukkan apakah setiap field preset bisa dipetakan ke edge API dan
-              capability kamera yang sedang aktif.
-            </p>
+            <h4 className="text-sm font-semibold">{t(cm.edgeSupportHeading)}</h4>
+            <p className="text-xs text-muted-foreground">{t(cm.edgeSupportIntro)}</p>
           </div>
           <button
             onClick={() => void refreshEdgeConfigs()}
             disabled={edgeConfigsLoading}
             className="rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:opacity-60"
           >
-            {edgeConfigsLoading ? "Menyegarkan…" : "Refresh Konfigurasi Kamera"}
+            {edgeConfigsLoading ? t(cm.refreshing) : t(cm.refreshCameraConfig)}
           </button>
         </div>
         {edgeConfigsError && (
           <div className="mb-3 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-700">
-            Gagal membaca konfigurasi edge: {edgeConfigsError}
+            {t(cm.edgeConfigReadFailed, { reason: edgeConfigsError })}
           </div>
         )}
         <div className="grid gap-2 md:grid-cols-2">
@@ -3883,22 +3999,30 @@ function CameraSettingsTab({
               ? edgeConfigs.find((item) => item.key === row.edgeKey)?.value
               : null;
             return (
-              <div key={row.label} className="rounded-md border bg-background px-3 py-2 text-xs">
+              <div key={row.localKey} className="rounded-md border bg-background px-3 py-2 text-xs">
                 <div className="flex items-center justify-between gap-3">
                   <span className="font-medium">{row.label}</span>
                   <span className="text-muted-foreground">{getSupportLabel(row.edgeKey)}</span>
                 </div>
                 <div className="mt-1 text-muted-foreground">
-                  Target:{" "}
-                  <span className="font-medium text-foreground">{String(draft[row.localKey])}</span>
+                  {rich(cm.supportTarget, {
+                    value: (
+                      <span className="font-medium text-foreground">
+                        {String(draft[row.localKey])}
+                      </span>
+                    ),
+                  })}
                 </div>
                 <div className="text-muted-foreground">
-                  Nilai kamera:{" "}
-                  <span className="font-medium text-foreground">
-                    {currentEdgeValue === null || currentEdgeValue === undefined
-                      ? "—"
-                      : String(currentEdgeValue)}
-                  </span>
+                  {rich(cm.supportCameraValue, {
+                    value: (
+                      <span className="font-medium text-foreground">
+                        {currentEdgeValue === null || currentEdgeValue === undefined
+                          ? "—"
+                          : String(currentEdgeValue)}
+                      </span>
+                    ),
+                  })}
                 </div>
               </div>
             );
@@ -3909,10 +4033,8 @@ function CameraSettingsTab({
       <div className="mt-4 rounded-md border bg-muted/20 p-4">
         <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h4 className="text-sm font-semibold">Riwayat Apply</h4>
-            <p className="text-xs text-muted-foreground">
-              Riwayat apply preset terakhir disimpan lokal di browser operator ini.
-            </p>
+            <h4 className="text-sm font-semibold">{t(cm.historyHeading)}</h4>
+            <p className="text-xs text-muted-foreground">{t(cm.historyIntro)}</p>
           </div>
         </div>
         {applyHistory.length > 0 && (
@@ -3929,7 +4051,7 @@ function CameraSettingsTab({
                       : "border-input bg-background hover:bg-accent"
                   }`}
                 >
-                  <span>{view.label}</span>
+                  <span>{t(view.label)}</span>
                   <span
                     className={`rounded-full px-1.5 py-0.5 text-[11px] ${
                       applyHistorySavedView === view.id
@@ -3943,8 +4065,7 @@ function CameraSettingsTab({
               ))}
             </div>
             <p className="mb-3 text-[11px] text-muted-foreground">
-              {activeSavedView?.description ??
-                "Gunakan view tersimpan untuk memanggil kombinasi filter audit yang sering dipakai."}
+              {t(activeSavedView?.description ?? cm.savedViewHint)}
             </p>
             <div className="mb-3 space-y-2">
               <div className="flex flex-wrap items-center gap-2">
@@ -3961,7 +4082,7 @@ function CameraSettingsTab({
                         : "border-input bg-background hover:bg-accent"
                     }`}
                   >
-                    <span>{APPLY_HISTORY_FILTER_LABELS[filter]}</span>
+                    <span>{t(APPLY_HISTORY_FILTER_LABELS[filter])}</span>
                     <span
                       className={`rounded-full px-1.5 py-0.5 text-[11px] ${
                         applyHistoryFilter === filter
@@ -3980,7 +4101,7 @@ function CameraSettingsTab({
                   className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <Download className="h-3.5 w-3.5" />
-                  Ekspor JSON
+                  {t(cm.exportJson)}
                 </button>
                 <button
                   type="button"
@@ -3989,7 +4110,7 @@ function CameraSettingsTab({
                   className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <FileText className="h-3.5 w-3.5" />
-                  Ekspor CSV
+                  {t(cm.exportCsv)}
                 </button>
                 <button
                   type="button"
@@ -3998,7 +4119,7 @@ function CameraSettingsTab({
                   className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <Download className="h-3.5 w-3.5" />
-                  Ekspor Semua JSON
+                  {t(cm.exportAllJson)}
                 </button>
                 <button
                   type="button"
@@ -4007,7 +4128,7 @@ function CameraSettingsTab({
                   className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <FileText className="h-3.5 w-3.5" />
-                  Ekspor Semua CSV
+                  {t(cm.exportAllCsv)}
                 </button>
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
@@ -4017,21 +4138,18 @@ function CameraSettingsTab({
                       className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
-                      Hapus riwayat
+                      {t(cm.clearHistory)}
                     </button>
                   </AlertDialogTrigger>
                   <AlertDialogContent>
                     <AlertDialogHeader>
-                      <AlertDialogTitle>Hapus riwayat apply lokal?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        Tindakan ini akan menghapus semua riwayat apply preset yang tersimpan di
-                        browser operator ini. Data tidak bisa dipulihkan.
-                      </AlertDialogDescription>
+                      <AlertDialogTitle>{t(cm.clearHistoryTitle)}</AlertDialogTitle>
+                      <AlertDialogDescription>{t(cm.clearHistoryBody)}</AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
-                      <AlertDialogCancel>Batal</AlertDialogCancel>
+                      <AlertDialogCancel>{t(cm.cancel)}</AlertDialogCancel>
                       <AlertDialogAction onClick={clearApplyHistoryEntries}>
-                        Ya, hapus riwayat
+                        {t(cm.clearHistoryConfirm)}
                       </AlertDialogAction>
                     </AlertDialogFooter>
                   </AlertDialogContent>
@@ -4041,21 +4159,23 @@ function CameraSettingsTab({
             <div className="mb-3 space-y-2">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Mode Tampilan
+                  {t(cm.viewModeLabel)}
                 </span>
                 {isApplyHistoryCustomView ? (
                   <span className="inline-flex items-center rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-700">
-                    Tampilan kustom
+                    {t(cm.customView)}
                   </span>
                 ) : (
                   <span className="inline-flex items-center rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
-                    View tersimpan
+                    {t(cm.savedViewBadge)}
                   </span>
                 )}
                 <span className="text-[11px] text-muted-foreground">
                   {isApplyHistoryCustomView
-                    ? "Filter, pencarian, dan urutan saat ini diatur manual."
-                    : `Mengikuti preset "${activeSavedView?.label ?? "Semua aktivitas"}".`}
+                    ? t(cm.customViewNote)
+                    : t(cm.followsPreset, {
+                        name: t(activeSavedView?.label ?? cm.historyViewAll),
+                      })}
                 </span>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -4073,7 +4193,7 @@ function CameraSettingsTab({
                           : "border-input bg-background hover:bg-accent"
                       }`}
                     >
-                      <span>{APPLY_HISTORY_QUICK_FILTER_LABELS[filter]}</span>
+                      <span>{t(APPLY_HISTORY_QUICK_FILTER_LABELS[filter])}</span>
                       <span
                         className={`rounded-full px-1.5 py-0.5 text-[11px] ${
                           applyHistoryQuickFilter === filter
@@ -4096,7 +4216,7 @@ function CameraSettingsTab({
                     onChange={(event) => {
                       setApplyHistorySearch(event.target.value);
                     }}
-                    placeholder="Cari template, pesan, code..."
+                    placeholder={t(cm.searchHistoryPlaceholder)}
                     className="w-full rounded-md border border-input bg-background py-1.5 pl-8 pr-3 text-xs"
                   />
                 </div>
@@ -4110,7 +4230,7 @@ function CameraSettingsTab({
                   {(["Newest", "Oldest", "Applied first", "Failed first"] as const).map(
                     (option) => (
                       <option key={option} value={option}>
-                        Urutkan: {APPLY_HISTORY_SORT_LABELS[option]}
+                        {t(cm.sortBy, { order: t(APPLY_HISTORY_SORT_LABELS[option]) })}
                       </option>
                     ),
                   )}
@@ -4121,7 +4241,7 @@ function CameraSettingsTab({
         )}
         {applyHistory.length === 0 ? (
           <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
-            Belum ada riwayat apply preset pada browser ini.
+            {t(cm.historyEmpty)}
           </div>
         ) : visibleApplyHistory.length === 0 ? (
           <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
@@ -4151,45 +4271,59 @@ function CameraSettingsTab({
                           : "bg-destructive/10 text-destructive"
                       }`}
                     >
-                      {entry.status === "applied" ? "Berhasil" : "Gagal"}
+                      {entry.status === "applied"
+                        ? t(cm.historyFilterApplied)
+                        : t(cm.historyFilterFailed)}
                     </span>
                   </div>
-                  <span>{formatDateTime(new Date(entry.timestamp))}</span>
+                  <span>{formatDateTime(new Date(entry.timestamp), locale)}</span>
                 </div>
                 <div className="mt-1">
                   {highlightHistoryText(entry.message, applyHistorySearch)}
                 </div>
                 <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
                   <span>
-                    Profil Edge:{" "}
-                    <span className="font-medium text-foreground">
-                      {entry.edgeProfileId
-                        ? highlightHistoryText(entry.edgeProfileId, applyHistorySearch)
-                        : "—"}
-                    </span>
+                    {rich(cm.historyEdgeProfile, {
+                      value: (
+                        <span className="font-medium text-foreground">
+                          {entry.edgeProfileId
+                            ? highlightHistoryText(entry.edgeProfileId, applyHistorySearch)
+                            : "—"}
+                        </span>
+                      ),
+                    })}
                   </span>
                   {entry.code && (
                     <span>
-                      Code:{" "}
-                      <span className="font-medium text-foreground">
-                        {highlightHistoryText(entry.code, applyHistorySearch)}
-                      </span>
+                      {rich(cm.historyCode, {
+                        value: (
+                          <span className="font-medium text-foreground">
+                            {highlightHistoryText(entry.code, applyHistorySearch)}
+                          </span>
+                        ),
+                      })}
                     </span>
                   )}
                   {entry.appliedKeys.length > 0 && (
                     <span>
-                      Diterapkan:{" "}
-                      <span className="font-medium text-foreground">
-                        {entry.appliedKeys.join(", ")}
-                      </span>
+                      {rich(cm.historyApplied, {
+                        value: (
+                          <span className="font-medium text-foreground">
+                            {entry.appliedKeys.join(", ")}
+                          </span>
+                        ),
+                      })}
                     </span>
                   )}
                   {entry.skippedKeys.length > 0 && (
                     <span>
-                      Dilewati:{" "}
-                      <span className="font-medium text-foreground">
-                        {entry.skippedKeys.join(", ")}
-                      </span>
+                      {rich(cm.historySkipped, {
+                        value: (
+                          <span className="font-medium text-foreground">
+                            {entry.skippedKeys.join(", ")}
+                          </span>
+                        ),
+                      })}
                     </span>
                   )}
                 </div>
@@ -4202,10 +4336,7 @@ function CameraSettingsTab({
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-xs">
         <div className="space-y-1">
           <div className="text-muted-foreground">
-            Status:{" "}
-            {saveState === "saved"
-              ? "Tersimpan lokal di browser ini"
-              : "Ada perubahan lokal yang belum disimpan"}
+            {saveState === "saved" ? t(cm.saveStatusSaved) : t(cm.saveStatusDirty)}
           </div>
           {applyState.message && (
             <div
@@ -4229,18 +4360,24 @@ function CameraSettingsTab({
           )}
           {applyState.appliedKeys && applyState.appliedKeys.length > 0 && (
             <div className="text-muted-foreground">
-              Key diterapkan:{" "}
-              <span className="font-medium text-foreground">
-                {applyState.appliedKeys.join(", ")}
-              </span>
+              {rich(cm.keysApplied, {
+                value: (
+                  <span className="font-medium text-foreground">
+                    {applyState.appliedKeys.join(", ")}
+                  </span>
+                ),
+              })}
             </div>
           )}
           {applyState.skippedKeys && applyState.skippedKeys.length > 0 && (
             <div className="text-muted-foreground">
-              Key dilewati:{" "}
-              <span className="font-medium text-foreground">
-                {applyState.skippedKeys.join(", ")}
-              </span>
+              {rich(cm.keysSkipped, {
+                value: (
+                  <span className="font-medium text-foreground">
+                    {applyState.skippedKeys.join(", ")}
+                  </span>
+                ),
+              })}
             </div>
           )}
         </div>
@@ -4249,7 +4386,7 @@ function CameraSettingsTab({
           search={{ deviceId }}
           className="rounded-md border border-input bg-background px-3 py-1.5 font-medium hover:bg-accent"
         >
-          Edit data registrasi
+          {t(cm.editRegistrationData)}
         </Link>
       </div>
     </div>
@@ -4263,6 +4400,7 @@ function ConfigurationTab({
   profile: DeviceProfile | null;
   deviceId?: number;
 }) {
+  const t = useT();
   const [prefs, setPrefs] = useState<ReturnType<typeof loadPrefs> | null>(null);
 
   useEffect(() => {
@@ -4271,50 +4409,47 @@ function ConfigurationTab({
 
   return (
     <div className="rounded-md border p-4">
-      <h3 className="mb-3 text-sm font-semibold">Ringkasan Konfigurasi</h3>
+      <h3 className="mb-3 text-sm font-semibold">{t(m.configSummaryHeading)}</h3>
       <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
-        <dt className="text-muted-foreground">Profil Device</dt>
-        <dd className="text-right font-medium">{profile?.deviceName ?? "Belum terdaftar"}</dd>
-        <dt className="text-muted-foreground">Plant / Bin</dt>
+        <dt className="text-muted-foreground">{t(m.deviceProfileLabel)}</dt>
+        <dd className="text-right font-medium">{profile?.deviceName ?? t(m.notRegisteredYet)}</dd>
+        <dt className="text-muted-foreground">{t(m.plantBinLabel)}</dt>
         <dd className="text-right font-medium">
           {profile ? `${profile.plant} • ${profile.bin}` : "—"}
         </dd>
-        <dt className="text-muted-foreground">Template</dt>
+        <dt className="text-muted-foreground">{t(m.templateLabel)}</dt>
         <dd className="text-right font-medium">
-          {profile ? getTemplateById(profile.templateId).label : "—"}
+          {profile ? getTemplateLabel(getTemplateById(profile.templateId), t) : "—"}
         </dd>
-        <dt className="text-muted-foreground">Jadwal</dt>
+        <dt className="text-muted-foreground">{t(m.scheduleLabel)}</dt>
         <dd className="text-right font-medium">{profile?.schedule ?? "—"}</dd>
-        <dt className="text-muted-foreground">Format Nama File</dt>
+        <dt className="text-muted-foreground">{t(m.fileNameFormatLabel)}</dt>
         <dd className="text-right font-mono font-medium">{prefs?.pattern ?? "—"}</dd>
-        <dt className="text-muted-foreground">Format File</dt>
+        <dt className="text-muted-foreground">{t(m.fileFormatLabel)}</dt>
         <dd className="text-right font-medium">{prefs?.ext?.toUpperCase() ?? "—"}</dd>
-        <dt className="text-muted-foreground">Indeks Gambar</dt>
+        <dt className="text-muted-foreground">{t(m.imageIndexLabel)}</dt>
         <dd className="text-right font-medium">
           {prefs ? String(prefs.counter).padStart(3, "0") : "—"}
         </dd>
-        <dt className="text-muted-foreground">Folder Simpan</dt>
+        <dt className="text-muted-foreground">{t(m.saveFolderLabel)}</dt>
         <dd className="text-right font-medium">
           <NotAvailable />
         </dd>
       </dl>
-      <p className="mt-2 text-[11px] text-muted-foreground">
-        Pengaturan profil device sekarang dirangkum di sini, sementara format nama file dan folder
-        simpan masih mengikuti halaman Capture sampai sinkronisasi backend/device tersedia.
-      </p>
+      <p className="mt-2 text-[11px] text-muted-foreground">{t(m.configNote)}</p>
       <div className="mt-3 flex flex-wrap gap-2">
         <Link
           to="/devices/register"
           search={{ deviceId }}
           className="inline-block rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent"
         >
-          Edit profil device
+          {t(m.editDeviceProfile)}
         </Link>
         <Link
           to="/capture"
           className="inline-block rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent"
         >
-          Edit preferensi capture
+          {t(m.editCapturePrefs)}
         </Link>
       </div>
     </div>

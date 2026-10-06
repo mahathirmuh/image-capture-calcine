@@ -23,18 +23,22 @@ import {
 } from "@/lib/capture-records";
 import { getDeviceStatus, type DeviceStatus } from "@/lib/camera-api";
 import { EDGE_SELECTION_CHANGED, loadSelectedEdgeDevice } from "@/lib/selected-edge-device";
-import { canRoleOpenPath, NAV_GROUPS, NAV_ITEMS } from "@/lib/nav-items";
+import { commonMessages } from "@/i18n/common";
+import { deviceStatusText } from "@/i18n/device-status";
+import { sidebarMessages as m } from "@/i18n/sidebar";
+import { useLocale, useRichT, useT } from "@/lib/i18n";
+import { canRoleOpenPath, NAV_GROUP_LABELS, NAV_GROUPS, NAV_ITEMS } from "@/lib/nav-items";
 import { useIsAdmin, useSessionUser } from "@/lib/use-session-user";
 
 const DEVICE_STATUS_POLL_MS = 30_000;
 
-function formatSyncTime(date: Date) {
-  const datePart = date.toLocaleDateString("en-GB", {
+function formatSyncTime(date: Date, locale: string) {
+  const datePart = date.toLocaleDateString(locale, {
     day: "2-digit",
     month: "short",
     year: "numeric",
   });
-  const timePart = date.toLocaleTimeString("en-GB", {
+  const timePart = date.toLocaleTimeString(locale, {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
@@ -43,6 +47,9 @@ function formatSyncTime(date: Date) {
 }
 
 function DeviceStatusCard() {
+  const t = useT();
+  const rich = useRichT();
+  const locale = useLocale();
   const [status, setStatus] = useState<DeviceStatus | null>(null);
   const [lastSync, setLastSync] = useState<Date | null>(null);
 
@@ -60,7 +67,7 @@ function DeviceStatusCard() {
         agentVersion: null,
         connectionState: null,
         capabilities: [],
-        statusMessage: "Status edge kamera belum bisa dibaca dari sidebar.",
+        statusMessage: t(m.statusUnreadable),
         camera: null,
       }));
       if (cancelled || current !== requestId) return;
@@ -77,7 +84,9 @@ function DeviceStatusCard() {
       window.removeEventListener(EDGE_SELECTION_CHANGED, tick);
       window.removeEventListener("storage", tick);
     };
-  }, []);
+    // `t` berganti tepat saat bahasa berganti: status dibaca ulang supaya pesan
+    // cadangan di atas tidak tertinggal dalam bahasa sebelumnya.
+  }, [t]);
 
   const cameraConnected = !!status?.camera?.connected;
 
@@ -94,26 +103,23 @@ function DeviceStatusCard() {
   );
   const cameraLabel = status?.camera
     ? [status.camera.manufacturer, status.camera.model].filter(Boolean).join(" ") ||
-      "Model tidak diketahui"
-    : "Belum terdeteksi";
+      t(m.modelUnknown)
+    : t(m.notDetected);
   const statusMessage =
-    status?.statusMessage ??
-    (status?.online
-      ? "Edge device aktif. Status kamera dan jaringan terus disegarkan otomatis."
-      : "Edge camera service belum terhubung. Periksa Mini PC, LAN, atau service edge API.");
+    deviceStatusText(t, status) ?? (status?.online ? t(m.edgeActive) : t(m.edgeNotConnected));
 
   return (
     <div className="rounded-md border bg-sidebar-accent/40 p-3 text-xs group-data-[collapsible=icon]:hidden">
       <div className="mb-2 flex items-center justify-between">
-        <span className="font-medium text-sidebar-foreground">Status Device</span>
+        <span className="font-medium text-sidebar-foreground">{t(m.title)}</span>
         <span
           className={`h-2 w-2 rounded-full ${status?.online ? "bg-emerald-500" : "bg-sidebar-foreground/30"}`}
-          title={status?.online ? "Terhubung" : "Offline"}
+          title={status?.online ? t(m.connected) : t(m.offline)}
         />
       </div>
       <dl className="space-y-1 text-sidebar-foreground/70">
         <div className="flex items-center justify-between gap-2">
-          <dt>Device</dt>
+          <dt>{t(m.device)}</dt>
           <dd
             className="truncate font-medium text-sidebar-foreground"
             title={status?.target?.deviceCode ?? undefined}
@@ -122,37 +128,36 @@ function DeviceStatusCard() {
           </dd>
         </div>
         <div className="flex items-center justify-between gap-2">
-          <dt>Alamat</dt>
+          <dt>{t(m.address)}</dt>
           <dd className="truncate font-medium text-sidebar-foreground" title={status?.target?.host}>
             {status?.target?.host ?? "—"}
           </dd>
         </div>
         <div className="flex items-center justify-between gap-2">
-          <dt>Plant</dt>
+          <dt>{t(m.plant)}</dt>
           <dd className="truncate font-medium text-sidebar-foreground">
             {status?.target?.plant ?? "—"}
           </dd>
         </div>
         <div className="flex items-center justify-between gap-2">
-          <dt>Kamera</dt>
+          <dt>{t(m.camera)}</dt>
           <dd className="truncate font-medium text-sidebar-foreground" title={cameraLabel}>
             {cameraLabel}
           </dd>
         </div>
         <div className="flex items-center justify-between gap-2">
-          <dt>Jaringan</dt>
+          <dt>{t(m.network)}</dt>
           <dd className="font-medium text-sidebar-foreground">
-            {status?.online ? "Terhubung" : "Tidak terhubung"}
+            {status?.online ? t(m.connected) : t(m.notConnected)}
           </dd>
         </div>
       </dl>
       {mismatch && (
         <div className="mt-2 rounded border border-destructive/40 bg-destructive/5 px-2 py-1.5 text-[10px] leading-relaxed text-destructive">
-          Registry menyebut device ini{" "}
-          <span className="font-medium">{status?.target?.deviceCode}</span>, tetapi yang menjawab di
-          alamat itu memperkenalkan diri sebagai{" "}
-          <span className="font-medium">{status?.deviceId}</span>. Alamatnya kemungkinan menunjuk ke
-          mesin yang salah.
+          {rich(m.mismatch, {
+            expected: <span className="font-medium">{status?.target?.deviceCode}</span>,
+            actual: <span className="font-medium">{status?.deviceId}</span>,
+          })}
         </div>
       )}
 
@@ -160,13 +165,14 @@ function DeviceStatusCard() {
         {statusMessage}
       </div>
       <div className="mt-2 border-t pt-2 text-[10px] text-sidebar-foreground/50">
-        Sinkron terakhir: {lastSync ? formatSyncTime(lastSync) : "—"}
+        {t(m.lastSync, { time: lastSync ? formatSyncTime(lastSync, locale) : "—" })}
       </div>
     </div>
   );
 }
 
 export function AppSidebar() {
+  const t = useT();
   const { state, setOpenMobile } = useSidebar();
   const currentPath = useRouterState({
     select: (router) => router.location.pathname,
@@ -230,7 +236,7 @@ export function AppSidebar() {
         <div className="flex items-center gap-2.5">
           <img
             src="/app-logo.png"
-            alt="Logo Capture Calcine"
+            alt={t(commonMessages.logoAlt)}
             width={256}
             height={256}
             className="h-8 w-8 shrink-0"
@@ -240,7 +246,7 @@ export function AppSidebar() {
               Capture Calcine
             </span>
             <span className="truncate text-[11px] leading-tight text-sidebar-foreground/50">
-              Operasional Calcine
+              {t(commonMessages.appTagline)}
             </span>
           </div>
         </div>
@@ -256,7 +262,7 @@ export function AppSidebar() {
           return (
             <SidebarGroup key={group}>
               <SidebarGroupLabel className="px-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-sidebar-foreground/45">
-                {group}
+                {t(NAV_GROUP_LABELS[group])}
               </SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
@@ -268,7 +274,7 @@ export function AppSidebar() {
                         <SidebarMenuButton
                           asChild
                           isActive={active}
-                          tooltip={item.title}
+                          tooltip={t(item.label)}
                           className="h-9 text-sidebar-foreground hover:text-sidebar-foreground data-[active=true]:bg-brand data-[active=true]:font-medium data-[active=true]:text-brand-foreground data-[active=true]:shadow-sm data-[active=true]:hover:bg-brand data-[active=true]:hover:text-brand-foreground"
                         >
                           <Link
@@ -279,7 +285,7 @@ export function AppSidebar() {
                           >
                             <item.icon className="h-4 w-4 shrink-0" />
                             <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] group-data-[collapsible=icon]:w-0 group-data-[collapsible=icon]:opacity-0">
-                              {item.title}
+                              {t(item.label)}
                             </span>
                             {showBadge && (
                               <Badge

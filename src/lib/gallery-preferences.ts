@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+import { gallerySavedViewMessages as m } from "@/i18n/gallery";
+import type { Message } from "@/lib/i18n";
+
 const GALLERY_VIEW_STATE_KEY = "capture-system:gallery-view-state:v1";
 const GALLERY_SAVED_VIEW_KEY = "capture-system:gallery-saved-view:v1";
 const GALLERY_IMAGE_QUALITY_KEY = "capture-system:gallery-image-quality:v1";
@@ -85,8 +88,8 @@ export type GallerySavedViewPreference = (typeof GALLERY_SAVED_VIEW_OPTIONS)[num
 export type GallerySavedViewDefinition = {
   id: GallerySavedViewPreference;
   /** Dipakai apa adanya kecuali `slot` terisi -- lihat di bawah. */
-  label: string;
-  description: string;
+  label: Message;
+  description: Message;
   /**
    * Slot yang disorot view ini, kalau ada. Judul dan deskripsinya dirakit saat
    * render memakai istilah plant si penonton, karena "BIN 1 review" salah di
@@ -99,14 +102,14 @@ export type GallerySavedViewDefinition = {
 export const GALLERY_SAVED_VIEWS: GallerySavedViewDefinition[] = [
   {
     id: "all-images",
-    label: "All images",
-    description: "Semua capture terbaru dalam tampilan grid standar.",
+    label: m.allImages,
+    description: m.allImagesDescription,
     state: DEFAULT_GALLERY_VIEW_STATE,
   },
   {
     id: "bin-1-review",
-    label: "Slot 1 review",
-    description: "Fokus audit capture dari slot 1.",
+    label: m.slot1Review,
+    description: m.slot1ReviewDescription,
     slot: 1,
     state: {
       ...DEFAULT_GALLERY_VIEW_STATE,
@@ -115,8 +118,8 @@ export const GALLERY_SAVED_VIEWS: GallerySavedViewDefinition[] = [
   },
   {
     id: "bin-2-review",
-    label: "Slot 2 review",
-    description: "Fokus audit capture dari slot 2.",
+    label: m.slot2Review,
+    description: m.slot2ReviewDescription,
     slot: 2,
     state: {
       ...DEFAULT_GALLERY_VIEW_STATE,
@@ -125,8 +128,8 @@ export const GALLERY_SAVED_VIEWS: GallerySavedViewDefinition[] = [
   },
   {
     id: "compact-audit",
-    label: "Compact audit",
-    description: "List view dengan urutan terlama untuk review kronologis.",
+    label: m.compactAudit,
+    description: m.compactAuditDescription,
     state: {
       ...DEFAULT_GALLERY_VIEW_STATE,
       sortOption: "oldest",

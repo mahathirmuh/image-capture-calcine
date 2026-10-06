@@ -16,14 +16,18 @@ import {
   renewSession,
   type DeviceStatus,
 } from "../lib/camera-api";
+import { cameraSessionMessages as m } from "../i18n/capture";
+import { failureText } from "../i18n/errors";
 import {
   getDeviceStatusPollInterval,
   getRuntimeErrorCode,
+  getRuntimeErrorText,
   getSessionHeartbeatInterval,
   isCameraReadyForLiveOps,
   isIgnorableSessionFetchError,
   shouldRenewSession,
 } from "../lib/camera-runtime";
+import { useT } from "../lib/i18n";
 import { saveSelectedEdgeDevice } from "../lib/selected-edge-device";
 
 export type CaptureDevice = {
@@ -91,6 +95,11 @@ export function useCaptureCameraSession({
   const targetRef = useRef<CaptureDevice | null>(null);
   const plantRef = useRef(plant);
   plantRef.current = plant;
+  // Penerjemah dibaca lewat ref, bukan dijadikan dependensi efek: berganti
+  // bahasa tidak boleh melepas lalu membuat ulang session kamera.
+  const t = useT();
+  const tRef = useRef(t);
+  tRef.current = t;
   const startAttemptRef = useRef(0);
   const sessionRef = useRef<CameraSessionRef | null>(null);
   const cameraBusyRef = useRef(false);
@@ -130,7 +139,7 @@ export function useCaptureCameraSession({
         const result = await resolveCaptureDevice({ data: { plant } });
         if (cancelled) return;
         if (!result.ok) {
-          setError(result.message);
+          setError(failureText(tRef.current, result));
           setSessionIssue({ code: result.code, message: result.message, updatedAt: Date.now() });
           setDeviceStatusLoaded(true);
           return;
@@ -141,10 +150,7 @@ export function useCaptureCameraSession({
         await startCameraRef.current();
       } catch (cause) {
         if (cancelled) return;
-        const message = getErrorMessage(
-          cause,
-          "Gagal membaca penempatan kamera. Muat ulang halaman untuk mencoba lagi.",
-        );
+        const message = getErrorMessage(cause, tRef.current(m.deviceLookupFailed));
         setError(message);
         setSessionIssue({ code: "DEVICE_LOOKUP_FAILED", message, updatedAt: Date.now() });
         setDeviceStatusLoaded(true);
@@ -231,10 +237,10 @@ export function useCaptureCameraSession({
           ) {
             setSessionIssue({
               code: "INVALID_SESSION",
-              message: error instanceof Error ? error.message : "Session kamera tidak lagi valid.",
+              message: error instanceof Error ? error.message : tRef.current(m.sessionInvalid),
               updatedAt: Date.now(),
             });
-            setStatus("Session kamera terputus, mencoba menyambung ulang…");
+            setStatus(tRef.current(m.sessionLostReconnecting));
             sessionRef.current = null;
             setSessionId(null);
             setLeaseToken(null);
@@ -346,7 +352,7 @@ export function useCaptureCameraSession({
         sessionRef.current = null;
         setSessionId(null);
         setLeaseToken(null);
-        setStatus("Session kamera berakhir, mencoba menyambung ulang…");
+        setStatus(tRef.current(m.sessionEndedReconnecting));
         void startCameraRef.current();
         return;
       }
@@ -391,13 +397,13 @@ export function useCaptureCameraSession({
           if (isIgnorableSessionFetchError(error)) {
             return;
           }
-          const message = getErrorMessage(error, "Gagal menjangkau service kamera");
+          const fallback = tRef.current(m.serviceUnreachable);
           setSessionIssue({
             code: getRuntimeErrorCode(error) ?? "UNREACHABLE",
-            message,
+            message: getErrorMessage(error, fallback),
             updatedAt: Date.now(),
           });
-          setError(message);
+          setError(getRuntimeErrorText(error, fallback, tRef.current));
           return;
         }
 
@@ -424,8 +430,8 @@ export function useCaptureCameraSession({
           setSessionIssue(null);
           setStatus(
             deviceStatus?.camera?.connected && deviceStatus.connectionState === "ready"
-              ? "Session kamera terhubung"
-              : "Session kamera didapatkan, menunggu kamera siap",
+              ? tRef.current(m.sessionConnected)
+              : tRef.current(m.sessionAcquiredWaiting),
           );
           return;
         }
@@ -451,7 +457,7 @@ export function useCaptureCameraSession({
           message: result.message,
           updatedAt: Date.now(),
         });
-        setError(result.message);
+        setError(failureText(tRef.current, result));
         return;
       }
     } finally {
@@ -485,7 +491,7 @@ export function useCaptureCameraSession({
       return null;
     });
     setSessionIssue(null);
-    setStatus("Session kamera dihentikan");
+    setStatus(tRef.current(m.sessionStopped));
 
     if (session) {
       await releaseSessionKeepalive(session);
@@ -515,8 +521,8 @@ export function useCaptureCameraSession({
       // than swallowing it, otherwise the button looks dead.
       setError(
         getRuntimeErrorCode(error) === "INVALID_SESSION"
-          ? "Session kamera tidak lagi valid. Mulai ulang kamera."
-          : getErrorMessage(error, "Gagal mengambil frame preview"),
+          ? tRef.current(m.sessionInvalidRestart)
+          : getRuntimeErrorText(error, tRef.current(m.previewFrameFailed), tRef.current),
       );
     } finally {
       setPreviewFetching(false);

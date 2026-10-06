@@ -10,18 +10,30 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+import { commonMessages as c } from "@/i18n/common";
+import type { Message } from "@/lib/i18n";
+
 // Urutan grup di sidebar. Dipisah dari daftar item supaya urutannya tidak
 // bergantung pada urutan item -- menambah item baru di grup mana pun tidak
 // menggeser posisi grupnya.
 export const NAV_GROUPS = ["Operasional", "Infrastruktur", "Pengaturan"] as const;
 export type NavGroup = (typeof NAV_GROUPS)[number];
 
+// Nama grup di atas adalah KUNCI, bukan teks tampilan; yang dibaca orang ada di sini.
+export const NAV_GROUP_LABELS: Record<NavGroup, Message> = {
+  Operasional: c.groupOperations,
+  Infrastruktur: c.groupInfrastructure,
+  Pengaturan: c.groupAdministration,
+};
+
 // `adminOnly` menyembunyikan entri dari sidebar untuk non-admin. Itu semata
 // kerapian tampilan -- penjaga yang sebenarnya ada di beforeLoad rute dan di
 // setiap serverFn-nya, karena menyembunyikan tautan tidak menghalangi siapa pun
 // mengetik URL-nya langsung.
 export type NavItem = {
+  // Pengenal tetap (dipakai sebagai key dan pembanding); teks tampilan ada di `label`.
   title: string;
+  label: Message;
   url: string;
   icon: LucideIcon;
   group: NavGroup;
@@ -31,20 +43,61 @@ export type NavItem = {
 // Single source of truth for the app's top-level sections, shared by the
 // sidebar nav and the topbar breadcrumb so they can never drift apart.
 export const NAV_ITEMS: NavItem[] = [
-  { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard, group: "Operasional" },
-  { title: "Capture", url: "/capture", icon: Camera, group: "Operasional" },
-  { title: "Gallery", url: "/gallery", icon: Images, group: "Operasional" },
-  { title: "Devices", url: "/devices", icon: Network, group: "Infrastruktur", adminOnly: true },
-  { title: "Storage", url: "/storage", icon: HardDrive, group: "Infrastruktur", adminOnly: true },
-  { title: "Users", url: "/users", icon: UsersRound, group: "Pengaturan", adminOnly: true },
-  { title: "Log", url: "/log", icon: ScrollText, group: "Pengaturan", adminOnly: true },
-  { title: "Settings", url: "/settings", icon: Settings, group: "Pengaturan", adminOnly: true },
+  {
+    title: "Dashboard",
+    label: c.navDashboard,
+    url: "/dashboard",
+    icon: LayoutDashboard,
+    group: "Operasional",
+  },
+  { title: "Capture", label: c.navCapture, url: "/capture", icon: Camera, group: "Operasional" },
+  { title: "Gallery", label: c.navGallery, url: "/gallery", icon: Images, group: "Operasional" },
+  {
+    title: "Devices",
+    label: c.navDevices,
+    url: "/devices",
+    icon: Network,
+    group: "Infrastruktur",
+    adminOnly: true,
+  },
+  {
+    title: "Storage",
+    label: c.navStorage,
+    url: "/storage",
+    icon: HardDrive,
+    group: "Infrastruktur",
+    adminOnly: true,
+  },
+  {
+    title: "Users",
+    label: c.navUsers,
+    url: "/users",
+    icon: UsersRound,
+    group: "Pengaturan",
+    adminOnly: true,
+  },
+  {
+    title: "Log",
+    label: c.navLog,
+    url: "/log",
+    icon: ScrollText,
+    group: "Pengaturan",
+    adminOnly: true,
+  },
+  {
+    title: "Settings",
+    label: c.navSettings,
+    url: "/settings",
+    icon: Settings,
+    group: "Pengaturan",
+    adminOnly: true,
+  },
 ];
 
 // Titles for routes nested under a NAV_ITEMS url that need their own
 // breadcrumb crumb (e.g. /devices/register under /devices).
-export const SUB_PAGE_TITLES: Record<string, string> = {
-  "/devices/register": "Daftarkan Device",
+export const SUB_PAGE_LABELS: Record<string, Message> = {
+  "/devices/register": c.navRegisterDevice,
 };
 
 /**

@@ -53,7 +53,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { failureText } from "@/i18n/errors";
+import { logMessages as m } from "@/i18n/log";
 import { csvBlob, downloadBlobFile, fileTimestamp, toCsv } from "@/lib/csv";
+import { useLocale, useNativeLocale, useT } from "@/lib/i18n";
 import {
   ACTION_LABELS,
   ACTIVITY_ACTIONS,
@@ -103,15 +106,15 @@ const ACTION_ICONS: Record<ActivityAction, LucideIcon> = {
 
 const SEMUA = "__semua__";
 
-function formatDateTime(iso: string) {
+function formatDateTime(iso: string, locale: string) {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "—";
-  const tanggal = date.toLocaleDateString("en-GB", {
+  const tanggal = date.toLocaleDateString(locale, {
     day: "2-digit",
     month: "short",
     year: "numeric",
   });
-  const jam = date.toLocaleTimeString("en-GB", {
+  const jam = date.toLocaleTimeString(locale, {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
@@ -120,7 +123,14 @@ function formatDateTime(iso: string) {
   return `${tanggal} ${jam}`;
 }
 
+// Isi berkas ekspor tidak ikut bahasa antarmuka: kolom waktunya tetap memakai
+// format yang sama seperti sebelum halaman ini punya pilihan bahasa.
+const EXPORT_LOCALE = "en-GB";
+
 function LogPage() {
+  const t = useT();
+  const locale = useLocale();
+  const numberLocale = useNativeLocale();
   const [entries, setEntries] = useState<ActivityEntry[] | null>(null);
   const [total, setTotal] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -143,7 +153,7 @@ function LogPage() {
         },
       });
       if (!result.ok) {
-        setLoadError(result.message);
+        setLoadError(failureText(t, result));
         setEntries(null);
         return;
       }
@@ -153,14 +163,14 @@ function LogPage() {
     } catch (error) {
       setLoadError(
         error instanceof Error
-          ? `Server aplikasi tidak merespons: ${error.message}`
-          : "Server aplikasi tidak merespons.",
+          ? t(m.serverNoResponseWith, { reason: error.message })
+          : t(m.serverNoResponse),
       );
       setEntries(null);
     } finally {
       setLoading(false);
     }
-  }, [action, search, limit, page]);
+  }, [action, search, limit, page, t]);
 
   // Dihitung dari total di server, bukan dari jumlah baris yang tampil --
   // halaman terakhir hampir selalu lebih pendek dari ukuran halamannya.
@@ -188,12 +198,12 @@ function LogPage() {
       });
 
       if (!result.ok) {
-        toast.error(result.message);
+        toast.error(failureText(t, result));
         return;
       }
 
       if (result.entries.length === 0) {
-        toast.message("Tidak ada kejadian yang cocok dengan penyaring itu");
+        toast.message(t(m.exportNoMatch));
         return;
       }
 
@@ -218,9 +228,9 @@ function LogPage() {
             "Alamat IP",
           ],
           ...result.entries.map((entry) => [
-            formatDateTime(entry.occurredAt),
+            formatDateTime(entry.occurredAt, EXPORT_LOCALE),
             entry.occurredAt,
-            ACTION_LABELS[entry.action] ?? entry.action,
+            ACTION_LABELS[entry.action]?.id ?? entry.action,
             entry.action,
             entry.severity,
             entry.actorUsername ?? "",
@@ -235,13 +245,16 @@ function LogPage() {
       // Pemotongan disebutkan terang-terangan. Berkas audit yang diam-diam
       // kurang lengkap lebih berbahaya daripada tidak ada berkas sama sekali.
       const terpotong = result.total > result.entries.length;
-      toast.success(`${result.entries.length} kejadian diekspor ke ${format.toUpperCase()}`, {
+      toast.success(t(m.exported, { count: result.entries.length, format: format.toUpperCase() }), {
         description: terpotong
-          ? `Terpotong di ${ACTIVITY_EXPORT_LIMIT.toLocaleString("id-ID")} baris teratas dari ${result.total.toLocaleString("id-ID")} yang cocok. Persempit penyaringnya untuk mengambil sisanya.`
-          : "Seluruh kejadian yang cocok dengan penyaring ikut terbawa.",
+          ? t(m.exportTruncated, {
+              limit: ACTIVITY_EXPORT_LIMIT.toLocaleString(numberLocale),
+              total: result.total.toLocaleString(numberLocale),
+            })
+          : t(m.exportComplete),
       });
     } catch (caught) {
-      toast.error(caught instanceof Error ? caught.message : "Ekspor gagal.");
+      toast.error(caught instanceof Error ? caught.message : t(m.exportFailed));
     } finally {
       setExporting(false);
     }
@@ -258,14 +271,11 @@ function LogPage() {
   return (
     <div className="p-6">
       <header className="mb-6 flex flex-wrap items-end justify-between gap-3">
-        <PageTitle
-          title="Log"
-          description="Jejak siapa masuk, siapa mengubah akun, dan siapa menyentuh capture, perangkat, atau folder jaringan — beserta kejadian sistem seperti antrean kirim yang tertahan. Baris tidak bisa disunting atau dihapus dari halaman ini."
-        />
+        <PageTitle title={t(m.pageTitle)} description={t(m.pageDescription)} />
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="sm" onClick={refresh} disabled={loading}>
             <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-            Muat ulang
+            {t(m.reload)}
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -275,17 +285,17 @@ function LogPage() {
                 ) : (
                   <Download className="mr-2 h-4 w-4" />
                 )}
-                Ekspor
+                {t(m.export)}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuItem onSelect={() => handleExport("csv")}>
                 <FileSpreadsheet className="mr-2 h-4 w-4" />
-                CSV untuk Excel
+                {t(m.exportCsv)}
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => handleExport("json")}>
                 <FileJson className="mr-2 h-4 w-4" />
-                JSON mentah
+                {t(m.exportJson)}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -299,7 +309,7 @@ function LogPage() {
         >
           <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
           <div>
-            <p className="font-medium">Jejak aktivitas tidak bisa dimuat</p>
+            <p className="font-medium">{t(m.loadFailedTitle)}</p>
             <p className="mt-0.5 text-destructive/90">{loadError}</p>
           </div>
         </div>
@@ -316,9 +326,9 @@ function LogPage() {
               // kosong kalau hasilnya menyusut jadi tiga baris.
               setPage(1);
             }}
-            placeholder="Cari username, detail, atau IP"
+            placeholder={t(m.searchPlaceholder)}
             className="pl-9"
-            aria-label="Cari jejak aktivitas"
+            aria-label={t(m.searchLabel)}
           />
         </div>
 
@@ -329,14 +339,14 @@ function LogPage() {
             setPage(1);
           }}
         >
-          <SelectTrigger className="w-52" aria-label="Saring per jenis aksi">
+          <SelectTrigger className="w-52" aria-label={t(m.actionFilterLabel)}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={SEMUA}>Semua aksi</SelectItem>
+            <SelectItem value={SEMUA}>{t(m.allActions)}</SelectItem>
             {ACTIVITY_ACTIONS.map((item) => (
               <SelectItem key={item} value={item}>
-                {ACTION_LABELS[item]}
+                {t(ACTION_LABELS[item])}
               </SelectItem>
             ))}
           </SelectContent>
@@ -352,13 +362,13 @@ function LogPage() {
             setPage(1);
           }}
         >
-          <SelectTrigger className="w-36" aria-label="Jumlah baris per halaman">
+          <SelectTrigger className="w-36" aria-label={t(m.pageSizeLabel)}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             {ACTIVITY_PAGE_SIZES.map((size) => (
               <SelectItem key={size} value={String(size)}>
-                {size} / halaman
+                {t(m.perPage, { size })}
               </SelectItem>
             ))}
           </SelectContent>
@@ -367,13 +377,17 @@ function LogPage() {
         {entries && total > 0 && (
           <div className="flex items-center gap-2">
             <p className="text-xs tabular-nums text-muted-foreground">
-              {pageStart}–{pageEnd} dari {total.toLocaleString("id-ID")} kejadian
+              {t(m.pageRange, {
+                start: pageStart,
+                end: pageEnd,
+                total: total.toLocaleString(numberLocale),
+              })}
             </p>
             <div className="flex items-center gap-1">
               <button
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page <= 1 || loading}
-                aria-label="Halaman sebelumnya"
+                aria-label={t(m.previousPage)}
                 className="rounded-md border border-input p-1.5 hover:bg-accent disabled:pointer-events-none disabled:opacity-40"
               >
                 <ChevronLeft className="h-3.5 w-3.5" />
@@ -384,7 +398,7 @@ function LogPage() {
               <button
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={page >= totalPages || loading}
-                aria-label="Halaman berikutnya"
+                aria-label={t(m.nextPage)}
                 className="rounded-md border border-input p-1.5 hover:bg-accent disabled:pointer-events-none disabled:opacity-40"
               >
                 <ChevronRight className="h-3.5 w-3.5" />
@@ -398,12 +412,12 @@ function LogPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-48">Waktu</TableHead>
-              <TableHead className="w-44">Aksi</TableHead>
-              <TableHead className="w-40">Pelaku</TableHead>
-              <TableHead className="w-40">Sasaran</TableHead>
-              <TableHead>Detail</TableHead>
-              <TableHead className="w-36">Alamat IP</TableHead>
+              <TableHead className="w-48">{t(m.columnTime)}</TableHead>
+              <TableHead className="w-44">{t(m.columnAction)}</TableHead>
+              <TableHead className="w-40">{t(m.columnActor)}</TableHead>
+              <TableHead className="w-40">{t(m.columnTarget)}</TableHead>
+              <TableHead>{t(m.columnDetail)}</TableHead>
+              <TableHead className="w-36">{t(m.columnIp)}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -411,25 +425,24 @@ function LogPage() {
               <TableRow>
                 <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
                   <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-                  Memuat jejak aktivitas...
+                  {t(m.loading)}
                 </TableCell>
               </TableRow>
             ) : !entries || entries.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
-                  {total === 0 && action === SEMUA && !search
-                    ? "Belum ada kejadian tercatat. Baris pertama muncul begitu ada yang masuk atau mengubah akun."
-                    : "Tidak ada kejadian yang cocok dengan penyaring itu."}
+                  {total === 0 && action === SEMUA && !search ? t(m.emptyLog) : t(m.emptyFiltered)}
                 </TableCell>
               </TableRow>
             ) : (
               entries.map((entry) => {
                 const Icon = ACTION_ICONS[entry.action] ?? ShieldAlert;
                 const perhatian = entry.severity === "warning";
+                const actionLabel = ACTION_LABELS[entry.action];
                 return (
                   <TableRow key={entry.id}>
                     <TableCell className="whitespace-nowrap font-mono text-xs text-muted-foreground">
-                      {formatDateTime(entry.occurredAt)}
+                      {formatDateTime(entry.occurredAt, locale)}
                     </TableCell>
                     <TableCell>
                       <Badge
@@ -437,12 +450,12 @@ function LogPage() {
                         className="gap-1.5 whitespace-nowrap font-normal"
                       >
                         <Icon className="h-3 w-3" />
-                        {ACTION_LABELS[entry.action] ?? entry.action}
+                        {actionLabel ? t(actionLabel) : entry.action}
                       </Badge>
                     </TableCell>
                     <TableCell className="font-medium">
                       {entry.actorUsername ?? (
-                        <span className="text-muted-foreground">tidak dikenal</span>
+                        <span className="text-muted-foreground">{t(m.unknownActor)}</span>
                       )}
                     </TableCell>
                     <TableCell>

@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { useT } from "@/lib/i18n";
 import { assessPassword, type PasswordScore } from "@/lib/password-strength";
 
 const BAR_COLORS: Record<PasswordScore, string> = {
@@ -36,9 +37,11 @@ export function PasswordStrengthMeter({
   fullName?: string;
   className?: string;
 }) {
+  const t = useT();
+
   if (!password) return null;
 
-  const { score, label, hint } = assessPassword(password, { username, fullName });
+  const { score, label, hint } = assessPassword(password, { username, fullName }, t);
 
   return (
     <div className={cn("space-y-1.5", className)}>

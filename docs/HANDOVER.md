@@ -22,7 +22,7 @@
 
 Capture Calcine mendukung pengambilan foto sampling terjadwal untuk Acid Plant dan Chloride Plant. Repository berisi aplikasi web/backend serta aplikasi mobile Android khusus operator.
 
-- Web: capture, dashboard, gallery, perangkat, pengguna, penyimpanan, pengaturan, dan activity log; akses mengikuti otorisasi aplikasi.
+- Web: capture, dashboard, gallery, perangkat, pengguna, penyimpanan, pengaturan, dan activity log; akses mengikuti otorisasi aplikasi. Antarmukanya tersedia dalam bahasa Indonesia (bawaan), English, dan 中文; lihat `docs/web-i18n.md`.
 - Mobile: login persisten, Today Sessions, Capture, Recent Captures/Detail, My Device, dan Settings.
 - Mobile tetap operator-only. Antarmukanya tersedia dalam bahasa Inggris (bawaan) dan Mandarin (Simplified Chinese), dipilih operator di layar Login atau Settings.
 - Admin dan supervisor workflow pada mobile berada di luar cakupan saat ini.

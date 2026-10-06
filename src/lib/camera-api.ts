@@ -344,6 +344,8 @@ export type EdgeTargetInfo = {
   host: string;
 };
 
+export type DeviceStatusInfo = { code: string; params?: Record<string, string | number> };
+
 export type DeviceStatus = {
   online: boolean;
   target: EdgeTargetInfo | null;
@@ -352,6 +354,10 @@ export type DeviceStatus = {
   connectionState: "ready" | "disconnected" | "error" | null;
   capabilities: string[];
   statusMessage?: string | null;
+  // Kode + parameter kalimat di atas, supaya antarmuka berbahasa lain bisa
+  // menyusunnya sendiri (src/i18n/device-status.ts). statusMessage tetap
+  // kalimat Indonesia yang lengkap.
+  statusInfo?: DeviceStatusInfo | null;
   camera: {
     connected: boolean;
     manufacturer: string | null;
@@ -373,7 +379,11 @@ let lastDeviceStatusLogAt = 0;
  * adalah "alamat yang mana" -- mengosongkannya di jalur gagal berarti
  * menyembunyikan keterangan itu tepat di saat ia paling dibutuhkan.
  */
-function createOfflineStatus(statusMessage: string, target: EdgeTargetInfo | null): DeviceStatus {
+function createOfflineStatus(
+  statusMessage: string,
+  target: EdgeTargetInfo | null,
+  statusInfo: DeviceStatusInfo,
+): DeviceStatus {
   return {
     online: false,
     target,
@@ -382,6 +392,7 @@ function createOfflineStatus(statusMessage: string, target: EdgeTargetInfo | nul
     connectionState: null,
     capabilities: [],
     statusMessage,
+    statusInfo,
     camera: null,
   };
 }
@@ -390,21 +401,35 @@ function describeOnlineStatus(data: {
   deviceId: string;
   connectionState: DeviceStatus["connectionState"];
   camera: DeviceStatus["camera"];
-}) {
+}): { statusMessage: string; statusInfo: DeviceStatusInfo } {
   if (!data.camera?.connected) {
     return data.deviceId
-      ? `Edge device ${data.deviceId} terhubung, tetapi kamera USB belum terdeteksi atau belum siap.`
-      : "Edge device terhubung, tetapi kamera USB belum terdeteksi atau belum siap.";
+      ? {
+          statusMessage: `Edge device ${data.deviceId} terhubung, tetapi kamera USB belum terdeteksi atau belum siap.`,
+          statusInfo: { code: "ONLINE_NO_CAMERA_NAMED", params: { deviceId: data.deviceId } },
+        }
+      : {
+          statusMessage:
+            "Edge device terhubung, tetapi kamera USB belum terdeteksi atau belum siap.",
+          statusInfo: { code: "ONLINE_NO_CAMERA" },
+        };
   }
 
-  const cameraLabel =
-    [data.camera.manufacturer, data.camera.model].filter(Boolean).join(" ") || "kamera aktif";
+  const cameraName = [data.camera.manufacturer, data.camera.model].filter(Boolean).join(" ");
+  const cameraLabel = cameraName || "kamera aktif";
 
   if (data.connectionState === "ready") {
-    return `${cameraLabel} siap dipakai untuk capture.`;
+    return {
+      statusMessage: `${cameraLabel} siap dipakai untuk capture.`,
+      statusInfo: { code: "ONLINE_READY", params: { camera: cameraName } },
+    };
   }
 
-  return `${cameraLabel} terdeteksi, tetapi state koneksi masih ${data.connectionState ?? "unknown"}.`;
+  const state = data.connectionState ?? "unknown";
+  return {
+    statusMessage: `${cameraLabel} terdeteksi, tetapi state koneksi masih ${state}.`,
+    statusInfo: { code: "ONLINE_NOT_READY", params: { camera: cameraName, state } },
+  };
 }
 
 function describeTarget(target: {
@@ -455,6 +480,7 @@ function describeOfflineStatus(error: unknown, edgeBase: string) {
         level: "warn" as const,
         logMessage: `[camera-api] device status timeout: ${edgeTarget} tidak merespons tepat waktu`,
         statusMessage: `Service edge kamera di ${edgeTarget} tidak merespons tepat waktu. Periksa power Mini PC, jaringan LAN, atau service edge API.`,
+        statusInfo: { code: "EDGE_TIMEOUT", params: { host: edgeTarget } },
       };
     case "ECONNREFUSED":
       return {
@@ -462,6 +488,7 @@ function describeOfflineStatus(error: unknown, edgeBase: string) {
         level: "warn" as const,
         logMessage: `[camera-api] device status refused: ${edgeTarget} menolak koneksi`,
         statusMessage: `Service edge kamera di ${edgeTarget} menolak koneksi. Service kemungkinan belum berjalan.`,
+        statusInfo: { code: "EDGE_REFUSED", params: { host: edgeTarget } },
       };
     case "ENETUNREACH":
     case "EHOSTUNREACH":
@@ -471,6 +498,7 @@ function describeOfflineStatus(error: unknown, edgeBase: string) {
         level: "warn" as const,
         logMessage: `[camera-api] device status unreachable: ${edgeTarget} tidak bisa dijangkau`,
         statusMessage: `Host edge kamera ${edgeTarget} tidak bisa dijangkau dari app server. Periksa LAN, VPN, atau routing jaringan.`,
+        statusInfo: { code: "EDGE_HOST_UNREACHABLE", params: { host: edgeTarget } },
       };
     default:
       return {
@@ -478,6 +506,7 @@ function describeOfflineStatus(error: unknown, edgeBase: string) {
         level: "error" as const,
         logMessage: `[camera-api] device status error: gagal membaca ${edgeTarget}`,
         statusMessage: `Status edge kamera di ${edgeTarget} belum bisa dibaca. Periksa service edge API dan konektivitas jaringan.`,
+        statusInfo: { code: "EDGE_UNREADABLE", params: { host: edgeTarget } },
       };
   }
 }
@@ -529,6 +558,7 @@ export const getDeviceStatus = createServerFn({ method: "GET" })
         connectionState: null,
         capabilities: [],
         statusMessage: target.message,
+        statusInfo: { code: target.code },
         camera: null,
       };
     }
@@ -575,6 +605,19 @@ export const getDeviceStatus = createServerFn({ method: "GET" })
                 edgeMessage ? ` (${edgeMessage})` : ""
               }. Periksa service edge API pada Mini PC.`,
           describeTarget(target),
+          cameraFailed
+            ? edgeMessage
+              ? {
+                  code: "CAMERA_COMMAND_FAILED_DETAIL",
+                  params: { host: edgeTarget, detail: edgeMessage },
+                }
+              : { code: "CAMERA_COMMAND_FAILED", params: { host: edgeTarget } }
+            : edgeMessage
+              ? {
+                  code: "EDGE_HTTP_ERROR_DETAIL",
+                  params: { host: edgeTarget, status: res.status, detail: edgeMessage },
+                }
+              : { code: "EDGE_HTTP_ERROR", params: { host: edgeTarget, status: res.status } },
         );
       }
       const data = (await res.json()) as {
@@ -591,7 +634,7 @@ export const getDeviceStatus = createServerFn({ method: "GET" })
         agentVersion: data.agentVersion,
         connectionState: data.connectionState,
         capabilities: data.capabilities ?? [],
-        statusMessage: describeOnlineStatus(data),
+        ...describeOnlineStatus(data),
         camera: data.camera,
       };
     } catch (error) {
@@ -602,7 +645,11 @@ export const getDeviceStatus = createServerFn({ method: "GET" })
         logMessage: offlineStatus.logMessage,
         error,
       });
-      return createOfflineStatus(offlineStatus.statusMessage, describeTarget(target));
+      return createOfflineStatus(
+        offlineStatus.statusMessage,
+        describeTarget(target),
+        offlineStatus.statusInfo,
+      );
     }
   });
 

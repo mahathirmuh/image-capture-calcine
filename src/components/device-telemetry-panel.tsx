@@ -1,4 +1,6 @@
+import { deviceTelemetryMessages as m } from "@/i18n/devices";
 import { type DeviceTelemetry, telemetryCapacity, telemetryPercent } from "@/lib/device-telemetry";
+import { useNativeLocale, useT, type Message } from "@/lib/i18n";
 export function DeviceTelemetryPanel({
   telemetry,
   loading,
@@ -8,31 +10,36 @@ export function DeviceTelemetryPanel({
   loading: boolean;
   error: string | null;
 }) {
-  const rows = [
-    ["CPU host", telemetryPercent(telemetry?.cpu.usagePercent)],
-    ["RAM host", telemetryCapacity(telemetry?.memory)],
-    ["Disk penyimpanan data", telemetryCapacity(telemetry?.disk)],
+  const t = useT();
+  const locale = useNativeLocale();
+  const rows: Array<[Message, string]> = [
+    [m.cpuHost, telemetryPercent(telemetry?.cpu.usagePercent, t)],
+    [m.ramHost, telemetryCapacity(telemetry?.memory, t)],
+    [m.dataDisk, telemetryCapacity(telemetry?.disk, t)],
     [
-      "Suhu CPU",
+      m.cpuTemperature,
       telemetry?.temperature.celsius == null
-        ? "Sensor tidak tersedia"
+        ? t(m.sensorUnavailable)
         : `${telemetry.temperature.celsius.toFixed(1)} °C`,
     ],
     [
-      "Uptime host",
+      m.hostUptime,
       telemetry?.uptimeSeconds == null
-        ? "Tidak tersedia"
-        : `${Math.floor(telemetry.uptimeSeconds / 86400)} hari ${Math.floor(telemetry.uptimeSeconds / 3600) % 24} jam`,
+        ? t(m.notAvailable)
+        : t(m.uptimeValue, {
+            days: Math.floor(telemetry.uptimeSeconds / 86400),
+            hours: Math.floor(telemetry.uptimeSeconds / 3600) % 24,
+          }),
     ],
   ];
   return (
     <>
       <dl className="space-y-2 text-xs">
         {rows.map(([label, value]) => (
-          <div key={label} className="flex flex-wrap justify-between gap-x-3 gap-y-1">
-            <dt className="text-muted-foreground">{label}</dt>
+          <div key={label.id} className="flex flex-wrap justify-between gap-x-3 gap-y-1">
+            <dt className="text-muted-foreground">{t(label)}</dt>
             <dd className="ml-auto text-right">
-              {telemetry ? value : loading ? "Memuat..." : "Tidak tersedia"}
+              {telemetry ? value : loading ? t(m.loading) : t(m.notAvailable)}
             </dd>
           </div>
         ))}
@@ -44,8 +51,10 @@ export function DeviceTelemetryPanel({
       )}
       {telemetry && (
         <p className="mt-3 text-xs text-muted-foreground">
-          Diukur: {new Date(telemetry.sampledAt).toLocaleString("id-ID")}. CPU rata-rata selama{" "}
-          {telemetry.cpu.sampleWindowMs} ms. Disk adalah filesystem tempat data aplikasi disimpan.
+          {t(m.measuredNote, {
+            when: new Date(telemetry.sampledAt).toLocaleString(locale),
+            window: telemetry.cpu.sampleWindowMs,
+          })}
         </p>
       )}
     </>

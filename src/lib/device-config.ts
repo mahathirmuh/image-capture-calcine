@@ -1,6 +1,8 @@
 import { saveSelectedEdgeDevice } from "./selected-edge-device";
 import { z } from "zod";
 
+import { deviceLogMessages, presetMessages } from "@/i18n/devices";
+import { translateId, type Message, type Translator } from "@/lib/i18n";
 import { PLANTS } from "./locations";
 
 export const DEVICE_BINS = ["Bin 1 / Bin 2", "Bin 1", "Bin 2"] as const;
@@ -68,15 +70,15 @@ export const PRESET_FILTERS = [
 ] as const;
 export type PresetFilter = (typeof PRESET_FILTERS)[number];
 export type PresetFilterTag = Exclude<PresetFilter, "All">;
-export const PRESET_FILTER_LABELS: Record<PresetFilter, string> = {
-  All: "Semua",
-  General: "Umum",
-  Calcine: "Calcine",
-  Outdoor: "Outdoor",
-  Indoor: "Indoor",
-  Lab: "Lab",
-  Night: "Malam",
-  Manual: "Manual",
+export const PRESET_FILTER_LABELS: Record<PresetFilter, Message> = {
+  All: presetMessages.filterAll,
+  General: presetMessages.filterGeneral,
+  Calcine: presetMessages.filterCalcine,
+  Outdoor: presetMessages.filterOutdoor,
+  Indoor: presetMessages.filterIndoor,
+  Lab: presetMessages.filterLab,
+  Night: presetMessages.filterNight,
+  Manual: presetMessages.filterManual,
 };
 export const APPLY_HISTORY_SAVED_VIEW_OPTIONS = [
   "all-activity",
@@ -407,8 +409,152 @@ export function filterTemplatesByTag(filter: PresetFilter): DeviceTemplate[] {
   return DEVICE_TEMPLATES.filter((template) => template.filterTags.includes(filter));
 }
 
-export function getPresetFilterLabel(filter: PresetFilter | PresetFilterTag): string {
-  return PRESET_FILTER_LABELS[filter];
+export function getPresetFilterLabel(
+  filter: PresetFilter | PresetFilterTag,
+  t: Translator = translateId,
+): string {
+  return t(PRESET_FILTER_LABELS[filter]);
+}
+
+// Teks tampilan untuk katalog template. DEVICE_TEMPLATES sendiri tetap memuat
+// teks Indonesia: label-nya ikut tersimpan di riwayat apply dan dipakai tes,
+// jadi terjemahan dicari lewat id template, bukan menggantikan isinya.
+const TEMPLATE_TEXT: Record<
+  string,
+  { label: Message; description: Message; recommendedFor: Message }
+> = {
+  "default-calcine-r50": {
+    label: presetMessages.templateDefaultCalcineLabel,
+    description: presetMessages.templateDefaultCalcineDescription,
+    recommendedFor: presetMessages.templateDefaultCalcineRecommended,
+  },
+  "high-res-sampling-r50": {
+    label: presetMessages.templateHighResLabel,
+    description: presetMessages.templateHighResDescription,
+    recommendedFor: presetMessages.templateHighResRecommended,
+  },
+  "low-light-inspection": {
+    label: presetMessages.templateLowLightLabel,
+    description: presetMessages.templateLowLightDescription,
+    recommendedFor: presetMessages.templateLowLightRecommended,
+  },
+  "fast-capture-line": {
+    label: presetMessages.templateFastCaptureLabel,
+    description: presetMessages.templateFastCaptureDescription,
+    recommendedFor: presetMessages.templateFastCaptureRecommended,
+  },
+  "high-detail-lab": {
+    label: presetMessages.templateHighDetailLabLabel,
+    description: presetMessages.templateHighDetailLabDescription,
+    recommendedFor: presetMessages.templateHighDetailLabRecommended,
+  },
+  "manual-inspection-pro": {
+    label: presetMessages.templateManualInspectionLabel,
+    description: presetMessages.templateManualInspectionDescription,
+    recommendedFor: presetMessages.templateManualInspectionRecommended,
+  },
+  "calcine-day-shift-outdoor": {
+    label: presetMessages.templateDayOutdoorLabel,
+    description: presetMessages.templateDayOutdoorDescription,
+    recommendedFor: presetMessages.templateDayOutdoorRecommended,
+  },
+  "calcine-indoor-conveyor": {
+    label: presetMessages.templateIndoorConveyorLabel,
+    description: presetMessages.templateIndoorConveyorDescription,
+    recommendedFor: presetMessages.templateIndoorConveyorRecommended,
+  },
+  "calcine-lab-macro": {
+    label: presetMessages.templateLabMacroLabel,
+    description: presetMessages.templateLabMacroDescription,
+    recommendedFor: presetMessages.templateLabMacroRecommended,
+  },
+  "calcine-night-shift": {
+    label: presetMessages.templateNightShiftLabel,
+    description: presetMessages.templateNightShiftDescription,
+    recommendedFor: presetMessages.templateNightShiftRecommended,
+  },
+  "manual-only": {
+    label: presetMessages.templateManualOnlyLabel,
+    description: presetMessages.templateManualOnlyDescription,
+    recommendedFor: presetMessages.templateManualOnlyRecommended,
+  },
+};
+
+type TemplateTextSource = Pick<DeviceTemplate, "id" | "label" | "description" | "recommendedFor">;
+
+export function getTemplateLabel(
+  template: Pick<TemplateTextSource, "id" | "label">,
+  t: Translator = translateId,
+): string {
+  const text = TEMPLATE_TEXT[template.id];
+  return text ? t(text.label) : template.label;
+}
+
+export function getTemplateDescription(
+  template: Pick<TemplateTextSource, "id" | "description">,
+  t: Translator = translateId,
+): string {
+  const text = TEMPLATE_TEXT[template.id];
+  return text ? t(text.description) : template.description;
+}
+
+export function getTemplateRecommendedFor(
+  template: Pick<TemplateTextSource, "id" | "recommendedFor">,
+  t: Translator = translateId,
+): string {
+  const text = TEMPLATE_TEXT[template.id];
+  return text ? t(text.recommendedFor) : template.recommendedFor;
+}
+
+// Badge dicari lewat teks Indonesianya, yang tetap menjadi nilai logika
+// (kunci React dan pemilihan warna di preset-ui).
+const PRESET_BADGE_MESSAGES = new Map<string, Message>(
+  [
+    presetMessages.badgeBalanced,
+    presetMessages.badgeRoutine,
+    presetMessages.badgeAutofocus,
+    presetMessages.badgeHighDetail,
+    presetMessages.badgeControlledLight,
+    presetMessages.badgeLowLight,
+    presetMessages.badgeBrightExposure,
+    presetMessages.badgeFast,
+    presetMessages.badgeAntiBlur,
+    presetMessages.badgeLab,
+    presetMessages.badgeDeepFocus,
+    presetMessages.badgeManualFocus,
+    presetMessages.badgeManual,
+    presetMessages.badgeOperatorControl,
+    presetMessages.badgeInspection,
+    presetMessages.badgeCalcine,
+    presetMessages.badgeOutdoor,
+    presetMessages.badgeDayShift,
+    presetMessages.badgeIndoor,
+    presetMessages.badgeConveyor,
+    presetMessages.badgeMacro,
+    presetMessages.badgeNightShift,
+    presetMessages.badgeFallback,
+  ].map((message) => [message.id, message]),
+);
+
+export function getPresetBadgeLabel(badge: string, t: Translator = translateId): string {
+  const message = PRESET_BADGE_MESSAGES.get(badge);
+  return message ? t(message) : badge;
+}
+
+// Nama bawaan slot saved view. Nama yang sudah diganti pengguna adalah data
+// dan ditampilkan apa adanya; hanya nama bawaan yang ikut bahasa antarmuka.
+const DEVICE_EVENT_SAVED_VIEW_DEFAULT_LABELS: Record<DeviceEventSavedViewPreference, Message> = {
+  "audit-slot-1": deviceLogMessages.savedViewDailyAudit,
+  "audit-slot-2": deviceLogMessages.savedViewIncident,
+  "audit-slot-3": deviceLogMessages.savedViewOperator,
+};
+
+export function getDeviceEventSavedViewLabel(
+  view: Pick<DeviceEventSavedViewEntry, "id" | "label">,
+  t: Translator = translateId,
+): string {
+  const fallback = DEVICE_EVENT_SAVED_VIEW_DEFAULT_LABELS[view.id];
+  return fallback && view.label === fallback.id ? t(fallback) : view.label;
 }
 
 export function createProfileFromInput(input: DeviceProfileInput): DeviceProfile {

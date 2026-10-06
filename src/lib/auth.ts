@@ -1,6 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+import { LANGUAGE_COOKIE, parseLanguage, type Language } from "./i18n";
+
 // Bentuk user yang aman dibawa ke client: identitas untuk ditampilkan di
 // sidebar, tanpa hash password dan tanpa kolom internal tabel.
 export type SessionUser = {
@@ -11,7 +13,10 @@ export type SessionUser = {
   role: string;
 };
 
-export type LoginResult = { ok: true; user: SessionUser } | { ok: false; message: string };
+// `code` dipakai halaman login untuk menulis kegagalan dalam bahasa antarmuka;
+// `message` tetap teks Indonesia yang lengkap.
+export type LoginResult =
+  { ok: true; user: SessionUser } | { ok: false; code: string; message: string };
 
 export const loginInputSchema = z.object({
   identifier: z.string().trim().min(1, "Username atau email wajib diisi"),
@@ -35,6 +40,7 @@ export const loginWithPassword = createServerFn({ method: "POST" })
     if (!isSessionConfigured()) {
       return {
         ok: false,
+        code: "SESSION_SECRET_MISSING",
         message:
           "SESSION_SECRET belum diisi di server aplikasi, jadi sesi login belum bisa dibuat.",
       };
@@ -43,6 +49,7 @@ export const loginWithPassword = createServerFn({ method: "POST" })
     if (!isCardDbConfigured()) {
       return {
         ok: false,
+        code: "CARDDB_NOT_CONFIGURED",
         message: "Konfigurasi CARDDB belum lengkap di server aplikasi.",
       };
     }
@@ -58,6 +65,7 @@ export const loginWithPassword = createServerFn({ method: "POST" })
     } catch (error) {
       return {
         ok: false,
+        code: "DATABASE_UNREACHABLE",
         message: `Database Capture-Calcine tidak bisa dihubungi: ${messageOf(error)}`,
       };
     }
@@ -81,7 +89,7 @@ export const loginWithPassword = createServerFn({ method: "POST" })
         severity: "warning",
         detail: "Username atau email tidak dikenal",
       });
-      return { ok: false, message: INVALID_CREDENTIALS };
+      return { ok: false, code: "INVALID_CREDENTIALS", message: INVALID_CREDENTIALS };
     }
 
     const passwordMatches = await verifyPassword(data.password, record.passwordHash);
@@ -93,7 +101,7 @@ export const loginWithPassword = createServerFn({ method: "POST" })
         actorUsername: record.user.username,
         detail: "Password salah",
       });
-      return { ok: false, message: INVALID_CREDENTIALS };
+      return { ok: false, code: "INVALID_CREDENTIALS", message: INVALID_CREDENTIALS };
     }
 
     if (!record.isActive) {
@@ -106,6 +114,7 @@ export const loginWithPassword = createServerFn({ method: "POST" })
       });
       return {
         ok: false,
+        code: "ACCOUNT_DISABLED",
         message: "Akun ini dinonaktifkan. Hubungi Super Admin untuk mengaktifkannya kembali.",
       };
     }
@@ -134,6 +143,21 @@ export const fetchCurrentUser = createServerFn({ method: "GET" }).handler(
       // SESSION_SECRET hilang atau cookie tidak bisa dibuka segelnya. Perlakukan
       // sebagai belum login: app terkunci, bukan terbuka.
       return null;
+    }
+  },
+);
+
+/**
+ * Bahasa antarmuka dari cookie permintaan. Dipanggil saat SSR supaya HTML
+ * pertama sudah dalam bahasa pilihan; di browser cookie-nya dibaca langsung.
+ */
+export const fetchUiLanguage = createServerFn({ method: "GET" }).handler(
+  async (): Promise<Language> => {
+    try {
+      const { getCookie } = await import("@tanstack/react-start/server");
+      return parseLanguage(getCookie(LANGUAGE_COOKIE));
+    } catch {
+      return parseLanguage(undefined);
     }
   },
 );

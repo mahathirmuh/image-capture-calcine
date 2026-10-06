@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { failureText } from "@/i18n/errors";
+import { galleryMessages as m } from "@/i18n/gallery";
 import { getDeviceStatus, type DeviceStatus } from "@/lib/camera-api";
 import { listRegisteredDevices, type RegisteredDevice } from "@/lib/device-registry";
+import { useT } from "@/lib/i18n";
 import {
   loadSelectedEdgeDevice,
   resolveSelectedEdgeDevice,
@@ -15,6 +18,11 @@ export function useEdgeStatusSelection(enabled: boolean) {
   const [error, setError] = useState<string | null>(null);
   const [checkedAt, setCheckedAt] = useState<Date | null>(null);
   const requestId = useRef(0);
+  // Lewat ref, bukan dependensi refresh(): mengganti bahasa tidak boleh
+  // membuat refresh() baru, karena efek di bawah akan memeriksa ulang device.
+  const t = useT();
+  const tRef = useRef(t);
+  tRef.current = t;
   const refresh = useCallback(async (preferredCode = loadSelectedEdgeDevice()) => {
     const current = ++requestId.current;
     setLoading(true);
@@ -24,7 +32,7 @@ export function useEdgeStatusSelection(enabled: boolean) {
     try {
       const registry = await listRegisteredDevices();
       if (current !== requestId.current) return;
-      if (!registry.ok) throw new Error(registry.message);
+      if (!registry.ok) throw new Error(failureText(tRef.current, registry));
       const active = registry.devices.filter((device) => device.isActive);
       setDevices(active);
       const code = resolveSelectedEdgeDevice(active, preferredCode);
@@ -36,7 +44,7 @@ export function useEdgeStatusSelection(enabled: boolean) {
       setCheckedAt(new Date());
     } catch (cause) {
       if (current !== requestId.current) return;
-      setError(cause instanceof Error ? cause.message : "Status device gagal dimuat. Coba lagi.");
+      setError(cause instanceof Error ? cause.message : tRef.current(m.deviceStatusLoadFailed));
     } finally {
       if (current === requestId.current) setLoading(false);
     }

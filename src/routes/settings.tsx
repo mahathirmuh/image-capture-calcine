@@ -28,6 +28,9 @@ import { PLANTS, toLocationToken } from "@/lib/locations";
 import { CaptureScheduleSettings } from "@/components/capture-schedule-settings";
 import { EdgeApiSettings } from "@/components/edge-api-settings";
 import { PageTitle } from "@/components/page-shell";
+import { commonMessages as c } from "@/i18n/common";
+import { settingsMessages as m } from "@/i18n/settings";
+import { useT } from "@/lib/i18n";
 
 export const Route = createFileRoute("/settings")({
   // Pola filename dan counter menentukan bentuk nama seluruh berkas foto yang
@@ -122,6 +125,7 @@ function SummaryCard({
 }
 
 function SettingsPage() {
+  const t = useT();
   const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS);
   const [savedPrefs, setSavedPrefs] = useState<Prefs>(DEFAULT_PREFS);
   const [loaded, setLoaded] = useState(false);
@@ -179,24 +183,24 @@ function SettingsPage() {
     [prefs.counter, prefs.ext, prefs.location, prefs.pattern],
   );
   const filenamePatternAnalysis = useMemo(
-    () => analyzeFilenamePattern(prefs.pattern),
-    [prefs.pattern],
+    () => analyzeFilenamePattern(prefs.pattern, t),
+    [prefs.pattern, t],
   );
   const patternHealthLabel = !filenamePatternAnalysis.isValid
-    ? "Invalid"
+    ? t(m.patternInvalid)
     : filenamePatternAnalysis.warnings.length > 0
-      ? "Needs review"
-      : "Ready";
+      ? t(m.patternNeedsReview)
+      : t(m.patternReady);
   const dirStatusLabel =
     dirStatus === "granted"
-      ? "Connected"
+      ? t(m.dirConnected)
       : dirStatus === "needs-action"
-        ? "Permission required"
+        ? t(m.dirPermissionRequired)
         : dirStatus === "unsupported"
-          ? "Unsupported"
+          ? t(m.dirUnsupported)
           : dirStatus === "not-set"
-            ? "Not set"
-            : "Checking...";
+            ? t(m.dirNotSet)
+            : t(m.dirChecking);
 
   function updatePrefs<K extends keyof Prefs>(key: K, value: Prefs[K]) {
     setPrefs((current) => ({ ...current, [key]: value }));
@@ -204,15 +208,15 @@ function SettingsPage() {
 
   function persistCurrentPrefs() {
     if (!filenamePatternAnalysis.isValid) {
-      toast.error("Pattern filename belum valid", {
-        description: "Perbaiki token yang tidak dikenal atau pattern kosong sebelum menyimpan.",
+      toast.error(t(m.toastPatternInvalid), {
+        description: t(m.toastPatternInvalidBody),
       });
       return;
     }
     savePrefs(prefs);
     setSavedPrefs(prefs);
-    toast.success("Preferences berhasil disimpan", {
-      description: "Perubahan akan dipakai oleh halaman Capture pada sesi berikutnya.",
+    toast.success(t(m.toastSaved), {
+      description: t(m.toastSavedBody),
     });
   }
 
@@ -220,15 +224,15 @@ function SettingsPage() {
     savePrefs(DEFAULT_PREFS);
     setPrefs(DEFAULT_PREFS);
     setSavedPrefs(DEFAULT_PREFS);
-    toast.success("Preferences direset ke default", {
-      description: "Pattern filename dan counter kembali ke konfigurasi standar.",
+    toast.success(t(m.toastReset), {
+      description: t(m.toastResetBody),
     });
   }
 
   function resetCounterToStart() {
     setPrefs((current) => ({ ...current, counter: 1 }));
-    toast.success("Counter dikembalikan ke 001", {
-      description: "Perubahan masih lokal sampai Anda menekan save preferences.",
+    toast.success(t(m.toastCounterReset), {
+      description: t(m.toastCounterResetBody),
     });
   }
 
@@ -242,13 +246,13 @@ function SettingsPage() {
       setDirName(handle.name);
       setDirStatus("granted");
       await saveDirHandle(handle);
-      toast.success("Folder simpan berhasil dipilih", {
-        description: `${handle.name} akan tersedia untuk halaman Capture.`,
+      toast.success(t(m.toastFolderPicked), {
+        description: t(m.toastFolderPickedBody, { name: handle.name }),
       });
     } catch (error: unknown) {
       if (!(error instanceof DOMException && error.name === "AbortError")) {
-        toast.error("Gagal memilih folder", {
-          description: error instanceof Error ? error.message : "Unknown error",
+        toast.error(t(m.toastPickFailed), {
+          description: error instanceof Error ? error.message : t(m.unknownError),
         });
       }
     } finally {
@@ -263,12 +267,12 @@ function SettingsPage() {
       const granted = await verifyPermission(dirHandle, true);
       setDirStatus(granted ? "granted" : "needs-action");
       if (granted) {
-        toast.success("Izin folder berhasil diperbarui", {
-          description: `${dirName} siap dipakai kembali dari halaman Capture.`,
+        toast.success(t(m.toastPermissionRenewed), {
+          description: t(m.toastPermissionRenewedBody, { name: dirName }),
         });
       } else {
-        toast.error("Izin folder belum diberikan", {
-          description: "Browser masih menolak akses baca/tulis ke folder tersimpan.",
+        toast.error(t(m.toastPermissionDenied), {
+          description: t(m.toastPermissionDeniedBody),
         });
       }
     } finally {
@@ -283,8 +287,8 @@ function SettingsPage() {
       setDirName("");
       setDirStatus("not-set");
       await clearDirHandle();
-      toast.success("Folder simpan dilupakan", {
-        description: "Capture akan kembali memakai folder picker atau fallback browser download.",
+      toast.success(t(m.toastFolderForgotten), {
+        description: t(m.toastFolderForgottenBody),
       });
     } finally {
       setBusyAction(null);
@@ -295,62 +299,59 @@ function SettingsPage() {
     <div className="p-6">
       <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <PageTitle
-            title="Settings"
-            description="Kelola preference operator, preview filename, dan akses folder simpan yang dipakai halaman Capture."
-          />
+          <PageTitle title={t(c.navSettings)} description={t(m.description)} />
         </div>
         <div className="flex flex-wrap gap-2">
           <Link
             to="/capture"
             className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
           >
-            Open Capture
+            {t(m.openCapture)}
           </Link>
           <Link
             to="/storage"
             className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent"
           >
-            Review Storage
+            {t(m.reviewStorage)}
           </Link>
         </div>
       </header>
 
       <section className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard
-          title="Save Folder"
+          title={t(m.saveFolder)}
           value={dirStatusLabel}
-          description={dirName || "Belum ada folder browser yang disimpan"}
+          description={dirName || t(m.noBrowserFolder)}
           icon={FolderOpen}
         />
         <SummaryCard
-          title="Filename Preview"
+          title={t(m.filenamePreview)}
           value={<span className="font-mono text-sm">{filenamePreview}</span>}
-          description="Preview memakai lokasi aktif dan source contoh BIN1"
+          description={t(m.filenamePreviewCardHint)}
           icon={Settings2}
         />
         <SummaryCard
-          title="Pattern Health"
+          title={t(m.patternHealth)}
           value={patternHealthLabel}
           description={
             !filenamePatternAnalysis.isValid
-              ? "Ada token tidak valid atau pattern kosong"
+              ? t(m.patternHealthInvalid)
               : filenamePatternAnalysis.warnings.length > 0
-                ? "Pattern masih bisa dipakai, tetapi ada catatan operator"
-                : "Pattern siap dipakai tanpa catatan tambahan"
+                ? t(m.patternHealthWarnings)
+                : t(m.patternHealthReady)
           }
           icon={filenamePatternAnalysis.isValid ? CheckCircle2 : AlertTriangle}
         />
         <SummaryCard
-          title="Counter Start"
+          title={t(m.counterStart)}
           value={String(prefs.counter).padStart(3, "0")}
-          description="Dipakai untuk token {INDEX} pada penamaan file"
+          description={t(m.counterStartHint, { token: "{INDEX}" })}
           icon={RefreshCw}
         />
         <SummaryCard
-          title="Storage Model"
-          value="Browser + IndexedDB"
-          description="Preference tersimpan lokal; handle folder disimpan via IndexedDB"
+          title={t(m.storageModel)}
+          value={t(m.storageModelValue)}
+          description={t(m.storageModelHint)}
           icon={HardDrive}
         />
       </section>
@@ -360,20 +361,18 @@ function SettingsPage() {
           <div className="rounded-xl border bg-card shadow-sm p-5">
             <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h2 className="text-base font-semibold">Capture Preferences</h2>
-                <p className="text-sm text-muted-foreground">
-                  Ubah preference default yang akan dipakai operator saat membuka halaman Capture.
-                </p>
+                <h2 className="text-base font-semibold">{t(m.capturePreferences)}</h2>
+                <p className="text-sm text-muted-foreground">{t(m.capturePreferencesHint)}</p>
               </div>
               <div className="rounded-lg border bg-background px-3 py-2 text-xs text-muted-foreground">
-                {isDirty ? "Ada perubahan belum disimpan" : "Semua perubahan sudah tersimpan"}
+                {isDirty ? t(m.unsavedChanges) : t(m.allSaved)}
               </div>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
               <div>
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                  Default Location
+                  {t(m.defaultLocation)}
                 </label>
                 <select
                   value={prefs.location}
@@ -389,7 +388,7 @@ function SettingsPage() {
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                  File Extension
+                  {t(m.fileExtension)}
                 </label>
                 <input
                   value={prefs.ext.toUpperCase()}
@@ -399,7 +398,7 @@ function SettingsPage() {
               </div>
               <div className="md:col-span-2">
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                  Filename Pattern
+                  {t(m.filenamePattern)}
                 </label>
                 <input
                   value={prefs.pattern}
@@ -411,13 +410,15 @@ function SettingsPage() {
                   }`}
                 />
                 <p className="mt-2 text-xs text-muted-foreground">
-                  Tokens:{" "}
-                  {"{DD} {MMMM} {MM} {YYYY} {HH} {mm} {ss} {LOCATION} {SOURCE} {INDEX} {TS}"}
+                  {t(m.tokens, {
+                    tokens:
+                      "{DD} {MMMM} {MM} {YYYY} {HH} {mm} {ss} {LOCATION} {SOURCE} {INDEX} {TS}",
+                  })}
                 </p>
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                  Counter Start
+                  {t(m.counterStart)}
                 </label>
                 <input
                   type="number"
@@ -433,12 +434,12 @@ function SettingsPage() {
                   onClick={resetCounterToStart}
                   className="mt-2 text-xs font-medium text-primary hover:underline"
                 >
-                  Reset counter to 001
+                  {t(m.resetCounter)}
                 </button>
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                  Location Token Preview
+                  {t(m.locationTokenPreview)}
                 </label>
                 <div className="rounded-md border bg-muted px-3 py-2 text-sm">
                   {toLocationToken(prefs.location)}
@@ -448,18 +449,16 @@ function SettingsPage() {
 
             <div className="mt-4 rounded-lg border bg-background p-4">
               <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Filename Preview
+                {t(m.filenamePreview)}
               </div>
               <div className="mt-2 break-all font-mono text-sm">{filenamePreview}</div>
-              <p className="mt-2 text-xs text-muted-foreground">
-                Preview menggunakan waktu saat ini, lokasi aktif, dan source contoh `BIN1`.
-              </p>
+              <p className="mt-2 text-xs text-muted-foreground">{t(m.filenamePreviewHint)}</p>
             </div>
 
             <div className="mt-4 rounded-lg border bg-background p-4">
               <div className="mb-3 flex items-center justify-between gap-2">
                 <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Pattern Checks
+                  {t(m.patternChecks)}
                 </div>
                 <span
                   className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
@@ -537,7 +536,7 @@ function SettingsPage() {
                 className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Save className="h-4 w-4" />
-                Save preferences
+                {t(m.savePreferences)}
               </button>
               <button
                 type="button"
@@ -545,7 +544,7 @@ function SettingsPage() {
                 className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent"
               >
                 <RefreshCw className="h-4 w-4" />
-                Reset to default
+                {t(m.resetToDefault)}
               </button>
             </div>
           </div>
@@ -556,27 +555,22 @@ function SettingsPage() {
           <div className="rounded-xl border bg-card shadow-sm p-5">
             <div className="mb-4 flex items-center gap-2">
               <FolderOpen className="h-4 w-4 text-primary" />
-              <h2 className="text-base font-semibold">Saved Folder Access</h2>
+              <h2 className="text-base font-semibold">{t(m.savedFolderAccess)}</h2>
             </div>
             <div className="grid gap-4 md:grid-cols-2">
               <div className="rounded-lg border bg-background p-4">
                 <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Current folder
+                  {t(m.currentFolder)}
                 </div>
-                <div className="mt-2 text-sm font-semibold">{dirName || "No folder selected"}</div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Pilihan ini dipakai sebagai fallback save di browser bila auto-save tidak
-                  tersedia.
-                </p>
+                <div className="mt-2 text-sm font-semibold">{dirName || t(m.noFolderSelected)}</div>
+                <p className="mt-1 text-xs text-muted-foreground">{t(m.currentFolderHint)}</p>
               </div>
               <div className="rounded-lg border bg-background p-4">
                 <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Permission state
+                  {t(m.permissionState)}
                 </div>
                 <div className="mt-2 text-sm font-semibold">{dirStatusLabel}</div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Browser bisa meminta ulang izin baca/tulis setelah restart sesi atau tab.
-                </p>
+                <p className="mt-1 text-xs text-muted-foreground">{t(m.permissionStateHint)}</p>
               </div>
             </div>
 
@@ -588,7 +582,7 @@ function SettingsPage() {
                 className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <FolderOpen className="h-4 w-4" />
-                Choose folder
+                {t(m.chooseFolder)}
               </button>
               <button
                 type="button"
@@ -597,7 +591,7 @@ function SettingsPage() {
                 className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <KeyRound className="h-4 w-4" />
-                Reconnect permission
+                {t(m.reconnectPermission)}
               </button>
               <button
                 type="button"
@@ -606,14 +600,13 @@ function SettingsPage() {
                 className="inline-flex items-center gap-1.5 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive hover:bg-destructive/20 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Trash2 className="h-4 w-4" />
-                Forget folder
+                {t(m.forgetFolder)}
               </button>
             </div>
 
             {!supportsFS && (
               <div className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-muted-foreground">
-                Browser ini tidak mendukung File System Access API. Capture akan mengandalkan
-                network save atau browser download biasa.
+                {t(m.fsUnsupported)}
               </div>
             )}
           </div>
@@ -623,42 +616,28 @@ function SettingsPage() {
           <div className="rounded-xl border bg-card shadow-sm p-5">
             <div className="mb-4 flex items-center gap-2">
               <ShieldCheck className="h-4 w-4 text-primary" />
-              <h2 className="text-base font-semibold">How Preferences Are Used</h2>
+              <h2 className="text-base font-semibold">{t(m.howUsed)}</h2>
             </div>
             <ul className="space-y-3 text-sm text-muted-foreground">
-              <li>
-                `location`, `pattern`, dan `counter` dibaca halaman Capture untuk membentuk nama
-                file saat save dilakukan.
-              </li>
-              <li>
-                Folder tersimpan hanya berlaku di browser/operator ini karena permission dikelola
-                oleh browser, bukan oleh backend.
-              </li>
-              <li>
-                Jika folder tersimpan tidak lagi punya izin, operator harus menekan `Reconnect
-                permission` atau memilih folder ulang.
-              </li>
+              <li>{t(m.howUsedNaming)}</li>
+              <li>{t(m.howUsedFolder)}</li>
+              <li>{t(m.howUsedPermission)}</li>
             </ul>
           </div>
 
           <div className="rounded-xl border bg-card shadow-sm p-5">
             <div className="mb-4 flex items-center gap-2">
               <Settings2 className="h-4 w-4 text-primary" />
-              <h2 className="text-base font-semibold">Operator Notes</h2>
+              <h2 className="text-base font-semibold">{t(m.operatorNotes)}</h2>
             </div>
             <div className="space-y-3 text-sm text-muted-foreground">
               <div className="rounded-lg border bg-background p-3">
-                Gunakan token `{"{INDEX}"}` bila Anda ingin urutan file tetap terlihat jelas saat
-                ada banyak capture berurutan.
+                {t(m.noteIndex, { token: "{INDEX}" })}
               </div>
               <div className="rounded-lg border bg-background p-3">
-                Gunakan token `{"{LOCATION}"}` dan `{"{SOURCE}"}` untuk menjaga nama file tetap
-                mudah diaudit per plant dan per bin.
+                {t(m.noteLocationSource, { location: "{LOCATION}", source: "{SOURCE}" })}
               </div>
-              <div className="rounded-lg border bg-background p-3">
-                Untuk troubleshooting export jaringan, cek halaman `Storage` setelah mengganti
-                folder atau environment.
-              </div>
+              <div className="rounded-lg border bg-background p-3">{t(m.noteStorage)}</div>
             </div>
           </div>
         </section>

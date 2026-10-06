@@ -12,8 +12,17 @@ import {
   type EdgeProbeResult,
   type EdgeTargetRow,
 } from "@/lib/edge-targets";
+import { failureText } from "@/i18n/errors";
+import { edgeApiMessages as m } from "@/i18n/settings";
+import { useRichT, useT } from "@/lib/i18n";
 
 type ProbeState = Extract<EdgeProbeResult, { ok: true }> | null;
+
+// Kegagalan memuat disimpan apa adanya, bukan sebagai teks jadi: teksnya baru
+// dibentuk saat render, sehingga refresh() tidak bergantung pada bahasa dan
+// mengganti bahasa tidak memuat ulang daftar (yang akan membuang alamat yang
+// sedang diketik).
+type LoadFailure = { code?: string | null; message: string | null };
 
 /**
  * Daftar alamat Edge API per device.
@@ -26,8 +35,10 @@ export function EdgeApiSettings() {
   const [devices, setDevices] = useState<EdgeTargetRow[] | null>(null);
   const [fallbackUrl, setFallbackUrl] = useState("");
   const [tokenSet, setTokenSet] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<LoadFailure | null>(null);
   const [loading, setLoading] = useState(true);
+  const t = useT();
+  const rich = useRichT();
 
   const [draft, setDraft] = useState<Record<number, string>>({});
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -38,7 +49,7 @@ export function EdgeApiSettings() {
     try {
       const result = await listEdgeTargets();
       if (!result.ok) {
-        setLoadError(result.message);
+        setLoadError(result);
         setDevices(null);
         return;
       }
@@ -48,7 +59,7 @@ export function EdgeApiSettings() {
       setDraft(Object.fromEntries(result.devices.map((d) => [d.id, d.edgeApiUrl ?? ""])));
       setLoadError(null);
     } catch (error) {
-      setLoadError(error instanceof Error ? error.message : "Server tidak merespons.");
+      setLoadError({ message: error instanceof Error ? error.message : null });
       setDevices(null);
     } finally {
       setLoading(false);
@@ -66,13 +77,13 @@ export function EdgeApiSettings() {
         data: { deviceId: device.id, url: draft[device.id] ?? "" },
       });
       if (!result.ok) {
-        toast.error(result.message);
+        toast.error(failureText(t, result));
         return;
       }
-      toast.success(`Alamat "${device.name}" disimpan`);
+      toast.success(t(m.saved, { name: device.name }));
       await refresh();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Alamat gagal disimpan.");
+      toast.error(error instanceof Error ? error.message : t(m.saveFailed));
     } finally {
       setBusyId(null);
     }
@@ -83,12 +94,12 @@ export function EdgeApiSettings() {
     try {
       const result = await testEdgeConnection({ data: { deviceId: device.id } });
       if (!result.ok) {
-        toast.error(result.message);
+        toast.error(failureText(t, result));
         return;
       }
       setProbe((current) => ({ ...current, [device.id]: result }));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Uji koneksi gagal.");
+      toast.error(error instanceof Error ? error.message : t(m.testFailed));
     } finally {
       setBusyId(null);
     }
@@ -100,13 +111,10 @@ export function EdgeApiSettings() {
         <h2 className="text-base font-semibold">Edge API</h2>
         <Button variant="outline" size="sm" onClick={refresh} disabled={loading}>
           <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-          Muat ulang
+          {t(m.reload)}
         </Button>
       </div>
-      <p className="mb-4 text-sm text-muted-foreground">
-        Alamat service kamera untuk tiap device. Tiap device boleh memakai port berbeda &mdash;
-        tulis URL utuhnya, portnya ikut di dalamnya.
-      </p>
+      <p className="mb-4 text-sm text-muted-foreground">{t(m.intro)}</p>
 
       {loadError && (
         <div
@@ -114,35 +122,31 @@ export function EdgeApiSettings() {
           className="mb-4 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-sm text-destructive"
         >
           <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>{loadError}</span>
+          <span>{failureText(t, loadError, m.serverNoResponse)}</span>
         </div>
       )}
 
       <div className="mb-4 rounded-lg border bg-background p-3 text-xs">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="text-muted-foreground">Alamat cadangan (CAMERA_API_URL)</span>
-          <code className="font-medium">{fallbackUrl || "belum diisi"}</code>
+          <span className="text-muted-foreground">{t(m.fallbackAddress)}</span>
+          <code className="font-medium">{fallbackUrl || t(m.notSet)}</code>
         </div>
         <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
-          <span className="text-muted-foreground">Token bersama (CAMERA_API_TOKEN)</span>
-          <span className="font-medium">{tokenSet ? "terpasang" : "tidak dipakai"}</span>
+          <span className="text-muted-foreground">{t(m.sharedToken)}</span>
+          <span className="font-medium">{tokenSet ? t(m.tokenSet) : t(m.tokenUnused)}</span>
         </div>
         <p className="mt-2 leading-relaxed text-muted-foreground">
-          Keduanya berasal dari berkas <code>.env</code> di server dan hanya bisa diubah di sana,
-          bukan dari halaman ini &mdash; nilainya tidak pernah dikirim ke browser. Cadangan dipakai
-          untuk device yang alamatnya dikosongkan.
+          {rich(m.envNote, { env: <code>.env</code> })}
         </p>
       </div>
 
       {loading && devices === null ? (
         <p className="py-6 text-center text-sm text-muted-foreground">
           <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-          Memuat registry device...
+          {t(m.loading)}
         </p>
       ) : !devices || devices.length === 0 ? (
-        <p className="py-6 text-center text-sm text-muted-foreground">
-          Belum ada device di registry. Daftarkan dulu lewat menu Devices.
-        </p>
+        <p className="py-6 text-center text-sm text-muted-foreground">{t(m.empty)}</p>
       ) : (
         <div className="space-y-3">
           {devices.map((device) => {
@@ -156,16 +160,16 @@ export function EdgeApiSettings() {
                   <span className="text-sm font-medium">{device.name}</span>
                   <code className="text-xs text-muted-foreground">{device.code}</code>
                   <Badge variant="secondary" className="text-[10px] font-normal">
-                    {device.plant ?? "Plant belum ditentukan"}
+                    {device.plant ?? t(m.plantUnset)}
                   </Badge>
                   {!device.isActive && (
                     <Badge variant="outline" className="text-[10px] font-normal">
-                      Nonaktif
+                      {t(m.inactive)}
                     </Badge>
                   )}
                   {device.usesFallback && (
                     <Badge variant="outline" className="text-[10px] font-normal">
-                      Pakai cadangan
+                      {t(m.usesFallback)}
                     </Badge>
                   )}
                 </div>
@@ -180,25 +184,25 @@ export function EdgeApiSettings() {
                     spellCheck={false}
                     disabled={sibuk}
                     className="h-9 min-w-[16rem] flex-1 font-mono text-xs"
-                    aria-label={`Alamat Edge API ${device.name}`}
+                    aria-label={t(m.addressLabel, { name: device.name })}
                   />
                   <Button size="sm" onClick={() => handleSave(device)} disabled={sibuk || !berubah}>
                     <Save className="mr-2 h-4 w-4" />
-                    Simpan
+                    {t(m.save)}
                   </Button>
                   <Button
                     size="sm"
                     variant="outline"
                     onClick={() => handleTest(device)}
                     disabled={sibuk || berubah}
-                    title={berubah ? "Simpan dulu sebelum menguji" : "Uji koneksi ke alamat ini"}
+                    title={berubah ? t(m.saveBeforeTest) : t(m.testThisAddress)}
                   >
                     {sibuk ? (
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     ) : (
                       <Plug className="mr-2 h-4 w-4" />
                     )}
-                    Uji
+                    {t(m.test)}
                   </Button>
                 </div>
 
@@ -226,9 +230,7 @@ export function EdgeApiSettings() {
       )}
 
       <p className="mt-4 border-t pt-3 text-xs leading-relaxed text-muted-foreground">
-        Akun yang dipasang ke plant tertentu hanya bisa memakai device dari plant itu. Hanya akun
-        ber-plant Semua Plant yang bebas memakai device mana pun. Aturan itu ditegakkan di server
-        pada tiap panggilan kamera, bukan dengan menyembunyikan pilihan di layar.
+        {t(m.accessNote)}
       </p>
     </section>
   );

@@ -71,6 +71,11 @@ import { getImageDimensions, computeHistogram, type Histogram } from "@/lib/imag
 import { AppDatePicker } from "@/components/app-date-picker";
 import { AppSelect } from "@/components/app-select";
 import { PageTitle } from "@/components/page-shell";
+import { commonMessages as c } from "@/i18n/common";
+import { failureText } from "@/i18n/errors";
+import { deviceStatusText } from "@/i18n/device-status";
+import { galleryMessages as m, gallerySavedViewMessages as sv } from "@/i18n/gallery";
+import { useLocale, useRichT, useT, type Translator } from "@/lib/i18n";
 import { useIsAdmin, useSessionUser } from "@/lib/use-session-user";
 import {
   DropdownMenu,
@@ -121,14 +126,14 @@ function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
-function formatDateTime(ts: number) {
+function formatDateTime(ts: number, locale: string) {
   const date = new Date(ts);
-  const datePart = date.toLocaleDateString("en-GB", {
+  const datePart = date.toLocaleDateString(locale, {
     day: "2-digit",
     month: "short",
     year: "numeric",
   });
-  const timePart = date.toLocaleTimeString("en-GB", {
+  const timePart = date.toLocaleTimeString(locale, {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
@@ -168,13 +173,13 @@ function formatBin(bin?: string): string {
   return bin;
 }
 
-function formatCaptureRecordStatus(status: string): string {
+function formatCaptureRecordStatus(status: string, t: Translator): string {
   return status === "downloaded"
-    ? "Diunduh lokal"
+    ? t(m.statusDownloaded)
     : status === "pending"
-      ? "Menunggu dikirim"
+      ? t(m.waitingToBeSent)
       : status === "saved"
-        ? "Tersimpan"
+        ? t(m.saved)
         : status || "—";
 }
 
@@ -241,6 +246,7 @@ function CardThumb({
   thumbUrl?: string;
   className?: string;
 }) {
+  const t = useT();
   // Urutannya menaik dari yang paling murah: blob lokal tidak menyentuh
   // jaringan sama sekali, thumbnail ~50 KB dari disk app server, dan foto
   // ukuran penuh (~11 MB lewat CIFS) tidak pernah dipakai di grid.
@@ -253,44 +259,45 @@ function CardThumb({
   return (
     <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-muted px-2 text-center text-muted-foreground">
       <ImageOff className="h-5 w-5" />
-      <span className="text-[10px] leading-tight">Klik untuk memuat dari folder jaringan</span>
+      <span className="text-[10px] leading-tight">{t(m.thumbPlaceholder)}</span>
     </div>
   );
 }
 
 function describeStorage(
-  rawPath?: string | null,
-  saveMethod?: CaptureRecordView["saveMethod"],
+  rawPath: string | null | undefined,
+  saveMethod: CaptureRecordView["saveMethod"] | undefined,
+  t: Translator,
 ): { label: string; path: string | null; network: boolean } {
-  if (!rawPath) return { label: "Belum diketahui", path: null, network: false };
+  if (!rawPath) return { label: t(m.notKnownYet), path: null, network: false };
   const DOWNLOAD_PREFIX = "browser-download/";
   if (rawPath.startsWith(DOWNLOAD_PREFIX)) {
     return {
-      label: "Folder Unduhan browser - belum masuk share",
+      label: t(m.storageBrowserDownloads),
       path: rawPath.slice(DOWNLOAD_PREFIX.length),
       network: false,
     };
   }
   if (saveMethod === "spooled") {
-    return { label: "Di app server, menunggu dikirim ke share", path: rawPath, network: false };
+    return { label: t(m.storageSpooled), path: rawPath, network: false };
   }
   if (saveMethod === "app-network" || saveMethod === "edge-network") {
-    return { label: "Folder jaringan", path: rawPath, network: true };
+    return { label: t(m.storageNetworkFolder), path: rawPath, network: true };
   }
-  return { label: "Folder pilihan di browser", path: rawPath, network: false };
+  return { label: t(m.storageBrowserFolder), path: rawPath, network: false };
 }
 
-function formatSaveMethodLabel(method: CaptureRecordView["saveMethod"]): string {
+function formatSaveMethodLabel(method: CaptureRecordView["saveMethod"], t: Translator): string {
   return method === "spooled"
-    ? "Menunggu dikirim"
+    ? t(m.waitingToBeSent)
     : method === "app-network"
-      ? "App -> network"
+      ? t(m.methodAppNetwork)
       : method === "edge-network"
-        ? "Edge -> network"
+        ? t(m.methodEdgeNetwork)
         : method === "browser-folder"
-          ? "Browser -> folder"
+          ? t(m.methodBrowserFolder)
           : method === "browser-download"
-            ? "Browser download"
+            ? t(m.methodBrowserDownload)
             : "—";
 }
 
@@ -341,12 +348,13 @@ function QcBadge({
   saveMethod?: CaptureRecordView["saveMethod"];
   className?: string;
 }) {
+  const t = useT();
   const [label, tone] =
     saveMethod === "app-network" || saveMethod === "edge-network"
-      ? ["Tersimpan", "bg-emerald-500/15 text-emerald-700"]
+      ? [t(m.saved), "bg-emerald-500/15 text-emerald-700"]
       : saveMethod === "spooled"
-        ? ["Menunggu kirim", "bg-amber-500/15 text-amber-700"]
-        : ["Belum diketahui", "bg-muted text-muted-foreground"];
+        ? [t(m.waitingSend), "bg-amber-500/15 text-amber-700"]
+        : [t(m.notKnownYet), "bg-muted text-muted-foreground"];
   return (
     <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${tone} ${className}`}>
       {label}
@@ -388,6 +396,14 @@ function GalleryPage() {
 
 function GalleryContent() {
   const isAdmin = useIsAdmin();
+  const t = useT();
+  const rich = useRichT();
+  const locale = useLocale();
+  // Penerjemah terbaru untuk efek pemuatan awal di bawah. Efek itu hanya boleh
+  // jalan sekali; menjadikan `t` dependensinya akan memuat ulang seluruh galeri
+  // setiap kali bahasa diganti.
+  const tRef = useRef(t);
+  tRef.current = t;
   const [gallery, setGallery] = useState<GalleryItem[]>([]);
   const [hydrated, setHydrated] = useState(false);
   const edgeSelection = useEdgeStatusSelection(isAdmin);
@@ -528,8 +544,7 @@ function GalleryContent() {
         if (!cancelled) setGallery(items);
       })
       .catch(() => {
-        if (!cancelled)
-          toast.error("Cache browser tidak bisa dibaca. Galeri tetap memakai registry server.");
+        if (!cancelled) toast.error(tRef.current(m.cacheUnreadable));
       });
     // 200 hanya menutup sekitar tiga hari (8 sesi x 2 slot x 4 plant = 64
     // capture/hari). Sekarang galeri DAN tabel sama-sama bersumber dari sini,
@@ -540,7 +555,7 @@ function GalleryContent() {
       .then((result) => {
         if (cancelled) return;
         if (!result.ok) {
-          setCaptureRecordsError(result.message);
+          setCaptureRecordsError(failureText(tRef.current, result));
           setCaptureRecords([]);
           return;
         }
@@ -556,7 +571,7 @@ function GalleryContent() {
       .catch((error: unknown) => {
         if (cancelled) return;
         setCaptureRecordsError(
-          error instanceof Error ? error.message : "Permintaan ke registry gagal.",
+          error instanceof Error ? error.message : tRef.current(m.registryRequestFailed),
         );
         setCaptureRecords([]);
       });
@@ -629,7 +644,7 @@ function GalleryContent() {
     try {
       const result = await createCaptureMediaUrl({ data: { recordId } });
       if (!result.ok) {
-        setRemoteImageError(result.message);
+        setRemoteImageError(failureText(t, result));
         return;
       }
       setRemoteImageUrls((urls) => ({ ...urls, [recordId]: result.url }));
@@ -656,11 +671,11 @@ function GalleryContent() {
         })();
       }
     } catch {
-      setRemoteImageError("Gagal meminta gambar dari app server.");
+      setRemoteImageError(t(m.imageRequestFailed));
     } finally {
       setRemoteImageLoading(false);
     }
-  }, [detailItem, remoteImageUrls, thumbUrls]);
+  }, [detailItem, remoteImageUrls, t, thumbUrls]);
 
   // Pesan error milik kartu sebelumnya tidak boleh menempel di kartu berikutnya.
   useEffect(() => {
@@ -740,7 +755,7 @@ function GalleryContent() {
       if (!captureDelete.ok && captureDelete.code !== "CAPTURE_RECORD_NOT_FOUND") {
         // Dialognya sengaja dibiarkan terbuka: sebabnya terbaca di tempat
         // keputusannya diambil, dan tombolnya tinggal ditekan lagi.
-        setDialogError(captureDelete.message);
+        setDialogError(failureText(t, captureDelete));
         return;
       }
 
@@ -750,8 +765,8 @@ function GalleryContent() {
           // Kartunya hilang dari galeri, berkasnya tidak. Itu harus dikatakan,
           // bukan didiamkan -- kalau tidak, orang menyangka share-nya sudah
           // bersih padahal tidak.
-          toast.warning("Record dihapus, berkasnya dibiarkan", {
-            description: `${captureDelete.fileLeftOnShare} berada di luar folder yang dikelola app (capture lama), jadi tidak disentuh. Hapus manual dari share kalau memang tidak dipakai lagi.`,
+          toast.warning(t(m.recordDeletedFileKept), {
+            description: t(m.recordDeletedFileKeptDetail, { path: captureDelete.fileLeftOnShare }),
           });
         }
       }
@@ -774,7 +789,7 @@ function GalleryContent() {
       });
       setPendingDelete(null);
     } catch (error: unknown) {
-      setDialogError(getErrorMessage(error, "Gagal menghapus item"));
+      setDialogError(getErrorMessage(error, t(m.deleteFailed)));
     } finally {
       setDialogBusy(false);
     }
@@ -810,7 +825,7 @@ function GalleryContent() {
       });
 
       if (!captureRename.ok && captureRename.code !== "CAPTURE_RECORD_NOT_FOUND") {
-        setDialogError(captureRename.message);
+        setDialogError(failureText(t, captureRename));
         return;
       }
 
@@ -856,7 +871,7 @@ function GalleryContent() {
       }
       setPendingRename(null);
     } catch (error: unknown) {
-      setDialogError(getErrorMessage(error, "Gagal mengubah nama file"));
+      setDialogError(getErrorMessage(error, t(m.renameFailed)));
     } finally {
       setDialogBusy(false);
     }
@@ -895,12 +910,12 @@ function GalleryContent() {
         ? { ok: true as const, url: cached }
         : await createCaptureMediaUrl({ data: { recordId } });
       if (!signed.ok) {
-        alert(`Gagal menyiapkan unduhan: ${signed.message}`);
+        alert(t(m.downloadPrepareFailed, { reason: failureText(t, signed) }));
         return;
       }
       const response = await fetch(signed.url);
       if (!response.ok) {
-        alert("Berkas tidak bisa diambil dari folder jaringan.");
+        alert(t(m.downloadFetchFailed));
         return;
       }
       // Lewat blob, bukan menautkan URL bertanda tangan langsung: server
@@ -913,7 +928,7 @@ function GalleryContent() {
       anchor.click();
       URL.revokeObjectURL(objectUrl);
     } catch {
-      alert("Gagal mengunduh dari folder jaringan.");
+      alert(t(m.downloadFailed));
     } finally {
       setDownloadingId(null);
     }
@@ -1404,70 +1419,75 @@ function GalleryContent() {
   const selectedBytes = selectedItems.reduce((sum, item) => sum + item.blob.size, 0);
   const cameraStateLabel = deviceStatus?.online
     ? deviceStatus.camera?.connected
-      ? "Kamera terhubung"
-      : "Edge online"
-    : "Offline";
+      ? t(m.cameraConnected)
+      : t(m.edgeOnline)
+    : t(m.offline);
   const cameraStateHint =
-    deviceStatus?.statusMessage ??
+    deviceStatusText(t, deviceStatus) ??
     (deviceStatus?.online
-      ? (deviceStatus.deviceId ?? "Edge device aktif dan sedang dipantau.")
-      : "Status device belum tersedia.");
+      ? (deviceStatus.deviceId ?? t(m.edgeMonitored))
+      : t(m.deviceStatusUnavailable));
   const deviceStatusTone = deviceStatus?.online
     ? deviceStatus.camera?.connected
       ? "border-emerald-500/30 bg-emerald-500/5 text-emerald-700"
       : "border-amber-500/30 bg-amber-500/5 text-amber-700"
     : "border-amber-500/30 bg-amber-500/5 text-amber-700";
   const deviceStatusBadgeLabel = deviceStatusLoading
-    ? "Menyegarkan status"
+    ? t(m.badgeRefreshing)
     : !edgeSelection.selectedCode
-      ? "Pilih device"
+      ? t(m.badgeChooseDevice)
       : deviceStatus?.online
         ? deviceStatus.camera?.connected
-          ? "Siap capture"
-          : "Edge aktif"
-        : "Tidak terhubung";
+          ? t(m.badgeReady)
+          : t(m.badgeEdgeActive)
+        : t(m.badgeNotConnected);
+  const connectedCameraName = deviceStatus?.camera
+    ? [deviceStatus.camera.manufacturer, deviceStatus.camera.model].filter(Boolean).join(" ")
+    : "";
   const deviceStatusDetail =
     edgeSelection.error ??
     (deviceStatusLoading
-      ? "Memuat daftar device dan memeriksa status kamera..."
+      ? t(m.detailLoading)
       : !edgeSelection.selectedCode
         ? edgeSelection.devices.length > 0
-          ? "Pilih device di bawah untuk memeriksa koneksi kamera."
-          : "Belum ada device aktif. Buka Devices untuk memeriksa registrasi."
+          ? t(m.detailChooseDevice)
+          : t(m.detailNoActiveDevice)
         : deviceStatus?.online
           ? deviceStatus.camera?.connected
-            ? `Kamera ${[deviceStatus.camera.manufacturer, deviceStatus.camera.model].filter(Boolean).join(" ") || "aktif"} terhubung ke edge device.`
-            : "Edge device terhubung, tetapi kamera USB belum siap dipakai untuk capture."
+            ? connectedCameraName
+              ? t(m.detailCameraNamed, { camera: connectedCameraName })
+              : t(m.detailCameraActive)
+            : t(m.detailCameraNotReady)
           : cameraStateHint);
   const deviceCheckedAtLabel = deviceStatusCheckedAt
-    ? formatDateTime(deviceStatusCheckedAt.getTime())
-    : "Belum pernah dicek";
+    ? formatDateTime(deviceStatusCheckedAt.getTime(), locale)
+    : t(m.neverChecked);
   const activeFilters = [
     filterLocation
       ? {
           key: "location",
-          label: `Lokasi: ${filterLocation}`,
+          label: t(m.chipLocation, { value: filterLocation }),
           clear: () => setFilterLocation(""),
         }
       : null,
     filterBin
       ? {
           key: "bin",
-          label: `Bin: ${binLabel(filterBin === "BIN2" ? 2 : 1)}`,
+          label: t(m.chipBin, { value: binLabel(filterBin === "BIN2" ? 2 : 1) }),
           clear: () => setFilterBin(""),
         }
       : null,
     filterDate
       ? {
           key: "date",
-          label: `Tanggal: ${filterDate}`,
+          label: t(m.chipDate, { value: filterDate }),
           clear: () => setFilterDate(""),
         }
       : null,
     searchQuery.trim()
       ? {
           key: "search",
-          label: `Cari: ${searchQuery.trim()}`,
+          label: t(m.chipSearch, { value: searchQuery.trim() }),
           clear: () => setSearchQuery(""),
         }
       : null,
@@ -1511,15 +1531,15 @@ function GalleryContent() {
         <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
           <div>
             <PageTitle
-              title="Gallery"
+              title={t(c.navGallery)}
               description={
                 galleryScope?.allPlants
-                  ? "Hasil capture dari semua plant."
+                  ? t(m.descriptionAllPlants)
                   : galleryScope?.plant
-                    ? `Hasil capture ${galleryScope.plant}.`
+                    ? t(m.descriptionPlant, { plant: galleryScope.plant })
                     : captureRecordsError
-                      ? "Galeri belum dapat dimuat."
-                      : "Memeriksa akses galeri…"
+                      ? t(m.loadFailedShort)
+                      : t(m.checkingAccess)
               }
             />
           </div>
@@ -1529,14 +1549,14 @@ function GalleryContent() {
               disabled={selectedIds.size < 2}
               className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
             >
-              <Columns2 className="h-4 w-4" /> Bandingkan
+              <Columns2 className="h-4 w-4" /> {t(m.compare)}
             </button>
             <button
               onClick={downloadSelected}
               disabled={selectedIds.size === 0}
               className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
             >
-              <Download className="h-4 w-4" /> Unduh
+              <Download className="h-4 w-4" /> {t(m.download)}
             </button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -1546,7 +1566,7 @@ function GalleryContent() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={exportCSV} disabled={filteredGallery.length === 0}>
-                  Ekspor CSV
+                  {t(m.exportCsv)}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -1558,9 +1578,9 @@ function GalleryContent() {
         >
           <OverviewCard
             icon={Search}
-            label="Hasil Tersaring"
+            label={t(m.filteredResults)}
             value={filteredGallery.length}
-            hint={`${galleryCards.length} image di folder jaringan`}
+            hint={t(m.imagesOnNetworkFolder, { count: galleryCards.length })}
           />
           {/* Memilih hanya berguna untuk Bandingkan dan Ekspor CSV, dan
               keduanya wewenang admin. Bagi operator kartu ini selalu menunjuk
@@ -1568,24 +1588,24 @@ function GalleryContent() {
           {isAdmin && (
             <OverviewCard
               icon={CheckSquare}
-              label="Item Terpilih"
+              label={t(m.selectedItems)}
               value={selectedIds.size}
               hint={
                 selectedIds.size > 0
-                  ? `${formatBytes(selectedBytes)} siap compare/download`
-                  : "Belum ada item dipilih"
+                  ? t(m.selectedReady, { size: formatBytes(selectedBytes) })
+                  : t(m.noneSelected)
               }
             />
           )}
           <OverviewCard
             icon={HardDrive}
-            label="Storage Terlihat"
+            label={t(m.visibleStorage)}
             value={formatBytes(filteredBytes)}
-            hint={`${formatBytes(allCardBytes)} total di folder jaringan`}
+            hint={t(m.totalOnNetworkFolder, { size: formatBytes(allCardBytes) })}
           />
           <OverviewCard
             icon={Wifi}
-            label="Status Device"
+            label={t(m.deviceStatus)}
             value={cameraStateLabel}
             hint={cameraStateHint}
           />
@@ -1598,9 +1618,9 @@ function GalleryContent() {
           {isAdmin && (
             <OverviewCard
               icon={Package}
-              label="Log Registry"
+              label={t(m.registryLog)}
               value={filteredCaptureRecords.length}
-              hint={`${captureRecords.length} record capture di MSSQL`}
+              hint={t(m.recordsInMssql, { count: captureRecords.length })}
             />
           )}
         </section>
@@ -1617,7 +1637,9 @@ function GalleryContent() {
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs font-semibold uppercase tracking-wide">Status Edge</span>
+                  <span className="text-xs font-semibold uppercase tracking-wide">
+                    {t(m.statusEdge)}
+                  </span>
                   <span className="rounded-full bg-background/80 px-2 py-0.5 text-[11px] font-medium text-foreground">
                     {deviceStatusBadgeLabel}
                   </span>
@@ -1629,7 +1651,7 @@ function GalleryContent() {
                     id="gallery-edge-device-label"
                     className="mb-1 block text-xs font-medium text-foreground"
                   >
-                    Device kamera
+                    {t(m.cameraDevice)}
                   </label>
                   <Select
                     value={edgeSelection.selectedCode}
@@ -1640,7 +1662,7 @@ function GalleryContent() {
                       aria-labelledby="gallery-edge-device-label"
                       className="w-full bg-background text-foreground"
                     >
-                      <SelectValue placeholder="Pilih device kamera" />
+                      <SelectValue placeholder={t(m.chooseCameraDevice)} />
                     </SelectTrigger>
                     <SelectContent>
                       {edgeSelection.devices.map((device) => (
@@ -1653,7 +1675,7 @@ function GalleryContent() {
                   </Select>
                 </div>
                 <p className="mt-1 text-xs text-foreground/70">
-                  Cek terakhir: {deviceCheckedAtLabel}
+                  {t(m.lastChecked, { time: deviceCheckedAtLabel })}
                   {deviceStatus?.deviceId ? ` • Device ID: ${deviceStatus.deviceId}` : ""}
                 </p>
               </div>
@@ -1669,14 +1691,14 @@ function GalleryContent() {
                   <RefreshCw
                     className={`h-3.5 w-3.5 ${deviceStatusLoading ? "animate-spin" : ""}`}
                   />
-                  {deviceStatusLoading ? "Menyegarkan..." : "Refresh Device"}
+                  {deviceStatusLoading ? t(m.refreshing) : t(m.refreshDevice)}
                 </button>
                 {isAdmin && (
                   <Link
                     to="/devices"
                     className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent"
                   >
-                    Buka Devices
+                    {t(m.openDevices)}
                   </Link>
                 )}
               </div>
@@ -1688,46 +1710,43 @@ function GalleryContent() {
           <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
             <div>
               <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Riwayat Registry DB
+                {t(m.registryHistory)}
               </div>
               {/* Penjelasan sumber data hanya berarti bagi yang mengurus
                   sistemnya. Bagi operator, "MSSQL" dan "browser gallery lokal"
                   adalah istilah yang tidak menuntun ke tindakan apa pun. */}
               {isAdmin && (
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Menampilkan metadata capture yang tercatat di MSSQL. Preview gambar tetap berasal
-                  dari browser gallery lokal.
-                </p>
+                <p className="mt-1 text-sm text-muted-foreground">{t(m.registryHistoryHint)}</p>
               )}
             </div>
             <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-medium text-primary">
-              {filteredCaptureRecords.length} record cocok filter
+              {t(m.recordsMatchFilter, { count: filteredCaptureRecords.length })}
             </span>
           </div>
 
           {captureRecordsError ? (
             <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-3 text-sm text-amber-700">
-              Gagal memuat capture_records dari MSSQL: {captureRecordsError}
+              {t(m.recordsLoadFailed, { reason: captureRecordsError })}
             </div>
           ) : recentCaptureRecords.length === 0 ? (
             <div className="rounded-md border border-dashed py-6 text-center text-sm text-muted-foreground">
-              Belum ada metadata capture di MSSQL yang cocok dengan filter saat ini.
+              {t(m.recordsEmpty)}
             </div>
           ) : (
             <div className="overflow-hidden rounded-md border">
               <table className="w-full text-sm">
                 <thead className="bg-muted text-left text-xs text-muted-foreground">
                   <tr>
-                    <th className="p-2">Nama File</th>
-                    <th className="p-2">Waktu</th>
-                    <th className="p-2">Lokasi</th>
-                    <th className="p-2">Bin</th>
-                    <th className="p-2">Sesi</th>
-                    <th className="p-2">Operator</th>
-                    <th className="p-2">Status</th>
-                    <th className="p-2">Metode</th>
-                    <th className="p-2">Path Simpan</th>
-                    <th className="p-2">Device</th>
+                    <th className="p-2">{t(m.colFileName)}</th>
+                    <th className="p-2">{t(m.colTime)}</th>
+                    <th className="p-2">{t(m.location)}</th>
+                    <th className="p-2">{t(m.colBin)}</th>
+                    <th className="p-2">{t(m.colSession)}</th>
+                    <th className="p-2">{t(m.operator)}</th>
+                    <th className="p-2">{t(m.colStatus)}</th>
+                    <th className="p-2">{t(m.colMethod)}</th>
+                    <th className="p-2">{t(m.savePath)}</th>
+                    <th className="p-2">{t(m.colDevice)}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1737,7 +1756,7 @@ function GalleryContent() {
                         {record.fileName}
                       </td>
                       <td className="p-2 text-xs text-muted-foreground">
-                        {formatDateTime(new Date(record.capturedAt).getTime())}
+                        {formatDateTime(new Date(record.capturedAt).getTime(), locale)}
                       </td>
                       <td className="p-2 text-xs text-muted-foreground">{record.plant ?? "—"}</td>
                       <td className="p-2 text-xs text-muted-foreground">
@@ -1750,14 +1769,14 @@ function GalleryContent() {
                         {record.capturedBy ?? "—"}
                       </td>
                       <td className="p-2 text-xs text-muted-foreground">
-                        {formatCaptureRecordStatus(record.status)}
+                        {formatCaptureRecordStatus(record.status, t)}
                       </td>
                       <td className="p-2 text-xs text-muted-foreground">
-                        {formatSaveMethodLabel(record.saveMethod)}
+                        {formatSaveMethodLabel(record.saveMethod, t)}
                       </td>
                       <td className="max-w-sm p-2 text-xs text-muted-foreground">
                         {(() => {
-                          const storage = describeStorage(record.filePath, record.saveMethod);
+                          const storage = describeStorage(record.filePath, record.saveMethod, t);
                           return (
                             <span
                               className="block truncate font-mono"
@@ -1782,9 +1801,11 @@ ${storage.path ?? "—"}`}
           {filteredCaptureRecords.length > RECORDS_PER_PAGE && (
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
               <span>
-                Menampilkan {recordStart + 1} sampai{" "}
-                {Math.min(recordStart + RECORDS_PER_PAGE, filteredCaptureRecords.length)} dari{" "}
-                {filteredCaptureRecords.length} record
+                {t(m.showingRecords, {
+                  from: recordStart + 1,
+                  to: Math.min(recordStart + RECORDS_PER_PAGE, filteredCaptureRecords.length),
+                  total: filteredCaptureRecords.length,
+                })}
               </span>
               <div className="flex items-center gap-1">
                 <button
@@ -1813,11 +1834,9 @@ ${storage.path ?? "—"}`}
           <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
             <div>
               <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                View Tersimpan
+                {t(m.savedViews)}
               </div>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Filter, sort, mode tampilan, dan page size terakhir akan tersimpan di browser ini.
-              </p>
+              <p className="mt-1 text-sm text-muted-foreground">{t(m.savedViewsHint)}</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <span
@@ -1825,7 +1844,7 @@ ${storage.path ?? "—"}`}
                   isCustomView ? "bg-amber-500/10 text-amber-700" : "bg-primary/10 text-primary"
                 }`}
               >
-                {isCustomView ? "View kustom" : selectedSavedView.label}
+                {isCustomView ? t(m.customView) : t(selectedSavedView.label)}
               </span>
               {isCustomView && (
                 <button
@@ -1833,7 +1852,7 @@ ${storage.path ?? "—"}`}
                   onClick={() => selectSavedView(savedViewPreference)}
                   className="text-xs font-medium text-primary hover:underline"
                 >
-                  Terapkan ulang view tersimpan
+                  {t(m.reapplySavedView)}
                 </button>
               )}
             </div>
@@ -1858,7 +1877,9 @@ ${storage.path ?? "—"}`}
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-sm font-semibold">
-                      {savedView.slot ? `${binLabel(savedView.slot)} review` : savedView.label}
+                      {savedView.slot
+                        ? t(sv.slotReviewTitle, { slot: binLabel(savedView.slot) })
+                        : t(savedView.label)}
                     </span>
                     <span
                       className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
@@ -1869,10 +1890,14 @@ ${storage.path ?? "—"}`}
                             : "bg-muted text-muted-foreground"
                       }`}
                     >
-                      {isActive ? "Aktif" : isSelected ? "Dipilih" : "Preset"}
+                      {isActive
+                        ? t(m.viewActive)
+                        : isSelected
+                          ? t(m.viewSelected)
+                          : t(m.viewPreset)}
                     </span>
                   </div>
-                  <p className="mt-1 text-xs text-muted-foreground">{savedView.description}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{t(savedView.description)}</p>
                 </button>
               );
             })}
@@ -1882,7 +1907,9 @@ ${storage.path ?? "—"}`}
         {/* Filter bar */}
         <section className="mb-4 grid gap-3 rounded-xl border bg-card shadow-sm p-4 sm:grid-cols-3 lg:grid-cols-6">
           <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">Lokasi</label>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">
+              {t(m.location)}
+            </label>
             <AppSelect
               value={filterLocation}
               onValueChange={(value) => {
@@ -1890,15 +1917,15 @@ ${storage.path ?? "—"}`}
                 setPage(1);
               }}
               options={[
-                { value: "", label: "Semua lokasi" },
+                { value: "", label: t(m.allLocations) },
                 ...uniqueLocations.map((loc) => ({ value: loc, label: loc })),
               ]}
-              ariaLabel="Filter lokasi"
+              ariaLabel={t(m.filterLocationAria)}
             />
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">
-              Sumber (Bin)
+              {t(m.sourceBin)}
             </label>
             <AppSelect
               value={filterBin}
@@ -1907,44 +1934,48 @@ ${storage.path ?? "—"}`}
                 setPage(1);
               }}
               options={[
-                { value: "", label: `Semua ${binLabel(1).replace(/ ?1$/, "")}` },
+                { value: "", label: t(m.allOfTerm, { term: binLabel(1).replace(/ ?1$/, "") }) },
                 { value: "BIN1", label: binLabel(1) },
                 { value: "BIN2", label: binLabel(2) },
               ]}
-              ariaLabel="Filter slot"
+              ariaLabel={t(m.filterSlotAria)}
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">Tanggal</label>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">
+              {t(m.date)}
+            </label>
             <AppDatePicker
               value={filterDate}
               onValueChange={(value) => {
                 setFilterDate(value);
                 setPage(1);
               }}
-              ariaLabel="Filter tanggal"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">Shift</label>
-            <AppSelect
-              value="all"
-              onValueChange={() => {}}
-              options={[{ value: "all", label: "Semua Shift" }]}
-              disabled
-              ariaLabel="Filter shift (belum aktif)"
+              ariaLabel={t(m.filterDateAria)}
             />
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">
-              QC Status
+              {t(m.shift)}
             </label>
             <AppSelect
               value="all"
               onValueChange={() => {}}
-              options={[{ value: "all", label: "Semua" }]}
+              options={[{ value: "all", label: t(m.allShifts) }]}
               disabled
-              ariaLabel="Filter QC status (belum aktif)"
+              ariaLabel={t(m.filterShiftAria)}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">
+              {t(m.qcStatus)}
+            </label>
+            <AppSelect
+              value="all"
+              onValueChange={() => {}}
+              options={[{ value: "all", label: t(m.all) }]}
+              disabled
+              ariaLabel={t(m.filterQcAria)}
             />
           </div>
           <div className="flex items-end">
@@ -1952,12 +1983,12 @@ ${storage.path ?? "—"}`}
               onClick={clearFilters}
               className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent"
             >
-              Bersihkan Filter
+              {t(m.clearFilters)}
             </button>
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">
-              Kualitas gambar
+              {t(m.imageQuality)}
             </label>
             <AppSelect
               value={imageQuality}
@@ -1967,16 +1998,16 @@ ${storage.path ?? "—"}`}
                 saveGalleryImageQuality(next);
               }}
               options={[
-                { value: "hemat", label: "Hemat (cepat)" },
-                { value: "hd", label: "HD (berkas asli)" },
+                { value: "hemat", label: t(m.qualitySaver) },
+                { value: "hd", label: t(m.qualityHd) },
               ]}
-              title="Hemat memakai thumbnail (~50 KB). HD menarik berkas asli (~11 MB) dari folder jaringan."
-              ariaLabel="Kualitas gambar"
+              title={t(m.imageQualityTitle)}
+              ariaLabel={t(m.imageQuality)}
             />
           </div>
           <div className="sm:col-span-2 lg:col-span-5">
             <label className="mb-1 block text-xs font-medium text-muted-foreground">
-              Cari nama file
+              {t(m.searchFileName)}
             </label>
             <input
               type="text"
@@ -1985,7 +2016,7 @@ ${storage.path ?? "—"}`}
                 setSearchQuery(e.target.value);
                 setPage(1);
               }}
-              placeholder="mis. capture-001"
+              placeholder={t(m.searchPlaceholder)}
               className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-xs"
             />
           </div>
@@ -1995,7 +2026,7 @@ ${storage.path ?? "—"}`}
           <section className="mb-4 rounded-xl border bg-card shadow-sm p-3">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Filter Aktif
+                {t(m.activeFilters)}
               </span>
               {activeFilters.map((filter) => (
                 <button
@@ -2019,7 +2050,7 @@ ${storage.path ?? "—"}`}
                 }}
                 className="text-xs font-medium text-primary hover:underline"
               >
-                Reset semua
+                {t(m.resetAll)}
               </button>
             </div>
           </section>
@@ -2029,11 +2060,9 @@ ${storage.path ?? "—"}`}
           <section className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/30 bg-primary/5 p-3">
             <div>
               <div className="text-sm font-semibold">
-                {selectedIds.size} gambar dipilih untuk tindakan batch
+                {t(m.batchSelected, { count: selectedIds.size })}
               </div>
-              <div className="text-xs text-muted-foreground">
-                Gunakan compare untuk review visual, atau download batch untuk export lokal.
-              </div>
+              <div className="text-xs text-muted-foreground">{t(m.batchHint)}</div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <button
@@ -2042,21 +2071,21 @@ ${storage.path ?? "—"}`}
                 className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-2 text-xs font-medium hover:bg-accent disabled:opacity-50"
               >
                 <Columns2 className="h-3.5 w-3.5" />
-                Bandingkan pilihan
+                {t(m.compareSelection)}
               </button>
               <button
                 onClick={downloadSelected}
                 className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-2 text-xs font-medium hover:bg-accent"
               >
                 <Download className="h-3.5 w-3.5" />
-                Unduh pilihan
+                {t(m.downloadSelection)}
               </button>
               <button
                 onClick={() => setSelectedIds(new Set())}
                 className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-2 text-xs font-medium hover:bg-accent"
               >
                 <X className="h-3.5 w-3.5" />
-                Bersihkan pilihan
+                {t(m.clearSelection)}
               </button>
             </div>
           </section>
@@ -2064,10 +2093,12 @@ ${storage.path ?? "—"}`}
 
         {/* Content header */}
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <span className="text-sm font-medium">Total {filteredGallery.length} gambar</span>
+          <span className="text-sm font-medium">
+            {t(m.totalImages, { count: filteredGallery.length })}
+          </span>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1.5 text-xs">
-              <label className="text-muted-foreground">Urutkan</label>
+              <label className="text-muted-foreground">{t(m.sortBy)}</label>
               <AppSelect
                 value={sortOption}
                 onValueChange={(value) => {
@@ -2075,13 +2106,13 @@ ${storage.path ?? "—"}`}
                   setPage(1);
                 }}
                 options={[
-                  { value: "newest", label: "Terbaru dulu" },
-                  { value: "oldest", label: "Terlama dulu" },
-                  { value: "name-asc", label: "Nama A → Z" },
-                  { value: "name-desc", label: "Nama Z → A" },
+                  { value: "newest", label: t(m.sortNewest) },
+                  { value: "oldest", label: t(m.sortOldest) },
+                  { value: "name-asc", label: t(m.sortNameAsc) },
+                  { value: "name-desc", label: t(m.sortNameDesc) },
                 ]}
                 className="w-40"
-                ariaLabel="Urutkan"
+                ariaLabel={t(m.sortBy)}
               />
             </div>
             <div className="flex overflow-hidden rounded-md border border-input">
@@ -2091,7 +2122,7 @@ ${storage.path ?? "—"}`}
                   setPage(1);
                 }}
                 className={`p-1.5 ${viewMode === "grid" ? "bg-accent" : "bg-background hover:bg-accent/50"}`}
-                title="Mode grid"
+                title={t(m.gridMode)}
               >
                 <LayoutGrid className="h-4 w-4" />
               </button>
@@ -2101,7 +2132,7 @@ ${storage.path ?? "—"}`}
                   setPage(1);
                 }}
                 className={`p-1.5 ${viewMode === "list" ? "bg-accent" : "bg-background hover:bg-accent/50"}`}
-                title="Mode list"
+                title={t(m.listMode)}
               >
                 <List className="h-4 w-4" />
               </button>
@@ -2115,21 +2146,18 @@ ${storage.path ?? "—"}`}
         {missingThumbCards.length > 0 && (
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-md border bg-card px-3 py-2 text-xs">
             <div className="text-muted-foreground">
-              {backfilling ? (
-                <>
-                  Membuat thumbnail... <span className="font-medium">{backfillDone}</span> dari{" "}
-                  {missingThumbCards.length}. Tiap foto ditarik ukuran penuh sekali dari folder
-                  jaringan, jadi ini butuh waktu — halaman boleh ditinggal terbuka.
-                </>
-              ) : (
-                <>
-                  <span className="font-medium text-foreground">
-                    {missingThumbCards.length} foto
-                  </span>{" "}
-                  belum punya thumbnail. Pembuatannya dihentikan — tekan Lanjutkan untuk meneruskan.
-                  Yang sudah jadi tetap tersimpan.
-                </>
-              )}
+              {backfilling
+                ? rich(m.backfillProgress, {
+                    done: <span className="font-medium">{backfillDone}</span>,
+                    total: missingThumbCards.length,
+                  })
+                : rich(m.backfillPaused, {
+                    photos: (
+                      <span className="font-medium text-foreground">
+                        {t(m.photoCount, { count: missingThumbCards.length })}
+                      </span>
+                    ),
+                  })}
             </div>
             <button
               onClick={() => {
@@ -2141,7 +2169,7 @@ ${storage.path ?? "—"}`}
               }}
               className="shrink-0 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
             >
-              {backfilling ? "Hentikan" : "Lanjutkan"}
+              {backfilling ? t(m.backfillStop) : t(m.backfillContinue)}
             </button>
           </div>
         )}
@@ -2151,10 +2179,10 @@ ${storage.path ?? "—"}`}
             pernah terjadi -- padahal justru foto inilah yang perlu tindakan. */}
         {localOnlyCount > 0 && (
           <div className="mb-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-800">
-            {localOnlyCount} foto tidak ditampilkan karena tidak pernah masuk folder jaringan —
-            berkasnya hanya ada di folder Unduhan PC yang melakukan capture. Detailnya ada di tabel
-            Riwayat Registry DB di atas, bertanda{" "}
-            <span className="font-medium">Browser download</span>.
+            {rich(m.localOnlyHidden, {
+              count: localOnlyCount,
+              label: <span className="font-medium">{t(m.methodBrowserDownload)}</span>,
+            })}
           </div>
         )}
 
@@ -2163,43 +2191,39 @@ ${storage.path ?? "—"}`}
             role={captureRecordsError ? "alert" : "status"}
             className="rounded-md border border-dashed py-10 text-center text-sm text-muted-foreground"
           >
-            <p>
-              {captureRecordsError
-                ? "Galeri belum dapat dimuat. Periksa koneksi atau sesi login Anda."
-                : "Memeriksa akses dan memuat galeri…"}
-            </p>
+            <p>{captureRecordsError ? t(m.loadFailedLong) : t(m.loadingGallery)}</p>
             {captureRecordsError && (
               <button
                 className="mt-3 rounded-md border px-3 py-2"
                 onClick={() => window.location.reload()}
               >
-                Coba lagi
+                {t(c.tryAgain)}
               </button>
             )}
           </div>
         ) : galleryCards.length === 0 ? (
           <div className="rounded-md border border-dashed py-10 text-center text-sm text-muted-foreground">
-            <p>Hasil capture tersimpan akan muncul di sini.</p>
+            <p>{t(m.emptyGallery)}</p>
             <div className="mt-3 flex flex-wrap justify-center gap-2">
               <Link
                 to="/capture"
                 className="inline-flex items-center rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90"
               >
-                Buka Capture
+                {t(m.openCapture)}
               </Link>
               {isAdmin && (
                 <Link
                   to="/storage"
                   className="inline-flex items-center rounded-md border border-input bg-background px-3 py-2 text-xs font-medium text-foreground hover:bg-accent"
                 >
-                  Cek Alur Storage
+                  {t(m.checkStorageFlow)}
                 </Link>
               )}
             </div>
           </div>
         ) : filteredGallery.length === 0 ? (
           <div className="rounded-md border border-dashed py-10 text-center text-sm text-muted-foreground">
-            Tidak ada capture yang cocok dengan pencarian atau filter saat ini.
+            {t(m.noMatch)}
           </div>
         ) : viewMode === "grid" ? (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
@@ -2214,8 +2238,8 @@ ${storage.path ?? "—"}`}
                   onChange={() => toggleSelect(item.id)}
                   disabled={!item.local}
                   className="absolute left-2 top-2 z-10 h-4 w-4 rounded disabled:opacity-30"
-                  aria-label={`Pilih ${item.name}`}
-                  title={item.local ? "Pilih" : "Perbandingan butuh salinan di browser ini"}
+                  aria-label={t(m.selectNamed, { name: item.name })}
+                  title={item.local ? t(m.select) : t(m.compareNeedsLocalCopy)}
                 />
                 <QcBadge saveMethod={item.saveMethod} className="absolute right-2 top-2 z-10" />
                 {/* Pembungkus relatif sendiri: tombol layar penuh dijangkarkan
@@ -2226,7 +2250,7 @@ ${storage.path ?? "—"}`}
                   <button
                     onClick={() => void openFullscreen(item)}
                     className="block aspect-square w-full overflow-hidden bg-muted"
-                    title="Lihat layar penuh"
+                    title={t(m.viewFullscreen)}
                   >
                     <CardThumb
                       card={item}
@@ -2248,8 +2272,8 @@ ${storage.path ?? "—"}`}
                         void openFullscreen(item);
                       }}
                       className="absolute bottom-2 right-2 rounded-md bg-background/85 p-1.5 opacity-0 transition hover:bg-background focus:opacity-100 group-hover:opacity-100"
-                      title="Lihat layar penuh"
-                      aria-label={`Lihat ${item.name} layar penuh`}
+                      title={t(m.viewFullscreen)}
+                      aria-label={t(m.viewNamedFullscreen, { name: item.name })}
                     >
                       <Maximize2 className="h-3.5 w-3.5" />
                     </button>
@@ -2257,7 +2281,7 @@ ${storage.path ?? "—"}`}
                 </div>
                 <div className="p-2">
                   <div className="mb-1 flex items-center gap-1 text-[10px] text-muted-foreground">
-                    <Calendar className="h-2.5 w-2.5" /> {formatDateTime(item.createdAt)}
+                    <Calendar className="h-2.5 w-2.5" /> {formatDateTime(item.createdAt, locale)}
                   </div>
                   <div className="truncate text-xs font-medium" title={item.name}>
                     {item.name}
@@ -2273,7 +2297,7 @@ ${storage.path ?? "—"}`}
                       <User className="h-2.5 w-2.5" /> {item.capturedBy ?? "—"}
                     </div>
                     {(() => {
-                      const storage = describeStorage(item.persistedPath, item.saveMethod);
+                      const storage = describeStorage(item.persistedPath, item.saveMethod, t);
                       return (
                         <div
                           className="flex items-start gap-1"
@@ -2301,9 +2325,9 @@ ${storage.path ?? "—"}`}
                     <button
                       onClick={() => openDetail(item)}
                       className="rounded-md border border-input px-2 py-1 text-[10px] font-medium hover:bg-accent"
-                      title={`Lihat detail ${item.name}`}
+                      title={t(m.viewDetailOf, { name: item.name })}
                     >
-                      Detail
+                      {t(m.detail)}
                     </button>
                     {/* Ubah nama dan Hapus mengubah registry MSSQL, dan itu bukan
                         wewenang operator. Menyembunyikan seluruh menunya, bukan
@@ -2322,16 +2346,16 @@ ${storage.path ?? "—"}`}
                             disabled={downloadingId === item.id}
                             onClick={() => void downloadCard(item)}
                           >
-                            {downloadingId === item.id ? "Menyiapkan..." : "Unduh"}
+                            {downloadingId === item.id ? t(m.preparing) : t(m.download)}
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => askRename(item)}>
-                            Ubah nama
+                            {t(m.rename)}
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             onClick={() => askDelete(item)}
                             className="text-destructive"
                           >
-                            Hapus
+                            {t(m.delete)}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -2348,12 +2372,12 @@ ${storage.path ?? "—"}`}
                 <tr>
                   <th className="w-8 p-2"></th>
                   <th className="w-8 p-2"></th>
-                  <th className="p-2">Nama</th>
-                  <th className="p-2">Waktu Capture</th>
-                  <th className="p-2">Lokasi</th>
-                  <th className="p-2">Bin</th>
-                  <th className="p-2">Path Simpan</th>
-                  <th className="p-2">QC</th>
+                  <th className="p-2">{t(m.colName)}</th>
+                  <th className="p-2">{t(m.captureTime)}</th>
+                  <th className="p-2">{t(m.location)}</th>
+                  <th className="p-2">{t(m.colBin)}</th>
+                  <th className="p-2">{t(m.savePath)}</th>
+                  <th className="p-2">{t(m.colQc)}</th>
                   <th className="w-8 p-2"></th>
                 </tr>
               </thead>
@@ -2365,14 +2389,14 @@ ${storage.path ?? "—"}`}
                         type="checkbox"
                         checked={selectedIds.has(item.id)}
                         onChange={() => toggleSelect(item.id)}
-                        aria-label={`Pilih ${item.name}`}
+                        aria-label={t(m.selectNamed, { name: item.name })}
                       />
                     </td>
                     <td className="p-2">
                       <button
                         onClick={() => void openFullscreen(item)}
                         className="block h-10 w-10 overflow-hidden rounded bg-muted"
-                        title="Lihat layar penuh"
+                        title={t(m.viewFullscreen)}
                       >
                         <CardThumb
                           card={item}
@@ -2387,13 +2411,13 @@ ${storage.path ?? "—"}`}
                     </td>
                     <td className="max-w-xs truncate p-2 font-medium">{item.name}</td>
                     <td className="p-2 text-xs text-muted-foreground">
-                      {formatDateTime(item.createdAt)}
+                      {formatDateTime(item.createdAt, locale)}
                     </td>
                     <td className="p-2 text-xs text-muted-foreground">{item.folder || "—"}</td>
                     <td className="p-2 text-xs text-muted-foreground">{formatBin(item.bin)}</td>
                     <td className="max-w-sm p-2 text-xs text-muted-foreground">
                       {(() => {
-                        const storage = describeStorage(item.persistedPath, item.saveMethod);
+                        const storage = describeStorage(item.persistedPath, item.saveMethod, t);
                         return (
                           <span
                             className="block truncate font-mono"
@@ -2418,9 +2442,9 @@ ${storage.path ?? "—"}`}
                         <button
                           onClick={() => openDetail(item)}
                           className="rounded-md border border-input px-2 py-1 text-[10px] font-medium hover:bg-accent"
-                          title={`Lihat detail ${item.name}`}
+                          title={t(m.viewDetailOf, { name: item.name })}
                         >
-                          Detail
+                          {t(m.detail)}
                         </button>
                         {isAdmin && (
                           <DropdownMenu>
@@ -2434,16 +2458,16 @@ ${storage.path ?? "—"}`}
                                 disabled={downloadingId === item.id}
                                 onClick={() => void downloadCard(item)}
                               >
-                                {downloadingId === item.id ? "Menyiapkan..." : "Unduh"}
+                                {downloadingId === item.id ? t(m.preparing) : t(m.download)}
                               </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => askRename(item)}>
-                                Ubah nama
+                                {t(m.rename)}
                               </DropdownMenuItem>
                               <DropdownMenuItem
                                 onClick={() => askDelete(item)}
                                 className="text-destructive"
                               >
-                                Hapus
+                                {t(m.delete)}
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
@@ -2460,9 +2484,11 @@ ${storage.path ?? "—"}`}
         {filteredGallery.length > 0 && (
           <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
             <span>
-              Menampilkan {pageStart + 1} sampai{" "}
-              {Math.min(pageStart + pageSize, filteredGallery.length)} dari {filteredGallery.length}{" "}
-              gambar
+              {t(m.showingImages, {
+                from: pageStart + 1,
+                to: Math.min(pageStart + pageSize, filteredGallery.length),
+                total: filteredGallery.length,
+              })}
             </span>
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-1">
@@ -2490,10 +2516,10 @@ ${storage.path ?? "—"}`}
                 }}
                 options={GALLERY_PAGE_SIZE_OPTIONS.map((n) => ({
                   value: String(n),
-                  label: `${n} / halaman`,
+                  label: t(m.perPage, { count: n }),
                 }))}
                 className="w-32"
-                ariaLabel="Jumlah per halaman"
+                ariaLabel={t(m.perPageAria)}
               />
             </div>
           </div>
@@ -2524,12 +2550,12 @@ ${storage.path ?? "—"}`}
                 {remoteImageLoading ? (
                   <>
                     <Loader2 className="h-5 w-5 animate-spin" />
-                    <span>Mengambil gambar dari folder jaringan...</span>
+                    <span>{t(m.fetchingImage)}</span>
                   </>
                 ) : (
                   <>
                     <ImageOff className="h-5 w-5" />
-                    <span>{remoteImageError ?? "Gambar tidak tersedia."}</span>
+                    <span>{remoteImageError ?? t(m.imageUnavailable)}</span>
                   </>
                 )}
               </div>
@@ -2538,7 +2564,7 @@ ${storage.path ?? "—"}`}
               <button
                 onClick={() => void openFullscreen(detailItem)}
                 className="absolute right-2 top-2 rounded-md bg-background/80 p-1.5 hover:bg-background"
-                title="Layar penuh"
+                title={t(m.fullscreen)}
               >
                 <Maximize2 className="h-3.5 w-3.5" />
               </button>
@@ -2553,18 +2579,16 @@ ${storage.path ?? "—"}`}
                 className="absolute bottom-2 left-2 rounded-md bg-background/85 px-2 py-1 text-[11px] font-medium hover:bg-background disabled:opacity-60"
               >
                 {remoteImageLoading
-                  ? "Memuat..."
-                  : `Muat ukuran penuh${
-                      detailRecord?.fileSizeBytes
-                        ? ` (${formatBytes(detailRecord.fileSizeBytes)})`
-                        : ""
-                    }`}
+                  ? t(m.loading)
+                  : detailRecord?.fileSizeBytes
+                    ? t(m.loadFullSizeWithSize, { size: formatBytes(detailRecord.fileSizeBytes) })
+                    : t(m.loadFullSize)}
               </button>
             )}
             <button
               onClick={() => showDetailAt(detailIndex - 1)}
               disabled={detailIndex <= 0}
-              title="Gambar sebelumnya (panah kiri)"
+              title={t(m.previousImage)}
               className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-background/80 p-1.5 hover:bg-background disabled:pointer-events-none disabled:opacity-0"
             >
               <ChevronLeft className="h-4 w-4" />
@@ -2572,7 +2596,7 @@ ${storage.path ?? "—"}`}
             <button
               onClick={() => showDetailAt(detailIndex + 1)}
               disabled={detailIndex < 0 || detailIndex >= filteredGallery.length - 1}
-              title="Gambar berikutnya (panah kanan)"
+              title={t(m.nextImage)}
               className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-background/80 p-1.5 hover:bg-background disabled:pointer-events-none disabled:opacity-0"
             >
               <ChevronRight className="h-4 w-4" />
@@ -2580,52 +2604,56 @@ ${storage.path ?? "—"}`}
           </div>
           <div className="mb-4 text-center text-[11px] text-muted-foreground">
             {detailIndex >= 0
-              ? `${detailIndex + 1} dari ${filteredGallery.length} · panah kiri/kanan untuk berpindah`
-              : "Gambar ini sudah tidak ada di daftar yang sedang difilter."}
+              ? t(m.positionHint, { index: detailIndex + 1, total: filteredGallery.length })
+              : t(m.notInFilteredList)}
           </div>
 
           <div className="mb-4">
             <div className="mb-2 flex items-center justify-between">
-              <span className="text-xs font-semibold text-muted-foreground">Metadata</span>
+              <span className="text-xs font-semibold text-muted-foreground">{t(m.metadata)}</span>
               {isAdmin && (
                 <button
                   onClick={() => askRename(detailItem)}
                   className="inline-flex items-center gap-1 rounded-md border border-input px-2 py-1 text-[11px] hover:bg-accent disabled:opacity-40"
-                  title="Ubah nama berkas, termasuk berkasnya di folder jaringan"
+                  title={t(m.renameFileTitle)}
                 >
-                  <Pencil className="h-3 w-3" /> Edit
+                  <Pencil className="h-3 w-3" /> {t(m.edit)}
                 </button>
               )}
             </div>
             <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs">
-              <dt className="text-muted-foreground">Lokasi</dt>
+              <dt className="text-muted-foreground">{t(m.location)}</dt>
               <dd className="text-right font-medium">{detailItem.folder || "—"}</dd>
-              <dt className="text-muted-foreground">Source (Bin)</dt>
+              <dt className="text-muted-foreground">{t(m.sourceBinDetail)}</dt>
               <dd className="text-right font-medium">{formatBin(detailItem.bin)}</dd>
-              <dt className="text-muted-foreground">Waktu Capture</dt>
-              <dd className="text-right font-medium">{formatDateTime(detailItem.createdAt)}</dd>
-              <dt className="text-muted-foreground">Operator</dt>
+              <dt className="text-muted-foreground">{t(m.captureTime)}</dt>
+              <dd className="text-right font-medium">
+                {formatDateTime(detailItem.createdAt, locale)}
+              </dd>
+              <dt className="text-muted-foreground">{t(m.operator)}</dt>
               <dd className="text-right font-medium">
                 {detailRecord?.capturedBy ?? detailItem.capturedBy ?? "—"}
               </dd>
-              <dt className="text-muted-foreground">Status DB</dt>
+              <dt className="text-muted-foreground">{t(m.dbStatus)}</dt>
               <dd className="text-right font-medium">
-                {detailRecord ? formatCaptureRecordStatus(detailRecord.status) : "Belum tercatat"}
+                {detailRecord
+                  ? formatCaptureRecordStatus(detailRecord.status, t)
+                  : t(m.notRecorded)}
               </dd>
-              <dt className="text-muted-foreground">Metode Simpan</dt>
+              <dt className="text-muted-foreground">{t(m.saveMethod)}</dt>
               <dd className="text-right font-medium">
-                {detailRecord ? formatSaveMethodLabel(detailRecord.saveMethod) : "—"}
+                {detailRecord ? formatSaveMethodLabel(detailRecord.saveMethod, t) : "—"}
               </dd>
-              <dt className="text-muted-foreground">Kamera</dt>
+              <dt className="text-muted-foreground">{t(m.camera)}</dt>
               <dd className="text-right font-medium">{deviceStatus?.camera?.model ?? "—"}</dd>
-              <dt className="text-muted-foreground">Mini PC</dt>
+              <dt className="text-muted-foreground">{t(m.miniPc)}</dt>
               <dd className="text-right font-medium">
                 {detailRecord?.deviceName ??
                   detailRecord?.deviceCode ??
                   deviceStatus?.deviceId ??
                   "—"}
               </dd>
-              <dt className="text-muted-foreground">Ukuran File</dt>
+              <dt className="text-muted-foreground">{t(m.fileSize)}</dt>
               <dd className="text-right font-medium">
                 {detailItem.local
                   ? formatBytes(detailItem.local.blob.size)
@@ -2633,20 +2661,21 @@ ${storage.path ?? "—"}`}
                     ? formatBytes(detailRecord.fileSizeBytes)
                     : "—"}
               </dd>
-              <dt className="text-muted-foreground">Tersimpan di</dt>
+              <dt className="text-muted-foreground">{t(m.storedIn)}</dt>
               <dd className="text-right font-medium">
                 {
                   describeStorage(
                     detailRecord?.filePath ?? detailItem.persistedPath,
                     detailRecord?.saveMethod ?? detailItem.saveMethod,
+                    t,
                   ).label
                 }
               </dd>
-              <dt className="text-muted-foreground">Ukuran Gambar</dt>
+              <dt className="text-muted-foreground">{t(m.imageSize)}</dt>
               <dd className="text-right font-medium">
                 {detailDimensions ? `${detailDimensions.width} x ${detailDimensions.height}` : "—"}
               </dd>
-              <dt className="text-muted-foreground">Format File</dt>
+              <dt className="text-muted-foreground">{t(m.fileFormat)}</dt>
               <dd className="text-right font-medium">{getFileFormat(detailItem.name)}</dd>
             </dl>
 
@@ -2654,19 +2683,20 @@ ${storage.path ?? "—"}`}
               const storage = describeStorage(
                 detailRecord?.filePath ?? detailItem.persistedPath,
                 detailRecord?.saveMethod ?? detailItem.saveMethod,
+                t,
               );
               if (!storage.path) return null;
               return (
                 <div className="mt-3">
                   <div className="mb-1 flex items-center justify-between gap-2">
                     <span className="text-[11px] font-semibold text-muted-foreground">
-                      Path lengkap
+                      {t(m.fullPath)}
                     </span>
                     <button
                       onClick={() => void navigator.clipboard?.writeText(storage.path ?? "")}
                       className="inline-flex items-center gap-1 rounded-md border border-input px-2 py-0.5 text-[11px] hover:bg-accent"
                     >
-                      Salin
+                      {t(m.copy)}
                     </button>
                   </div>
                   <p
@@ -2680,7 +2710,7 @@ ${storage.path ?? "—"}`}
                   </p>
                   {!storage.network && (
                     <p className="mt-1 text-[11px] text-muted-foreground">
-                      Belum berada di folder jaringan. Pindahkan manual bila diperlukan.
+                      {t(m.notOnNetworkFolder)}
                     </p>
                   )}
                 </div>
@@ -2691,25 +2721,25 @@ ${storage.path ?? "—"}`}
           <div className="mb-4">
             <div className="mb-2 flex items-center justify-between">
               <span className="text-xs font-semibold text-muted-foreground">
-                Quality Check (QC)
+                {t(m.qualityCheck)}
               </span>
               <QcBadge />
             </div>
             <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px]">
               <div className="flex justify-between">
-                <dt className="text-muted-foreground">Focus Score</dt>
+                <dt className="text-muted-foreground">{t(m.focusScore)}</dt>
                 <dd className="font-medium">—</dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-muted-foreground">Kebersihan Lensa</dt>
+                <dt className="text-muted-foreground">{t(m.lensCleanliness)}</dt>
                 <dd className="font-medium">—</dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-muted-foreground">Exposure</dt>
+                <dt className="text-muted-foreground">{t(m.exposure)}</dt>
                 <dd className="font-medium">—</dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-muted-foreground">Resolusi</dt>
+                <dt className="text-muted-foreground">{t(m.resolution)}</dt>
                 <dd className="font-medium">
                   {detailDimensions
                     ? `${detailDimensions.width} x ${detailDimensions.height}`
@@ -2717,11 +2747,11 @@ ${storage.path ?? "—"}`}
                 </dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-muted-foreground">Pencahayaan</dt>
+                <dt className="text-muted-foreground">{t(m.lighting)}</dt>
                 <dd className="font-medium">—</dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-muted-foreground">Level Blur</dt>
+                <dt className="text-muted-foreground">{t(m.blurLevel)}</dt>
                 <dd className="font-medium">—</dd>
               </div>
             </dl>
@@ -2729,13 +2759,13 @@ ${storage.path ?? "—"}`}
 
           <div className="mb-4">
             <span className="mb-2 block text-xs font-semibold text-muted-foreground">
-              Histogram
+              {t(m.histogram)}
             </span>
             {detailHistogram ? (
               <HistogramChart histogram={detailHistogram} />
             ) : (
               <div className="flex h-24 items-center justify-center text-xs text-muted-foreground">
-                Menghitung...
+                {t(m.calculating)}
               </div>
             )}
           </div>
@@ -2745,26 +2775,22 @@ ${storage.path ?? "—"}`}
               disabled={downloadingId === detailItem.id}
               onClick={() => void downloadCard(detailItem)}
               className="flex-1 rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
-              title={
-                detailItem.local
-                  ? "Unduh salinan lokal"
-                  : "Ditarik dari folder jaringan -- berkasnya berukuran penuh"
-              }
+              title={detailItem.local ? t(m.downloadLocalCopy) : t(m.downloadFromNetwork)}
             >
-              Unduh
+              {t(m.download)}
             </button>
             <button
               onClick={() => toggleSelect(detailItem.id)}
               className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-xs font-medium hover:bg-accent"
             >
-              {selectedIds.has(detailItem.id) ? "Batalkan pilih" : "Bandingkan"}
+              {selectedIds.has(detailItem.id) ? t(m.deselect) : t(m.compare)}
             </button>
             {isAdmin && (
               <button
                 onClick={() => askDelete(detailItem)}
                 className="flex-1 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive hover:bg-destructive/20 disabled:opacity-40"
               >
-                Hapus
+                {t(m.delete)}
               </button>
             )}
           </div>
@@ -2780,7 +2806,7 @@ ${storage.path ?? "—"}`}
           <img src={fullscreenUrl} alt="" className="max-h-full max-w-full object-contain" />
           {fullscreenUpgrading ? (
             <span className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-md bg-background/85 px-3 py-1.5 text-xs font-medium">
-              Memuat resolusi penuh...
+              {t(m.loadingFullResolution)}
             </span>
           ) : (
             // Mode hemat tanpa jalan keluar sama saja melumpuhkan galeri: orang
@@ -2793,9 +2819,9 @@ ${storage.path ?? "—"}`}
                   void upgradeFullscreenToHd();
                 }}
                 className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-md bg-background/85 px-3 py-1.5 text-xs font-medium hover:bg-background"
-                title="Tarik berkas asli dari folder jaringan (~11 MB)"
+                title={t(m.loadHdTitle)}
               >
-                Muat HD
+                {t(m.loadHd)}
               </button>
             )
           )}
@@ -2813,7 +2839,7 @@ ${storage.path ?? "—"}`}
               showDetailAt(detailIndex - 1);
             }}
             disabled={detailIndex <= 0}
-            title="Gambar sebelumnya (panah kiri)"
+            title={t(m.previousImage)}
             className="absolute left-4 top-1/2 -translate-y-1/2 rounded-full bg-background/80 p-2 hover:bg-background disabled:pointer-events-none disabled:opacity-0"
           >
             <ChevronLeft className="h-5 w-5" />
@@ -2824,7 +2850,7 @@ ${storage.path ?? "—"}`}
               showDetailAt(detailIndex + 1);
             }}
             disabled={detailIndex < 0 || detailIndex >= filteredGallery.length - 1}
-            title="Gambar berikutnya (panah kanan)"
+            title={t(m.nextImage)}
             className="absolute right-4 top-1/2 -translate-y-1/2 rounded-full bg-background/80 p-2 hover:bg-background disabled:pointer-events-none disabled:opacity-0"
           >
             <ChevronRight className="h-5 w-5" />
@@ -2843,7 +2869,9 @@ ${storage.path ?? "—"}`}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Bandingkan ({selectedItems.length})</h2>
+              <h2 className="text-lg font-semibold">
+                {t(m.compareCount, { count: selectedItems.length })}
+              </h2>
               <button onClick={() => setCompareOpen(false)} className="rounded p-1 hover:bg-accent">
                 <X className="h-4 w-4" />
               </button>
@@ -2886,22 +2914,22 @@ ${storage.path ?? "—"}`}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Hapus capture ini?</AlertDialogTitle>
+            <AlertDialogTitle>{t(m.deleteTitle)}</AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-3 text-sm">
                 <p className="font-medium text-foreground">{pendingDelete?.name}</p>
                 {pendingDelete && sharePathOf(pendingDelete) ? (
                   <div className="space-y-1">
-                    <p>Berkasnya ikut dibuang dari folder jaringan:</p>
+                    <p>{t(m.deleteShareFile)}</p>
                     <code className="block overflow-x-auto rounded-md border bg-muted px-2 py-1.5 text-[11px] leading-relaxed">
                       {sharePathOf(pendingDelete)}
                     </code>
                   </div>
                 ) : (
-                  <p>Capture ini tidak punya berkas di folder jaringan.</p>
+                  <p>{t(m.deleteNoShareFile)}</p>
                 )}
                 <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-[12px] text-destructive">
-                  Tidak ada recycle bin di folder jaringan. Penghapusan ini permanen.
+                  {t(m.deletePermanentWarning)}
                 </p>
                 {dialogError && (
                   <p className="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-[12px] font-medium text-destructive">
@@ -2912,7 +2940,7 @@ ${storage.path ?? "—"}`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={dialogBusy}>Batal</AlertDialogCancel>
+            <AlertDialogCancel disabled={dialogBusy}>{t(m.cancel)}</AlertDialogCancel>
             <AlertDialogAction
               disabled={dialogBusy}
               onClick={(event) => {
@@ -2924,7 +2952,7 @@ ${storage.path ?? "—"}`}
               }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {dialogBusy ? "Menghapus..." : "Hapus permanen"}
+              {dialogBusy ? t(m.deleting) : t(m.deletePermanently)}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -2944,12 +2972,10 @@ ${storage.path ?? "—"}`}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Ubah nama berkas</AlertDialogTitle>
+            <AlertDialogTitle>{t(m.renameDialogTitle)}</AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-3 text-sm">
-                <p>
-                  Nama berkas di folder jaringan ikut berubah, bukan hanya catatannya di registry.
-                </p>
+                <p>{t(m.renameDialogBody)}</p>
                 {pendingRename && sharePathOf(pendingRename) && (
                   <code className="block overflow-x-auto rounded-md border bg-muted px-2 py-1.5 text-[11px] leading-relaxed">
                     {sharePathOf(pendingRename)}
@@ -2960,7 +2986,7 @@ ${storage.path ?? "—"}`}
           </AlertDialogHeader>
           <div className="space-y-2">
             <label htmlFor="rename-input" className="text-xs font-medium text-muted-foreground">
-              Nama baru (sertakan ekstensi)
+              {t(m.newNameLabel)}
             </label>
             <input
               id="rename-input"
@@ -2977,7 +3003,7 @@ ${storage.path ?? "—"}`}
               className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
             />
             <p className="text-[11px] text-muted-foreground">
-              Tidak boleh memuat / \ : * ? &quot; &lt; &gt; |
+              {t(m.forbiddenChars, { chars: '/ \\ : * ? " < > |' })}
             </p>
             {dialogError && (
               <p className="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-[12px] font-medium text-destructive">
@@ -2986,7 +3012,7 @@ ${storage.path ?? "—"}`}
             )}
           </div>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={dialogBusy}>Batal</AlertDialogCancel>
+            <AlertDialogCancel disabled={dialogBusy}>{t(m.cancel)}</AlertDialogCancel>
             <AlertDialogAction
               disabled={dialogBusy || renameValue.trim() === ""}
               onClick={(event) => {
@@ -2994,7 +3020,7 @@ ${storage.path ?? "—"}`}
                 void confirmRename();
               }}
             >
-              {dialogBusy ? "Menyimpan..." : "Simpan nama"}
+              {dialogBusy ? t(m.saving) : t(m.saveName)}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
