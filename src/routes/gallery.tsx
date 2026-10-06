@@ -425,6 +425,9 @@ function GalleryPage() {
 
 function GalleryContent() {
   const isAdmin = useIsAdmin();
+  // Viewer hanya melihat fotonya. Tabel riwayat registry -- path simpan,
+  // metode, device -- adalah bahan kerja operator dan admin, bukan miliknya.
+  const isViewer = useSessionUser()?.role === "viewer";
   const t = useT();
   const rich = useRichT();
   const locale = useLocale();
@@ -1813,134 +1816,136 @@ function GalleryContent() {
           </section>
         )}
 
-        <section className="mb-4 rounded-xl border bg-card shadow-sm p-4">
-          <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                {t(m.registryHistory)}
-              </div>
-              {/* Penjelasan sumber data hanya berarti bagi yang mengurus
+        {!isViewer && (
+          <section className="mb-4 rounded-xl border bg-card shadow-sm p-4">
+            <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  {t(m.registryHistory)}
+                </div>
+                {/* Penjelasan sumber data hanya berarti bagi yang mengurus
                   sistemnya. Bagi operator, "MSSQL" dan "browser gallery lokal"
                   adalah istilah yang tidak menuntun ke tindakan apa pun. */}
-              {isAdmin && (
-                <p className="mt-1 text-sm text-muted-foreground">{t(m.registryHistoryHint)}</p>
-              )}
-            </div>
-            <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-medium text-primary">
-              {t(m.recordsMatchFilter, { count: filteredCaptureRecords.length })}
-            </span>
-          </div>
-
-          {captureRecordsError ? (
-            <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-3 text-sm text-amber-700">
-              {t(m.recordsLoadFailed, { reason: captureRecordsError })}
-            </div>
-          ) : recentCaptureRecords.length === 0 ? (
-            <div className="rounded-md border border-dashed py-6 text-center text-sm text-muted-foreground">
-              {t(m.recordsEmpty)}
-            </div>
-          ) : (
-            <div className="overflow-hidden rounded-md border">
-              <table className="w-full text-sm">
-                <thead className="bg-muted text-left text-xs text-muted-foreground">
-                  <tr>
-                    <th className="p-2">{t(m.colFileName)}</th>
-                    <th className="p-2">{t(m.colTime)}</th>
-                    <th className="p-2">{t(m.location)}</th>
-                    <th className="p-2">{t(m.colBin)}</th>
-                    <th className="p-2">{t(m.colSession)}</th>
-                    <th className="p-2">{t(m.operator)}</th>
-                    <th className="p-2">{t(m.colStatus)}</th>
-                    <th className="p-2">{t(m.colMethod)}</th>
-                    <th className="p-2">{t(m.savePath)}</th>
-                    <th className="p-2">{t(m.colDevice)}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recentCaptureRecords.map((record) => (
-                    <tr key={record.id} className="border-t">
-                      <td className="max-w-xs truncate p-2 font-medium" title={record.fileName}>
-                        {record.fileName}
-                      </td>
-                      <td className="p-2 text-xs text-muted-foreground">
-                        {formatDateTime(new Date(record.capturedAt).getTime(), locale)}
-                      </td>
-                      <td className="p-2 text-xs text-muted-foreground">{record.plant ?? "—"}</td>
-                      <td className="p-2 text-xs text-muted-foreground">
-                        {formatBin(record.captureBin ?? undefined)}
-                      </td>
-                      <td className="p-2 text-xs text-muted-foreground">
-                        {record.captureSession ?? "—"}
-                        {record.captureTrack === "trial" && (
-                          <span className="ml-1 rounded bg-amber-500/15 px-1 py-0.5 text-[10px] font-medium text-amber-700">
-                            {t(m.trackTrialShort)}
-                          </span>
-                        )}
-                      </td>
-                      <td className="p-2 text-xs text-muted-foreground">
-                        {record.capturedBy ?? "—"}
-                      </td>
-                      <td className="p-2 text-xs text-muted-foreground">
-                        {formatCaptureRecordStatus(record.status, t)}
-                      </td>
-                      <td className="p-2 text-xs text-muted-foreground">
-                        {formatSaveMethodLabel(record.saveMethod, t, record.origin)}
-                      </td>
-                      <td className="max-w-sm p-2 text-xs text-muted-foreground">
-                        {(() => {
-                          const storage = describeStorage(record.filePath, record.saveMethod, t);
-                          return (
-                            <span
-                              className="block truncate font-mono"
-                              title={`${storage.label}
-${storage.path ?? "—"}`}
-                            >
-                              {storage.path ?? "—"}
-                            </span>
-                          );
-                        })()}
-                      </td>
-                      <td className="p-2 text-xs text-muted-foreground">
-                        {record.deviceName ?? record.deviceCode ?? "—"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {filteredCaptureRecords.length > RECORDS_PER_PAGE && (
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-              <span>
-                {t(m.showingRecords, {
-                  from: recordStart + 1,
-                  to: Math.min(recordStart + RECORDS_PER_PAGE, filteredCaptureRecords.length),
-                  total: filteredCaptureRecords.length,
-                })}
-              </span>
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => setRecordPage((p) => Math.max(1, p - 1))}
-                  disabled={clampedRecordPage <= 1}
-                  className="rounded-md border border-input bg-background p-1.5 hover:bg-accent disabled:opacity-40"
-                >
-                  <ChevronLeft className="h-3.5 w-3.5" />
-                </button>
-                <span className="rounded-md border border-input px-2 py-1">
-                  {clampedRecordPage} / {recordTotalPages}
-                </span>
-                <button
-                  onClick={() => setRecordPage((p) => Math.min(recordTotalPages, p + 1))}
-                  disabled={clampedRecordPage >= recordTotalPages}
-                  className="rounded-md border border-input bg-background p-1.5 hover:bg-accent disabled:opacity-40"
-                >
-                  <ChevronRight className="h-3.5 w-3.5" />
-                </button>
+                {isAdmin && (
+                  <p className="mt-1 text-sm text-muted-foreground">{t(m.registryHistoryHint)}</p>
+                )}
               </div>
+              <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-medium text-primary">
+                {t(m.recordsMatchFilter, { count: filteredCaptureRecords.length })}
+              </span>
             </div>
-          )}
-        </section>
+
+            {captureRecordsError ? (
+              <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-3 text-sm text-amber-700">
+                {t(m.recordsLoadFailed, { reason: captureRecordsError })}
+              </div>
+            ) : recentCaptureRecords.length === 0 ? (
+              <div className="rounded-md border border-dashed py-6 text-center text-sm text-muted-foreground">
+                {t(m.recordsEmpty)}
+              </div>
+            ) : (
+              <div className="overflow-hidden rounded-md border">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted text-left text-xs text-muted-foreground">
+                    <tr>
+                      <th className="p-2">{t(m.colFileName)}</th>
+                      <th className="p-2">{t(m.colTime)}</th>
+                      <th className="p-2">{t(m.location)}</th>
+                      <th className="p-2">{t(m.colBin)}</th>
+                      <th className="p-2">{t(m.colSession)}</th>
+                      <th className="p-2">{t(m.operator)}</th>
+                      <th className="p-2">{t(m.colStatus)}</th>
+                      <th className="p-2">{t(m.colMethod)}</th>
+                      <th className="p-2">{t(m.savePath)}</th>
+                      <th className="p-2">{t(m.colDevice)}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentCaptureRecords.map((record) => (
+                      <tr key={record.id} className="border-t">
+                        <td className="max-w-xs truncate p-2 font-medium" title={record.fileName}>
+                          {record.fileName}
+                        </td>
+                        <td className="p-2 text-xs text-muted-foreground">
+                          {formatDateTime(new Date(record.capturedAt).getTime(), locale)}
+                        </td>
+                        <td className="p-2 text-xs text-muted-foreground">{record.plant ?? "—"}</td>
+                        <td className="p-2 text-xs text-muted-foreground">
+                          {formatBin(record.captureBin ?? undefined)}
+                        </td>
+                        <td className="p-2 text-xs text-muted-foreground">
+                          {record.captureSession ?? "—"}
+                          {record.captureTrack === "trial" && (
+                            <span className="ml-1 rounded bg-amber-500/15 px-1 py-0.5 text-[10px] font-medium text-amber-700">
+                              {t(m.trackTrialShort)}
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-2 text-xs text-muted-foreground">
+                          {record.capturedBy ?? "—"}
+                        </td>
+                        <td className="p-2 text-xs text-muted-foreground">
+                          {formatCaptureRecordStatus(record.status, t)}
+                        </td>
+                        <td className="p-2 text-xs text-muted-foreground">
+                          {formatSaveMethodLabel(record.saveMethod, t, record.origin)}
+                        </td>
+                        <td className="max-w-sm p-2 text-xs text-muted-foreground">
+                          {(() => {
+                            const storage = describeStorage(record.filePath, record.saveMethod, t);
+                            return (
+                              <span
+                                className="block truncate font-mono"
+                                title={`${storage.label}
+${storage.path ?? "—"}`}
+                              >
+                                {storage.path ?? "—"}
+                              </span>
+                            );
+                          })()}
+                        </td>
+                        <td className="p-2 text-xs text-muted-foreground">
+                          {record.deviceName ?? record.deviceCode ?? "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {filteredCaptureRecords.length > RECORDS_PER_PAGE && (
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                <span>
+                  {t(m.showingRecords, {
+                    from: recordStart + 1,
+                    to: Math.min(recordStart + RECORDS_PER_PAGE, filteredCaptureRecords.length),
+                    total: filteredCaptureRecords.length,
+                  })}
+                </span>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setRecordPage((p) => Math.max(1, p - 1))}
+                    disabled={clampedRecordPage <= 1}
+                    className="rounded-md border border-input bg-background p-1.5 hover:bg-accent disabled:opacity-40"
+                  >
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                  </button>
+                  <span className="rounded-md border border-input px-2 py-1">
+                    {clampedRecordPage} / {recordTotalPages}
+                  </span>
+                  <button
+                    onClick={() => setRecordPage((p) => Math.min(recordTotalPages, p + 1))}
+                    disabled={clampedRecordPage >= recordTotalPages}
+                    className="rounded-md border border-input bg-background p-1.5 hover:bg-accent disabled:opacity-40"
+                  >
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </section>
+        )}
 
         <section className="mb-4 rounded-xl border bg-card shadow-sm p-4">
           <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
@@ -2307,8 +2312,10 @@ ${storage.path ?? "—"}`}
 
         {/* Foto yang disembunyikan tetap diumumkan jumlahnya. Menyembunyikan
             tanpa memberi tahu akan membuat operator mengira capture-nya tidak
-            pernah terjadi -- padahal justru foto inilah yang perlu tindakan. */}
-        {localOnlyCount > 0 && (
+            pernah terjadi -- padahal justru foto inilah yang perlu tindakan.
+            Tidak untuk Viewer: pemberitahuannya menunjuk ke tabel riwayat yang
+            tidak ia lihat, dan tindak lanjutnya bukan urusannya. */}
+        {localOnlyCount > 0 && !isViewer && (
           <div className="mb-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-800">
             {rich(m.localOnlyHidden, {
               count: localOnlyCount,
