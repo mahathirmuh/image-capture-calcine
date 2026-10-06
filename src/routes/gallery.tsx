@@ -483,6 +483,7 @@ function GalleryContent() {
   const fullscreenOpenRef = useRef(false);
   // Kartu yang unduhannya sedang disiapkan dari folder jaringan.
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [bulkDownloading, setBulkDownloading] = useState(false);
 
   // Konfirmasi hapus & ubah nama dipegang di state, bukan lewat confirm()/
   // prompt() bawaan browser. Dialog bawaan itu menempel di tepi atas jendela,
@@ -896,13 +897,13 @@ function GalleryContent() {
    * bertanda tangan lalu diserahkan sebagai unduhan. Ini memang menarik ~11 MB
    * -- tapi itu memang yang diminta orang saat menekan "Unduh".
    */
-  async function downloadCard(card: GalleryCard) {
+  async function downloadCard(card: GalleryCard, quiet = false): Promise<boolean> {
     if (card.local) {
       downloadItem(card.local);
-      return;
+      return true;
     }
     const recordId = card.captureRecordId;
-    if (recordId == null) return;
+    if (recordId == null) return false;
     setDownloadingId(card.id);
     try {
       const cached = remoteImageUrls[recordId];
@@ -910,13 +911,13 @@ function GalleryContent() {
         ? { ok: true as const, url: cached }
         : await createCaptureMediaUrl({ data: { recordId } });
       if (!signed.ok) {
-        alert(t(m.downloadPrepareFailed, { reason: failureText(t, signed) }));
-        return;
+        if (!quiet) alert(t(m.downloadPrepareFailed, { reason: failureText(t, signed) }));
+        return false;
       }
       const response = await fetch(signed.url);
       if (!response.ok) {
-        alert(t(m.downloadFetchFailed));
-        return;
+        if (!quiet) alert(t(m.downloadFetchFailed));
+        return false;
       }
       // Lewat blob, bukan menautkan URL bertanda tangan langsung: server
       // melayaninya sebagai image/jpeg, jadi tautan biasa akan MENAMPILKAN
@@ -927,16 +928,39 @@ function GalleryContent() {
       anchor.download = card.name;
       anchor.click();
       URL.revokeObjectURL(objectUrl);
+      return true;
     } catch {
-      alert(t(m.downloadFailed));
+      if (!quiet) alert(t(m.downloadFailed));
+      return false;
     } finally {
       setDownloadingId(null);
     }
   }
 
-  function downloadSelected() {
-    for (const item of visibleGallery) {
-      if (selectedIds.has(item.id)) downloadItem(item);
+  /**
+   * Unduh semua kartu yang dipilih.
+   *
+   * Dulu ini hanya menyapu salinan lokal di IndexedDB, jadi bagi siapa pun
+   * yang tidak meng-capture di browser ini -- Viewer selalu, Super Admin
+   * hampir selalu -- tombolnya tidak melakukan apa-apa. Sekarang tiap kartu
+   * lewat downloadCard(), satu per satu: berkasnya ~11 MB, dan menariknya
+   * serentak hanya membuat semuanya lambat sekaligus.
+   */
+  async function downloadSelected() {
+    if (bulkDownloading) return;
+    const cards = galleryCards.filter((card) => selectedIds.has(card.id));
+    if (cards.length === 0) return;
+    setBulkDownloading(true);
+    try {
+      let failed = 0;
+      for (const card of cards) {
+        if (!(await downloadCard(card, true))) failed += 1;
+      }
+      if (failed > 0) {
+        alert(t(m.downloadSelectionFailed, { failed, total: cards.length }));
+      }
+    } finally {
+      setBulkDownloading(false);
     }
   }
 
@@ -1552,11 +1576,11 @@ function GalleryContent() {
               <Columns2 className="h-4 w-4" /> {t(m.compare)}
             </button>
             <button
-              onClick={downloadSelected}
-              disabled={selectedIds.size === 0}
+              onClick={() => void downloadSelected()}
+              disabled={selectedIds.size === 0 || bulkDownloading}
               className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
             >
-              <Download className="h-4 w-4" /> {t(m.download)}
+              <Download className="h-4 w-4" /> {bulkDownloading ? t(m.preparing) : t(m.download)}
             </button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -2074,11 +2098,12 @@ ${storage.path ?? "—"}`}
                 {t(m.compareSelection)}
               </button>
               <button
-                onClick={downloadSelected}
-                className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-2 text-xs font-medium hover:bg-accent"
+                onClick={() => void downloadSelected()}
+                disabled={bulkDownloading}
+                className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-2 text-xs font-medium hover:bg-accent disabled:opacity-50"
               >
                 <Download className="h-3.5 w-3.5" />
-                {t(m.downloadSelection)}
+                {bulkDownloading ? t(m.preparing) : t(m.downloadSelection)}
               </button>
               <button
                 onClick={() => setSelectedIds(new Set())}
@@ -2333,7 +2358,20 @@ ${storage.path ?? "—"}`}
                         wewenang operator. Menyembunyikan seluruh menunya, bukan
                         menonaktifkan butirnya satu-satu: tombol mati yang tetap
                         terlihat mengundang orang mencobanya lalu bertanya kenapa
-                        tidak bisa. Unduh tetap terjangkau dari panel detail. */}
+                        tidak bisa. Tanpa menu itu, Unduh tampil sebagai tombol
+                        sendiri supaya Operator dan Viewer tidak perlu membuka
+                        panel detail dulu. */}
+                    {!isAdmin && (
+                      <button
+                        disabled={downloadingId === item.id}
+                        onClick={() => void downloadCard(item)}
+                        className="rounded p-1 hover:bg-accent disabled:opacity-40"
+                        title={downloadingId === item.id ? t(m.preparing) : t(m.download)}
+                        aria-label={t(m.download)}
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                     {isAdmin && (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -2446,6 +2484,17 @@ ${storage.path ?? "—"}`}
                         >
                           {t(m.detail)}
                         </button>
+                        {!isAdmin && (
+                          <button
+                            disabled={downloadingId === item.id}
+                            onClick={() => void downloadCard(item)}
+                            className="rounded p-1 hover:bg-accent disabled:opacity-40"
+                            title={downloadingId === item.id ? t(m.preparing) : t(m.download)}
+                            aria-label={t(m.download)}
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                         {isAdmin && (
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>

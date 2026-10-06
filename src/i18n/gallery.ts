@@ -551,6 +551,11 @@ export const galleryMessages = defineMessages({
     en: "The file could not be fetched from the network folder.",
     zh: "无法从网络文件夹获取文件。",
   },
+  downloadSelectionFailed: {
+    id: "{failed} dari {total} foto gagal diunduh dari folder jaringan.",
+    en: "{failed} of {total} photos could not be downloaded from the network folder.",
+    zh: "{total} 张照片中有 {failed} 张无法从网络文件夹下载。",
+  },
   downloadFailed: {
     id: "Gagal mengunduh dari folder jaringan.",
     en: "Could not download from the network folder.",
