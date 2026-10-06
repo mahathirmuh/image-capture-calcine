@@ -65,8 +65,6 @@ export type GalleryViewState = {
   // operator tanpa memberi apa pun -- teks yang dilihat operator diturunkan
   // dari plantnya lewat toBinLabel(), bukan dari nilai ini.
   filterBin: "" | "BIN1" | "BIN2";
-  // Label sesi sampling ("02.00"), kosong berarti semua sesi.
-  filterSession: string;
   // Jalur jadwal: "regular" = sesi per 3 jam, "trial" = sesi per 2 jam yang
   // disimpan di folder "<Plant> Trial". Kosong berarti keduanya.
   filterTrack: "" | "regular" | "trial";
@@ -80,7 +78,6 @@ export const DEFAULT_GALLERY_VIEW_STATE: GalleryViewState = {
   filterDate: "",
   filterLocation: "",
   filterBin: "",
-  filterSession: "",
   filterTrack: "",
 };
 
@@ -161,9 +158,12 @@ const galleryViewStateSchema = z.object({
   filterDate: z.string(),
   filterLocation: z.string(),
   filterBin: z.enum(["", "BIN1", "BIN2"]),
-  // Bawaan kosong: preferensi yang tersimpan sebelum filter sesi ada tidak
+  // Bawaan kosong: preferensi yang tersimpan sebelum filter ini ada tidak
   // punya kunci ini, dan tidak boleh gugur seluruhnya hanya karena itu.
-  filterSession: z.string().default(""),
+  //
+  // Filter jam sesi ("filterSession") sempat ada sebentar lalu dicabut. Kunci
+  // itu mungkin masih tersimpan di browser; zod membuang kunci yang tidak
+  // dikenal, jadi preferensi lama tetap terbaca tanpa perlakuan khusus.
   filterTrack: z.enum(["", "regular", "trial"]).default(""),
 });
 

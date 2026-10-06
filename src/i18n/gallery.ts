@@ -233,7 +233,6 @@ export const galleryMessages = defineMessages({
   filterSlotAria: { id: "Filter slot", en: "Slot filter", zh: "槽位筛选" },
   date: { id: "Tanggal", en: "Date", zh: "日期" },
   filterDateAria: { id: "Filter tanggal", en: "Date filter", zh: "日期筛选" },
-  allSessions: { id: "Semua Sesi", en: "All Sessions", zh: "全部场次" },
   sessionType: { id: "Jenis Sesi", en: "Session Type", zh: "场次类别" },
   allSessionTypes: { id: "Semua Jenis Sesi", en: "All Session Types", zh: "全部类别" },
   trackRegular: { id: "Sesi per 3 jam", en: "Session every 3 hours", zh: "每 3 小时一场" },
@@ -244,7 +243,6 @@ export const galleryMessages = defineMessages({
   },
   trackTrialShort: { id: "Trial", en: "Trial", zh: "试行" },
   filterTrackAria: { id: "Filter jenis sesi", en: "Session type filter", zh: "场次类别筛选" },
-  filterSessionAria: { id: "Filter sesi", en: "Session filter", zh: "场次筛选" },
   shift: { id: "Shift", en: "Shift", zh: "班次" },
   allShifts: { id: "Semua Shift", en: "All Shifts", zh: "全部班次" },
   filterShiftAria: {
@@ -273,7 +271,6 @@ export const galleryMessages = defineMessages({
   activeFilters: { id: "Filter Aktif", en: "Active Filters", zh: "当前筛选" },
   chipLocation: { id: "Lokasi: {value}", en: "Location: {value}", zh: "位置：{value}" },
   chipBin: { id: "Bin: {value}", en: "Bin: {value}", zh: "来源（Bin）：{value}" },
-  chipSession: { id: "Sesi: {value}", en: "Session: {value}", zh: "场次：{value}" },
   chipTrack: { id: "Jenis sesi: {value}", en: "Session type: {value}", zh: "场次类别：{value}" },
   chipDate: { id: "Tanggal: {value}", en: "Date: {value}", zh: "日期：{value}" },
   chipSearch: { id: "Cari: {value}", en: "Search: {value}", zh: "搜索：{value}" },

@@ -45,7 +45,6 @@ describe("gallery-preferences", () => {
       filterDate: "2026-07-21",
       filterLocation: "Acid Plant",
       filterBin: "BIN1",
-      filterSession: "02.00",
       filterTrack: "trial",
     });
 
@@ -57,12 +56,11 @@ describe("gallery-preferences", () => {
       filterDate: "2026-07-21",
       filterLocation: "Acid Plant",
       filterBin: "BIN1",
-      filterSession: "02.00",
       filterTrack: "trial",
     });
   });
 
-  it("keeps a view state stored before the session filter existed", () => {
+  it("keeps a view state stored before the session-type filter existed", () => {
     const localStorage = createStorageMock();
     localStorage.setItem(
       "capture-system:gallery-view-state:v1",
@@ -74,6 +72,8 @@ describe("gallery-preferences", () => {
         filterDate: "",
         filterLocation: "Acid Plant",
         filterBin: "BIN2",
+        // Sisa filter jam sesi yang sudah dicabut.
+        filterSession: "02.00",
       }),
     );
     Object.defineProperty(globalThis, "window", {
@@ -81,12 +81,14 @@ describe("gallery-preferences", () => {
       configurable: true,
     });
 
-    expect(loadGalleryViewState()).toMatchObject({
+    const loaded = loadGalleryViewState();
+    expect(loaded).toMatchObject({
       viewMode: "list",
+      filterLocation: "Acid Plant",
       filterBin: "BIN2",
-      filterSession: "",
       filterTrack: "",
     });
+    expect(loaded).not.toHaveProperty("filterSession");
   });
 
   it("falls back to the default view state when stored data is invalid", () => {
@@ -137,7 +139,6 @@ describe("gallery-preferences", () => {
           filterDate: "",
           filterLocation: "",
           filterBin: "",
-          filterSession: "",
           filterTrack: "",
         },
         "compact-audit",
@@ -154,7 +155,6 @@ describe("gallery-preferences", () => {
           filterDate: "",
           filterLocation: "",
           filterBin: "",
-          filterSession: "",
           filterTrack: "",
         },
         "compact-audit",
