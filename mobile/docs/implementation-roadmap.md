@@ -544,6 +544,21 @@ Verification: 49 suites / 417 tests pass (8 new: dictionary completeness and pla
 APK 1.3.0 / versionCode 4 (debug) built on 2026-10-06 against the production HTTPS API: Gradle BUILD SUCCESSFUL, v1/v2 signatures verified, bundle contains both dictionaries. SHA256 `FA4285F04E47F40F40B09995C9EFCFAB88AB9B928B15516982C9D7FBC2ED123C`. Same workstation debug key as APK 1.2.0. Not installed or run on a device.
 
 
+## Post-M5 — Account default language (2026-10-06)
+
+Sources: functional specification (new section "Account default language"), docs/web-i18n.md, docs/openapi.yaml. Requested for the web Users page; applied on mobile as well because the same accounts sign in there. Operator-only scope unchanged.
+
+- [x] Database: `app_users.default_language` (`id` / `en` / `zh`, NOT NULL, default `id`) via `db/mssql/add_app_users_default_language.sql`, added to `npm run db:migrate`. The app detects whether the column exists and works without it; choosing a language other than Indonesian is refused with a message naming the script until it is run.
+- [x] Web: "Bahasa default" field in the add/edit account dialog and a "Bahasa" column on `/users`; the language is applied when the account signs in. Changes are written to the activity log.
+- [x] REST: `user.defaultLanguage` on `/auth/login`, `/auth/refresh`, `/auth/me`; OpenAPI updated.
+- [x] Mobile: applies `en` / `zh` at sign-in and stores it as the device preference; `id` and missing values change nothing. Version 1.4.0 / versionCode 5.
+- [ ] Run the migration on the production database.
+- [ ] Sign in with a real account set to English and to 中文, on web and on a physical Android device.
+
+Verification: 53 suites / 473 tests pass (15 new: column detection and both query shapes, schema default and allowed values, change-log wording, mobile account-language rule). Read-only run against the real database, where the column does not exist yet: column check, account list (11 accounts) and login lookup work in the tolerant path; the with-column INSERT/UPDATE/ALTER shapes were executed on a session temp table only. Headless Chrome on an isolated dev server with stubbed replies: Users table shows the language column, the add dialog offers the three languages, and a login reply carrying `zh` switches the cookie and `<html lang>` from `id` to `zh-CN`; no console errors. Web production build succeeds; mobile `tsc -b` passes.
+
+APK 1.4.0 / versionCode 5 (debug) built on 2026-10-06 against the production HTTPS API: Gradle BUILD SUCCESSFUL, v1/v2 signatures verified, bundle reads `defaultLanguage`. SHA256 `A05DA57DB362826A292BE2B866F06811D331E65430E2692F576796220732EEF7`. Same debug key as 1.2.0 and 1.3.0. Not installed or run on a device. Not verified: the migration on production, a real login with a non-Indonesian account, and the mobile switch on a device.
+
 ## Post-M5 Maintenance — Sync files placed directly in the network folder (2026-10-06)
 
 Web/backend change; no mobile source touched, APK stays 1.3.0. Details: docs/share-folder-sync.md.

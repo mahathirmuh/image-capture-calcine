@@ -41,6 +41,13 @@ export const usersMessages = defineMessages({
   email: { id: "Email", en: "Email", zh: "邮箱" },
   role: { id: "Peran", en: "Role", zh: "角色" },
   plant: { id: "Plant", en: "Plant", zh: "工厂" },
+  language: { id: "Bahasa", en: "Language", zh: "语言" },
+  defaultLanguage: { id: "Bahasa default", en: "Default language", zh: "默认语言" },
+  defaultLanguageHint: {
+    id: "Dipasang otomatis setiap kali akun ini masuk, di web maupun di aplikasi mobile (mobile hanya English dan 中文). Setelah masuk, bahasanya tetap bisa diganti dari menu bahasa.",
+    en: "Applied automatically every time this account signs in, on the web and in the mobile app (mobile has English and 中文 only). After signing in, the language can still be changed from the language menu.",
+    zh: "该账号每次登录时自动应用，网页端和手机应用均适用（手机应用仅有 English 和 中文）。登录后仍可通过语言菜单切换。",
+  },
   status: { id: "Status", en: "Status", zh: "状态" },
   lastLogin: { id: "Login terakhir", en: "Last sign-in", zh: "上次登录" },
   actions: { id: "Aksi", en: "Actions", zh: "操作" },

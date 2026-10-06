@@ -32,7 +32,7 @@ import { commonMessages as c } from "@/i18n/common";
 import { failureText } from "@/i18n/errors";
 import { loginMessages as m } from "@/i18n/login";
 import { loginInputSchema, loginWithPassword, toSafeRedirect } from "@/lib/auth";
-import { useT, type Message } from "@/lib/i18n";
+import { setLanguage, useT, type Message } from "@/lib/i18n";
 
 const loginSearchSchema = z.object({
   // `.catch` supaya query string yang diacak-acak tidak memunculkan error page
@@ -200,6 +200,9 @@ function LoginPage() {
         return;
       }
 
+      // Bahasa default akun dipasang sebelum sapaan tampil, supaya sapaannya
+      // sudah dalam bahasa orang yang masuk.
+      if (result.language) setLanguage(result.language);
       setDialog({ kind: "success", name: result.user.fullName });
       await new Promise((resolve) => setTimeout(resolve, SUCCESS_HOLD_MS));
 

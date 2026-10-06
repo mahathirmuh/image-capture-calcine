@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
 import type { SessionUser } from "./auth";
+import { DEFAULT_LANGUAGE, LANGUAGE_NAMES, LANGUAGES, type Language } from "./i18n";
 import { PLANTS } from "./locations";
 
 export const USER_ROLES = ["admin", "operator", "viewer"] as const;
@@ -50,6 +51,12 @@ export type AppUser = {
   email: string | null;
   role: string;
   plant: string;
+  /**
+   * Bahasa yang dipasang setiap kali akun ini masuk. `null` hanya terjadi
+   * sebelum kolomnya ditambahkan ke database (lihat
+   * db/mssql/add_app_users_default_language.sql).
+   */
+  defaultLanguage: Language | null;
   isActive: boolean;
   lastLoginAt: string | null;
   createdAt: string;
@@ -83,6 +90,9 @@ const passwordSchema = z
 
 const roleSchema = z.enum(USER_ROLES);
 const plantSchema = z.enum(USER_PLANT_OPTIONS).default(USER_PLANT_ALL);
+// Bawaan Indonesia: itu bahasa aplikasi sejak awal, dan pemanggil lama yang
+// belum mengirim medan ini tetap menghasilkan akun yang berperilaku sama.
+const languageSchema = z.enum(LANGUAGES).default(DEFAULT_LANGUAGE);
 
 export const createUserSchema = z.object({
   username: usernameSchema,
@@ -91,6 +101,7 @@ export const createUserSchema = z.object({
   password: passwordSchema,
   role: roleSchema,
   plant: plantSchema,
+  defaultLanguage: languageSchema,
   isActive: z.boolean(),
 });
 
@@ -100,6 +111,7 @@ export const updateUserSchema = z.object({
   email: z.union([emailSchema, z.literal("")]).transform((value) => value || null),
   role: roleSchema,
   plant: plantSchema,
+  defaultLanguage: languageSchema,
   isActive: z.boolean(),
 });
 
@@ -221,6 +233,19 @@ function messageOf(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
+/**
+ * Bahasa selain bawaan diminta padahal kolomnya belum ada di database.
+ *
+ * Dikenali dari nama error-nya, bukan `instanceof`: kelasnya tinggal di modul
+ * khusus server yang tidak boleh diimpor di kepala berkas ini.
+ */
+function languageColumnFailure(
+  error: unknown,
+): { ok: false; code: string; message: string } | null {
+  if (!(error instanceof Error) || error.name !== "LanguageColumnMissingError") return null;
+  return { ok: false, code: "LANGUAGE_COLUMN_MISSING", message: error.message };
+}
+
 export const listAppUsers = createServerFn({ method: "GET" }).handler(
   async (): Promise<AdminResult<{ users: AppUser[]; actorId: number }>> => {
     const gate = await requireAdmin();
@@ -262,6 +287,7 @@ export const createAppUser = createServerFn({ method: "POST" })
         passwordHash: await hashPassword(data.password),
         role: data.role,
         plant: data.plant,
+        defaultLanguage: data.defaultLanguage,
         isActive: data.isActive,
       });
 
@@ -272,11 +298,13 @@ export const createAppUser = createServerFn({ method: "POST" })
         actorUsername: gate.actor.username,
         targetId: user.id,
         targetUsername: user.username,
-        detail: `peran: ${ROLE_LABELS[data.role]}; plant: ${userPlantLabel(data.plant)}; status: ${data.isActive ? "aktif" : "nonaktif"}`,
+        detail: `peran: ${ROLE_LABELS[data.role]}; plant: ${userPlantLabel(data.plant)}; bahasa: ${LANGUAGE_NAMES[data.defaultLanguage]}; status: ${data.isActive ? "aktif" : "nonaktif"}`,
       });
 
       return { ok: true, user };
     } catch (error) {
+      const missing = languageColumnFailure(error);
+      if (missing) return missing;
       return { ok: false, message: `Akun gagal dibuat: ${messageOf(error)}` };
     }
   });
@@ -316,6 +344,7 @@ export const updateAppUser = createServerFn({ method: "POST" })
         user,
         (role) => ROLE_LABELS[role as UserRole] ?? role,
         userPlantLabel,
+        (language) => LANGUAGE_NAMES[language as Language] ?? language,
       );
       // Perubahan yang tidak mengubah apa pun -- operator menekan Simpan tanpa
       // menyentuh isian -- tidak perlu meninggalkan jejak.
@@ -349,6 +378,8 @@ export const updateAppUser = createServerFn({ method: "POST" })
 
       return { ok: true, user };
     } catch (error) {
+      const missing = languageColumnFailure(error);
+      if (missing) return missing;
       return { ok: false, message: `Akun gagal diperbarui: ${messageOf(error)}` };
     }
   });

@@ -6,6 +6,7 @@ import { BottomNav } from "../../mobile/src/components/BottomNav";
 import { LanguageSwitch } from "../../mobile/src/components/LanguageSwitch";
 import {
   DICTIONARIES,
+  accountLanguage,
   describeError,
   getLanguage,
   isLanguage,
@@ -95,6 +96,20 @@ describe("language switching", () => {
     expect(labels()).not.toContain("Sessions");
     expect(chinese.props["aria-pressed"]).toBe(true);
     renderer.unmount();
+  });
+});
+
+describe("account default language", () => {
+  it("switches to the account's language when this app has it", () => {
+    expect(accountLanguage("zh")).toBe("zh");
+    expect(accountLanguage("en")).toBe("en");
+  });
+
+  it("leaves the device alone for Indonesian, an older backend, or junk", () => {
+    expect(accountLanguage("id")).toBeNull();
+    expect(accountLanguage(null)).toBeNull();
+    expect(accountLanguage(undefined)).toBeNull();
+    expect(accountLanguage("fr")).toBeNull();
   });
 });
 

@@ -78,6 +78,8 @@ Database migrations:
 npm run db:migrate
 ```
 
+The scripts under `db/mssql/` are idempotent and run in the order listed in `scripts/run-db-migrations.mjs`. The latest one, `add_app_users_default_language.sql`, adds the per-account default language; the app keeps working before it is run, but choosing a language other than Indonesian on the Users page is refused until then.
+
 ## Working Method
 
 1. Read `mobile/docs/implementation-roadmap.md`

@@ -15,8 +15,14 @@ export type SessionUser = {
 
 // `code` dipakai halaman login untuk menulis kegagalan dalam bahasa antarmuka;
 // `message` tetap teks Indonesia yang lengkap.
+//
+// `language` adalah bahasa default akunnya. Halaman login memasangnya begitu
+// login berhasil, sehingga PC yang dipakai bergantian selalu mengikuti orang
+// yang sedang masuk, bukan pilihan orang sebelumnya. `null` berarti kolomnya
+// belum ada di database dan bahasa yang sedang tampil dibiarkan.
 export type LoginResult =
-  { ok: true; user: SessionUser } | { ok: false; code: string; message: string };
+  | { ok: true; user: SessionUser; language: Language | null }
+  | { ok: false; code: string; message: string };
 
 export const loginInputSchema = z.object({
   identifier: z.string().trim().min(1, "Username atau email wajib diisi"),
@@ -130,7 +136,7 @@ export const loginWithPassword = createServerFn({ method: "POST" })
       actorUsername: record.user.username,
     });
 
-    return { ok: true, user: record.user };
+    return { ok: true, user: record.user, language: record.defaultLanguage };
   });
 
 export const fetchCurrentUser = createServerFn({ method: "GET" }).handler(

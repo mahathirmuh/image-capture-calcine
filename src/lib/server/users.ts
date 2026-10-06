@@ -6,12 +6,68 @@
 import sql from "mssql";
 
 import type { SessionUser } from "../auth";
+import { DEFAULT_LANGUAGE, isLanguage, type Language } from "../i18n";
 
 export type AppUserRecord = {
   user: SessionUser;
   passwordHash: string;
   isActive: boolean;
+  /** Bahasa default akun; null kalau kolomnya belum ada di database. */
+  defaultLanguage: Language | null;
 };
+
+// --- Kolom default_language ---------------------------------------------------
+// Kolom ini ditambahkan lewat db/mssql/add_app_users_default_language.sql, dan
+// skrip itu dijalankan orang, bukan oleh deploy. Supaya versi aplikasi ini
+// tetap bisa dipakai login sebelum skripnya dijalankan, keberadaan kolomnya
+// diperiksa dulu dan setiap query disusun menurut jawabannya.
+//
+// Jawaban "ada" disimpan selamanya (kolom tidak menghilang). Jawaban "belum
+// ada" hanya disimpan sebentar, supaya aplikasi mengenali kolomnya tidak lama
+// setelah skrip dijalankan tanpa perlu di-restart.
+const COLUMN_RECHECK_MS = 60_000;
+let languageColumn: { present: boolean; checkedAt: number } | null = null;
+
+type DbHandle = Awaited<ReturnType<typeof db>>;
+
+async function hasLanguageColumn({ pool, schema }: DbHandle): Promise<boolean> {
+  if (
+    languageColumn &&
+    (languageColumn.present || Date.now() - languageColumn.checkedAt < COLUMN_RECHECK_MS)
+  ) {
+    return languageColumn.present;
+  }
+  const result = await pool
+    .request()
+    .input("table", sql.NVarChar(300), `${schema}.app_users`)
+    .query("SELECT COL_LENGTH(@table, N'default_language') AS panjang;");
+  const present = result.recordset[0]?.panjang != null;
+  languageColumn = { present, checkedAt: Date.now() };
+  return present;
+}
+
+/** Hanya untuk test: buang jawaban yang tersimpan. */
+export function resetLanguageColumnCache(): void {
+  languageColumn = null;
+}
+
+function toLanguage(value: unknown): Language | null {
+  return isLanguage(value) ? value : null;
+}
+
+/**
+ * Dilempar saat bahasa selain bawaan diminta padahal kolomnya belum ada.
+ * Menyimpan akunnya tanpa bahasa itu akan terlihat berhasil, lalu diam-diam
+ * tidak berlaku -- lebih baik ditolak dengan sebab yang jelas.
+ */
+export class LanguageColumnMissingError extends Error {
+  constructor() {
+    super(
+      "Kolom bahasa belum ada di database. Jalankan db/mssql/add_app_users_default_language.sql (npm run db:migrate), lalu simpan lagi.",
+    );
+    this.name = "LanguageColumnMissingError";
+  }
+}
 
 function mapUserRow(row: Record<string, unknown>): AppUserRecord {
   const email = typeof row.email === "string" && row.email !== "" ? row.email : null;
@@ -25,6 +81,7 @@ function mapUserRow(row: Record<string, unknown>): AppUserRecord {
     },
     passwordHash: String(row.password_hash ?? ""),
     isActive: Boolean(row.is_active),
+    defaultLanguage: toLanguage(row.default_language),
   };
 }
 
@@ -34,10 +91,11 @@ function mapUserRow(row: Record<string, unknown>): AppUserRecord {
  * hafal yang mana.
  */
 export async function findUserForLogin(identifier: string): Promise<AppUserRecord | null> {
-  const { getCardDbPool, getCardDbSchema } = await import("../carddb");
-
-  const schema = `[${getCardDbSchema()}]`;
-  const pool = await getCardDbPool();
+  const handle = await db();
+  const { pool, schema } = handle;
+  const languageSelect = (await hasLanguageColumn(handle))
+    ? "u.default_language"
+    : "NULL AS default_language";
   const result = await pool.request().input("identifier", sql.NVarChar(200), identifier).query(`
       SELECT TOP 1
         u.id,
@@ -46,7 +104,8 @@ export async function findUserForLogin(identifier: string): Promise<AppUserRecor
         u.email,
         u.role,
         u.password_hash,
-        u.is_active
+        u.is_active,
+        ${languageSelect}
       FROM ${schema}.app_users u
       WHERE u.username = @identifier
          OR u.email = @identifier;
@@ -85,6 +144,8 @@ export type AppUserRow = {
   email: string | null;
   role: string;
   plant: string;
+  /** Bahasa default akun; null kalau kolomnya belum ada di database. */
+  defaultLanguage: Language | null;
   isActive: boolean;
   lastLoginAt: string | null;
   createdAt: string;
@@ -105,6 +166,7 @@ function mapAdminRow(row: Record<string, unknown>): AppUserRow {
     email: typeof row.email === "string" && row.email !== "" ? row.email : null,
     role: String(row.role ?? "operator"),
     plant: String(row.plant ?? "ALL"),
+    defaultLanguage: toLanguage(row.default_language),
     isActive: Boolean(row.is_active),
     lastLoginAt: toIso(row.last_login_at),
     createdAt: toIso(row.created_at) ?? new Date().toISOString(),
@@ -112,10 +174,18 @@ function mapAdminRow(row: Record<string, unknown>): AppUserRow {
   };
 }
 
-const USER_COLUMNS = `
+const BASE_USER_COLUMNS = `
   u.id, u.username, u.full_name, u.email, u.role, u.plant,
   u.is_active, u.last_login_at, u.created_at, u.updated_at
 `;
+
+/** Daftar kolom untuk SELECT (awalan `u.`) atau OUTPUT (awalan `inserted.`). */
+function userColumns(withLanguage: boolean, prefix: "u." | "inserted." = "u."): string {
+  const columns = withLanguage
+    ? `${BASE_USER_COLUMNS.trimEnd()}, u.default_language`
+    : BASE_USER_COLUMNS;
+  return prefix === "u." ? columns : columns.replace(/u\./g, prefix);
+}
 
 async function db() {
   const { getCardDbPool, getCardDbSchema } = await import("../carddb");
@@ -123,9 +193,10 @@ async function db() {
 }
 
 export async function listUsers(): Promise<AppUserRow[]> {
-  const { pool, schema } = await db();
+  const handle = await db();
+  const { pool, schema } = handle;
   const result = await pool.request().query(`
-    SELECT ${USER_COLUMNS}
+    SELECT ${userColumns(await hasLanguageColumn(handle))}
     FROM ${schema}.app_users u
     ORDER BY u.is_active DESC, u.username ASC;
   `);
@@ -133,9 +204,11 @@ export async function listUsers(): Promise<AppUserRow[]> {
 }
 
 export async function findUserById(id: number): Promise<AppUserRow | null> {
-  const { pool, schema } = await db();
+  const handle = await db();
+  const { pool, schema } = handle;
+  const columns = userColumns(await hasLanguageColumn(handle));
   const result = await pool.request().input("id", sql.BigInt, id).query(`
-    SELECT TOP 1 ${USER_COLUMNS} FROM ${schema}.app_users u WHERE u.id = @id;
+    SELECT TOP 1 ${columns} FROM ${schema}.app_users u WHERE u.id = @id;
   `);
   const row = result.recordset[0];
   return row ? mapAdminRow(row as Record<string, unknown>) : null;
@@ -183,9 +256,16 @@ export async function insertUser(input: {
   passwordHash: string;
   role: string;
   plant: string;
+  defaultLanguage: Language;
   isActive: boolean;
 }): Promise<AppUserRow> {
-  const { pool, schema } = await db();
+  const handle = await db();
+  const { pool, schema } = handle;
+  const withLanguage = await hasLanguageColumn(handle);
+  // Tanpa kolomnya, bahasa bawaan tetap boleh: itulah yang akan berlaku juga.
+  if (!withLanguage && input.defaultLanguage !== DEFAULT_LANGUAGE) {
+    throw new LanguageColumnMissingError();
+  }
   const result = await pool
     .request()
     .input("username", sql.NVarChar(100), input.username)
@@ -194,11 +274,12 @@ export async function insertUser(input: {
     .input("passwordHash", sql.NVarChar(400), input.passwordHash)
     .input("role", sql.NVarChar(50), input.role)
     .input("plant", sql.NVarChar(100), input.plant)
+    .input("defaultLanguage", sql.NVarChar(10), input.defaultLanguage)
     .input("isActive", sql.Bit, input.isActive ? 1 : 0).query(`
       INSERT INTO ${schema}.app_users
-        (username, full_name, email, password_hash, role, plant, is_active)
-      OUTPUT ${USER_COLUMNS.replace(/u\./g, "inserted.")}
-      VALUES (@username, @fullName, @email, @passwordHash, @role, @plant, @isActive);
+        (username, full_name, email, password_hash, role, plant, is_active${withLanguage ? ", default_language" : ""})
+      OUTPUT ${userColumns(withLanguage, "inserted.")}
+      VALUES (@username, @fullName, @email, @passwordHash, @role, @plant, @isActive${withLanguage ? ", @defaultLanguage" : ""});
     `);
   return mapAdminRow(result.recordset[0] as Record<string, unknown>);
 }
@@ -209,9 +290,15 @@ export async function updateUserProfile(input: {
   email: string | null;
   role: string;
   plant: string;
+  defaultLanguage: Language;
   isActive: boolean;
 }): Promise<AppUserRow | null> {
-  const { pool, schema } = await db();
+  const handle = await db();
+  const { pool, schema } = handle;
+  const withLanguage = await hasLanguageColumn(handle);
+  if (!withLanguage && input.defaultLanguage !== DEFAULT_LANGUAGE) {
+    throw new LanguageColumnMissingError();
+  }
   const result = await pool
     .request()
     .input("id", sql.BigInt, input.id)
@@ -219,15 +306,16 @@ export async function updateUserProfile(input: {
     .input("email", sql.NVarChar(200), input.email)
     .input("role", sql.NVarChar(50), input.role)
     .input("plant", sql.NVarChar(100), input.plant)
+    .input("defaultLanguage", sql.NVarChar(10), input.defaultLanguage)
     .input("isActive", sql.Bit, input.isActive ? 1 : 0).query(`
       UPDATE ${schema}.app_users
       SET full_name = @fullName,
           email = @email,
           role = @role,
           plant = @plant,
-          is_active = @isActive,
+          is_active = @isActive,${withLanguage ? "\n          default_language = @defaultLanguage," : ""}
           updated_at = SYSUTCDATETIME()
-      OUTPUT ${USER_COLUMNS.replace(/u\./g, "inserted.")}
+      OUTPUT ${userColumns(withLanguage, "inserted.")}
       WHERE id = @id;
     `);
   const row = result.recordset[0];

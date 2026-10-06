@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { guardUserDeletion, guardUserUpdate } from "./user-admin";
+import { describeUserChange } from "./activity-log";
+import {
+  createUserSchema,
+  guardUserDeletion,
+  guardUserUpdate,
+  updateUserSchema,
+} from "./user-admin";
 
 const admin = { id: 1, username: "admin", role: "admin", isActive: true };
 const operator = { id: 2, username: "operator.bin1", role: "operator", isActive: true };
@@ -114,5 +120,62 @@ describe("guardUserDeletion", () => {
 
   it("allows deleting an admin while another active admin remains", () => {
     expect(guardUserDeletion({ actorId: 9, target: admin, otherActiveAdmins: 1 })).toBeNull();
+  });
+});
+
+describe("default language of an account", () => {
+  const base = {
+    username: "operator.zh",
+    fullName: "Operator",
+    email: "",
+    password: "rahasia-123",
+    role: "operator" as const,
+    plant: "Acid Plant" as const,
+    isActive: true,
+  };
+
+  it("defaults to Indonesian when the caller does not send one", () => {
+    expect(createUserSchema.parse(base).defaultLanguage).toBe("id");
+    expect(
+      updateUserSchema.parse({ ...base, id: 3, username: undefined, password: undefined })
+        .defaultLanguage,
+    ).toBe("id");
+  });
+
+  it("accepts the three interface languages and nothing else", () => {
+    for (const language of ["id", "en", "zh"]) {
+      expect(createUserSchema.parse({ ...base, defaultLanguage: language }).defaultLanguage).toBe(
+        language,
+      );
+    }
+    expect(createUserSchema.safeParse({ ...base, defaultLanguage: "fr" }).success).toBe(false);
+  });
+});
+
+describe("describeUserChange", () => {
+  const before = {
+    fullName: "Operator",
+    email: null,
+    role: "operator",
+    plant: "Acid Plant",
+    defaultLanguage: "id",
+    isActive: true,
+  };
+  const label = (value: string) => value.toUpperCase();
+
+  it("records a changed default language with readable names", () => {
+    expect(
+      describeUserChange(before, { ...before, defaultLanguage: "zh" }, label, label, (language) =>
+        language === "zh" ? "中文" : "Indonesia",
+      ),
+    ).toBe("bahasa: Indonesia -> 中文");
+  });
+
+  it("stays silent when the language is unchanged or not stored yet", () => {
+    expect(describeUserChange(before, { ...before }, label)).toBeNull();
+    // Sebelum kolomnya ada, nilainya kosong di database dan "id" di form.
+    expect(
+      describeUserChange({ ...before, defaultLanguage: null }, { ...before }, label),
+    ).toBeNull();
   });
 });

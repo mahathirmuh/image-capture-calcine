@@ -183,6 +183,7 @@ export function describeUserChange(
     email: string | null;
     role: string;
     plant: string;
+    defaultLanguage?: string | null;
     isActive: boolean;
   },
   sesudah: {
@@ -190,10 +191,12 @@ export function describeUserChange(
     email: string | null;
     role: string;
     plant: string;
+    defaultLanguage?: string | null;
     isActive: boolean;
   },
   labelPeran: (role: string) => string,
   labelPlant: (plant: string) => string = (plant) => plant,
+  labelBahasa: (language: string) => string = (language) => language,
 ): string | null {
   const berubah: string[] = [];
 
@@ -208,6 +211,18 @@ export function describeUserChange(
   }
   if (sebelum.plant !== sesudah.plant) {
     berubah.push(`plant: ${labelPlant(sebelum.plant)} -> ${labelPlant(sesudah.plant)}`);
+  }
+  // Hanya dibandingkan kalau KEDUANYA terisi. Sebelum kolomnya ada nilainya
+  // kosong di kedua sisi, dan "kosong -> Indonesia" bukan perubahan yang
+  // dilakukan siapa pun.
+  if (
+    sebelum.defaultLanguage &&
+    sesudah.defaultLanguage &&
+    sebelum.defaultLanguage !== sesudah.defaultLanguage
+  ) {
+    berubah.push(
+      `bahasa: ${labelBahasa(sebelum.defaultLanguage)} -> ${labelBahasa(sesudah.defaultLanguage)}`,
+    );
   }
   if (sebelum.isActive !== sesudah.isActive) {
     berubah.push(

@@ -73,7 +73,16 @@ import {
 import { commonMessages as c } from "@/i18n/common";
 import { failureText } from "@/i18n/errors";
 import { usersMessages as m } from "@/i18n/users";
-import { useLocale, useT, type Message, type Translator } from "@/lib/i18n";
+import {
+  DEFAULT_LANGUAGE,
+  LANGUAGE_NAMES,
+  LANGUAGES,
+  useLocale,
+  useT,
+  type Language,
+  type Message,
+  type Translator,
+} from "@/lib/i18n";
 
 export const Route = createFileRoute("/users")({
   // Penjaga tampilan. Yang mengikat sebenarnya ada di setiap serverFn di
@@ -151,6 +160,7 @@ type FormState = {
   confirmPassword: string;
   role: UserRole;
   plant: string;
+  defaultLanguage: Language;
   isActive: boolean;
 };
 
@@ -162,6 +172,7 @@ const EMPTY_FORM: FormState = {
   confirmPassword: "",
   role: "operator",
   plant: USER_PLANT_ALL,
+  defaultLanguage: DEFAULT_LANGUAGE,
   isActive: true,
 };
 
@@ -307,6 +318,7 @@ function UsersPage() {
               <TableHead>{t(m.email)}</TableHead>
               <TableHead>{t(m.role)}</TableHead>
               <TableHead>{t(m.plant)}</TableHead>
+              <TableHead>{t(m.language)}</TableHead>
               <TableHead>{t(m.status)}</TableHead>
               <TableHead>{t(m.lastLogin)}</TableHead>
               <TableHead className="text-right">{t(m.actions)}</TableHead>
@@ -357,6 +369,9 @@ function UsersPage() {
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {plantLabel(user.plant, t)}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {user.defaultLanguage ? LANGUAGE_NAMES[user.defaultLanguage] : "—"}
                     </TableCell>
                     <TableCell>
                       <span
@@ -497,6 +512,9 @@ function UserFormDialog({
               ? (existing.role as UserRole)
               : "operator",
             plant: existing.plant,
+            // Kosong hanya sebelum kolomnya ada di database; bawaan aplikasi
+            // itulah yang berlaku saat itu.
+            defaultLanguage: existing.defaultLanguage ?? DEFAULT_LANGUAGE,
             isActive: existing.isActive,
           }
         : EMPTY_FORM,
@@ -526,6 +544,7 @@ function UserFormDialog({
           email: form.email,
           role: form.role,
           plant: form.plant,
+          defaultLanguage: form.defaultLanguage,
           isActive: form.isActive,
         })
       : createUserSchema.safeParse({
@@ -535,6 +554,7 @@ function UserFormDialog({
           password: form.password,
           role: form.role,
           plant: form.plant,
+          defaultLanguage: form.defaultLanguage,
           isActive: form.isActive,
         });
 
@@ -554,6 +574,7 @@ function UserFormDialog({
               email: form.email,
               role: form.role,
               plant: form.plant,
+              defaultLanguage: form.defaultLanguage,
               isActive: form.isActive,
             },
           })
@@ -565,6 +586,7 @@ function UserFormDialog({
               password: form.password,
               role: form.role,
               plant: form.plant,
+              defaultLanguage: form.defaultLanguage,
               isActive: form.isActive,
             },
           });
@@ -703,6 +725,29 @@ function UserFormDialog({
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">{t(m.plantHint)}</p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="defaultLanguage">{t(m.defaultLanguage)}</Label>
+            <Select
+              value={form.defaultLanguage}
+              onValueChange={(value) =>
+                setForm((f) => ({ ...f, defaultLanguage: value as Language }))
+              }
+              disabled={saving}
+            >
+              <SelectTrigger id="defaultLanguage">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {LANGUAGES.map((language) => (
+                  <SelectItem key={language} value={language}>
+                    {LANGUAGE_NAMES[language]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">{t(m.defaultLanguageHint)}</p>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">

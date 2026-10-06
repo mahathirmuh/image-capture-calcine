@@ -10,6 +10,12 @@ export type AuthUser = {
   email: string | null;
   role: string;
   plant?: string | null;
+  /**
+   * Language the account is set to on the Users page: "id", "en" or "zh".
+   * Missing from backends older than this field, and null until the server's
+   * database has the column.
+   */
+  defaultLanguage?: string | null;
 };
 
 export type AuthSession = {

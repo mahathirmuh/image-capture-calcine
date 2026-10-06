@@ -683,6 +683,18 @@ const TRANSLATORS: Record<Language, Translator> = {
 let currentLanguage: Language = DEFAULT_LANGUAGE;
 const listeners = new Set<() => void>();
 
+/**
+ * The language to switch to when an account signs in, or null to leave the
+ * device as it is.
+ *
+ * The account's default is chosen on the web Users page from Indonesian,
+ * English and Chinese. This app has no Indonesian, so "id" -- like a missing
+ * value from an older backend -- changes nothing here.
+ */
+export function accountLanguage(value: unknown): Language | null {
+  return isLanguage(value) ? value : null;
+}
+
 export function isLanguage(value: unknown): value is Language {
   return typeof value === "string" && (LANGUAGES as readonly string[]).includes(value);
 }

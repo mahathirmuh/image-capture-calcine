@@ -189,6 +189,11 @@ export const errorMessages = defineMessages({
     en: "The network folder could not be scanned.",
     zh: "无法扫描网络文件夹。",
   },
+  LANGUAGE_COLUMN_MISSING: {
+    id: "Kolom bahasa belum ada di database. Jalankan db/mssql/add_app_users_default_language.sql (npm run db:migrate), lalu simpan lagi.",
+    en: "The language column is not in the database yet. Run db/mssql/add_app_users_default_language.sql (npm run db:migrate), then save again.",
+    zh: "数据库中尚无语言列。请运行 db/mssql/add_app_users_default_language.sql（npm run db:migrate），然后重新保存。",
+  },
   CAPTURE_RECORD_FAILED: {
     id: "Gagal menyimpan metadata capture ke registry.",
     en: "The capture metadata could not be saved to the registry.",

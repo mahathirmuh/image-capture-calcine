@@ -1377,6 +1377,7 @@ async function handleLogin(request: Request): Promise<Response> {
           email: freshUser.email,
           role: freshUser.role,
           plant: freshUser.plant,
+          defaultLanguage: freshUser.defaultLanguage,
         }
       : record.user,
   });
@@ -1413,6 +1414,7 @@ async function handleMe(principal: ApiPrincipal): Promise<Response> {
       email: user.email,
       role: user.role,
       plant: user.plant,
+      defaultLanguage: user.defaultLanguage,
     },
     token: {
       issuedAt: new Date(principal.claims.issuedAt).toISOString(),
@@ -1479,6 +1481,7 @@ async function handleRefresh(request: Request): Promise<Response> {
       email: user.email,
       role: user.role,
       plant: user.plant,
+      defaultLanguage: user.defaultLanguage,
     },
   });
 }

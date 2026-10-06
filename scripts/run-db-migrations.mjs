@@ -8,6 +8,7 @@ const MIGRATIONS = [
   "add_app_users_plant.sql",
   "create_activity_log.sql",
   "create_api_refresh_sessions.sql",
+  "add_app_users_default_language.sql",
 ];
 
 const REQUIRED_ENV = ["CARDDB_USER", "CARDDB_PASSWORD", "CARDDB_SERVER", "CARDDB_NAME"];

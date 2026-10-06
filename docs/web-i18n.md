@@ -22,6 +22,23 @@ Mobile has its own two-language switch (English / 中文); see `mobile/docs/func
   `src/lib/i18n.test.ts` checks every dictionary under `src/i18n/`: all three languages present, the
   same `{placeholders}`, and Chinese entries actually written in Chinese.
 
+## Account default language
+
+Each account has a default language (`app_users.default_language`: `id`, `en` or `zh`), chosen by
+a Super Admin in the add/edit dialog on `/users`. New accounts and all accounts that existed before
+the column was added are Indonesian.
+
+- The login server function returns the account's language and the login page applies it with
+  `setLanguage()` before the welcome dialog. On a PC shared between shifts the interface therefore
+  follows whoever signs in, not the previous person's choice.
+- The globe menu still works after signing in; the default is applied again at the next sign-in.
+- The column is added by `db/mssql/add_app_users_default_language.sql` (`npm run db:migrate`).
+  `src/lib/server/users.ts` checks whether the column exists and builds its queries accordingly, so
+  this version runs before the script does: the language is then `null`, login leaves the interface
+  language alone, and saving an account with a language other than Indonesian fails with
+  `LANGUAGE_COLUMN_MISSING`.
+- The mobile app receives the same value from `/auth/login` and applies `en` / `zh`.
+
 ## Rules when adding or changing text
 
 1. Never hard-code visible text in a component. Add a message to the page's dictionary and render it

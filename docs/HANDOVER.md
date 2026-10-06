@@ -166,6 +166,8 @@ APK debug: `mobile/android/app/build/outputs/apk/debug/app-debug.apk`.
 | Rollback aplikasi | [ISI image/versi sebelumnya dan langkah] | [ISI] | [ISI] |
 | Pemulihan data | [ISI restore test, kompatibilitas schema] | [ISI] | [ISI] |
 
+**Migrasi yang belum tentu sudah dijalankan:** `db/mssql/add_app_users_default_language.sql` (bahasa default akun, 2026-10-06) dijalankan lewat `npm run db:migrate`. Aplikasi tetap berjalan tanpanya; yang tertahan hanya pemilihan bahasa selain Indonesia di halaman Users.
+
 **Urutan kompatibilitas:** dokumentasi mobile meminta backend dengan dukungan plant/device targeting terpasang sebelum client mobile terkait digunakan.
 
 **Pemicu rollback dan pembuat keputusan:** [ISI].

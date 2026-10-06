@@ -1333,6 +1333,17 @@ components:
                 plant:
                   type: string
                   nullable: true
+                defaultLanguage:
+                  type: string
+                  enum: [id, en, zh]
+                  nullable: true
+                  description: |
+                    Bahasa default akun, diatur Super Admin di halaman Users. Klien
+                    memasangnya saat pengguna masuk: web untuk ketiganya, aplikasi
+                    mobile untuk `en` dan `zh` (mobile tidak punya bahasa Indonesia,
+                    jadi `id` tidak mengubah apa pun di sana). `null` selama kolom
+                    `default_language` belum ditambahkan ke database server
+                    (db/mssql/add_app_users_default_language.sql).
 
     SessionUser:
       type: object
@@ -1364,6 +1375,17 @@ components:
                     Plant yang boleh diakses akun ini. `ALL` berarti tidak
                     dibatasi. Nilai inilah yang mengunci kamera mana yang boleh
                     diperintah lewat endpoint /camera.
+                defaultLanguage:
+                  type: string
+                  enum: [id, en, zh]
+                  nullable: true
+                  description: |
+                    Bahasa default akun, diatur Super Admin di halaman Users. Klien
+                    memasangnya saat pengguna masuk: web untuk ketiganya, aplikasi
+                    mobile untuk `en` dan `zh` (mobile tidak punya bahasa Indonesia,
+                    jadi `id` tidak mengubah apa pun di sana). `null` selama kolom
+                    `default_language` belum ditambahkan ke database server
+                    (db/mssql/add_app_users_default_language.sql).
         token:
           type: object
           properties:

@@ -120,3 +120,10 @@ Explicit account scope `ALL` allows selecting a scheduled session from any plant
 - All screens, navigation, status labels, dates and error messages follow the selected language. Backend errors are worded from their error code, so operators no longer see the server's Indonesian text for known codes; an unknown code falls back to the server message.
 - Plant names, slot labels (Train/Bin), file names, device codes and operator names are shown as stored.
 - No backend or API contract change. APK 1.3.0 (versionCode 4).
+
+## Account default language — 2026-10-06
+
+- A Super Admin chooses a default language per account on the web Users page: Indonesia, English or 中文.
+- When an operator signs in, the app switches to the account's default language if it is English or Chinese, and stores it as the device preference. An account set to Indonesia — or a backend that does not send the field yet — leaves the device language as it was, because this app has no Indonesian.
+- The switch on the Login screen and in Settings keeps working after sign-in; the default is applied again at the next sign-in. A session restored from stored tokens does not change the language.
+- API: `user.defaultLanguage` on `/auth/login`, `/auth/refresh` and `/auth/me` (additive, nullable). APK 1.4.0 (versionCode 5); older APKs ignore the field.

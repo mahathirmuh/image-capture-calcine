@@ -10,7 +10,7 @@ import {
   type AuthSession,
 } from "./lib/auth";
 import { prefetchCaptureThumbs, type CaptureHistoryItem } from "./lib/captures";
-import { describeError, setLanguage, useT, type Language } from "./lib/i18n";
+import { accountLanguage, describeError, setLanguage, useT, type Language } from "./lib/i18n";
 import {
   DEFAULT_MOBILE_PREFERENCES,
   readMobilePreferences,
@@ -189,6 +189,10 @@ export default function App() {
     setLoginError(null);
     try {
       const nextSession = await loginWithApi(credentials.identifier, credentials.password);
+      // A shared phone follows whoever signs in, not the previous operator's
+      // choice. The switch in Settings still works afterwards.
+      const language = accountLanguage(nextSession.user.defaultLanguage);
+      if (language) await handlePreferencesChange({ language });
       setSession(nextSession);
       setActiveTab("sessions");
       setSelectedSession(null);
