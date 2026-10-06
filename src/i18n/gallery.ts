@@ -226,6 +226,8 @@ export const galleryMessages = defineMessages({
   filterSlotAria: { id: "Filter slot", en: "Slot filter", zh: "槽位筛选" },
   date: { id: "Tanggal", en: "Date", zh: "日期" },
   filterDateAria: { id: "Filter tanggal", en: "Date filter", zh: "日期筛选" },
+  allSessions: { id: "Semua Sesi", en: "All Sessions", zh: "全部场次" },
+  filterSessionAria: { id: "Filter sesi", en: "Session filter", zh: "场次筛选" },
   shift: { id: "Shift", en: "Shift", zh: "班次" },
   allShifts: { id: "Semua Shift", en: "All Shifts", zh: "全部班次" },
   filterShiftAria: {
@@ -254,6 +256,7 @@ export const galleryMessages = defineMessages({
   activeFilters: { id: "Filter Aktif", en: "Active Filters", zh: "当前筛选" },
   chipLocation: { id: "Lokasi: {value}", en: "Location: {value}", zh: "位置：{value}" },
   chipBin: { id: "Bin: {value}", en: "Bin: {value}", zh: "来源（Bin）：{value}" },
+  chipSession: { id: "Sesi: {value}", en: "Session: {value}", zh: "场次：{value}" },
   chipDate: { id: "Tanggal: {value}", en: "Date: {value}", zh: "日期：{value}" },
   chipSearch: { id: "Cari: {value}", en: "Search: {value}", zh: "搜索：{value}" },
   resetAll: { id: "Reset semua", en: "Reset all", zh: "全部重置" },

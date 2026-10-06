@@ -45,6 +45,7 @@ describe("gallery-preferences", () => {
       filterDate: "2026-07-21",
       filterLocation: "Acid Plant",
       filterBin: "BIN1",
+      filterSession: "02.00",
     });
 
     expect(loadGalleryViewState()).toEqual({
@@ -55,6 +56,33 @@ describe("gallery-preferences", () => {
       filterDate: "2026-07-21",
       filterLocation: "Acid Plant",
       filterBin: "BIN1",
+      filterSession: "02.00",
+    });
+  });
+
+  it("keeps a view state stored before the session filter existed", () => {
+    const localStorage = createStorageMock();
+    localStorage.setItem(
+      "capture-system:gallery-view-state:v1",
+      JSON.stringify({
+        sortOption: "oldest",
+        viewMode: "list",
+        pageSize: 48,
+        searchQuery: "",
+        filterDate: "",
+        filterLocation: "Acid Plant",
+        filterBin: "BIN2",
+      }),
+    );
+    Object.defineProperty(globalThis, "window", {
+      value: { localStorage },
+      configurable: true,
+    });
+
+    expect(loadGalleryViewState()).toMatchObject({
+      viewMode: "list",
+      filterBin: "BIN2",
+      filterSession: "",
     });
   });
 
@@ -106,6 +134,7 @@ describe("gallery-preferences", () => {
           filterDate: "",
           filterLocation: "",
           filterBin: "",
+          filterSession: "",
         },
         "compact-audit",
       ),
@@ -121,6 +150,7 @@ describe("gallery-preferences", () => {
           filterDate: "",
           filterLocation: "",
           filterBin: "",
+          filterSession: "",
         },
         "compact-audit",
       ),

@@ -210,6 +210,8 @@ type GalleryCard = {
   name: string;
   folder: string;
   bin?: string;
+  /** Label sesi sampling dari registry; null untuk capture lama atau salinan lokal tanpa record. */
+  session: string | null;
   createdAt: number;
   captureRecordId: number | null;
   persistedPath: string | null;
@@ -505,6 +507,7 @@ function GalleryContent() {
   const [filterDate, setFilterDate] = useState("");
   const [filterLocation, setFilterLocation] = useState("");
   const [filterBin, setFilterBin] = useState<GalleryViewState["filterBin"]>("");
+  const [filterSession, setFilterSession] = useState("");
   const [savedViewPreference, setSavedViewPreference] =
     useState<GallerySavedViewPreference>("all-images");
   const [galleryViewLoaded, setGalleryViewLoaded] = useState(false);
@@ -513,7 +516,7 @@ function GalleryContent() {
   // akan menghasilkan bug yang hanya muncul lewat satu filter tertentu.
   useEffect(() => {
     setRecordPage(1);
-  }, [searchQuery, filterDate, filterLocation, filterBin]);
+  }, [searchQuery, filterDate, filterLocation, filterBin, filterSession]);
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [compareOpen, setCompareOpen] = useState(false);
@@ -537,6 +540,7 @@ function GalleryContent() {
     setFilterDate(savedViewState.filterDate);
     setFilterLocation(savedViewState.filterLocation);
     setFilterBin(savedViewState.filterBin);
+    setFilterSession(savedViewState.filterSession);
     setSavedViewPreference(savedView);
     setImageQuality(loadGalleryImageQuality());
     setGalleryViewLoaded(true);
@@ -590,8 +594,18 @@ function GalleryContent() {
       filterDate,
       filterLocation,
       filterBin,
+      filterSession,
     }),
-    [filterBin, filterDate, filterLocation, pageSize, searchQuery, sortOption, viewMode],
+    [
+      filterBin,
+      filterDate,
+      filterLocation,
+      filterSession,
+      pageSize,
+      searchQuery,
+      sortOption,
+      viewMode,
+    ],
   );
 
   useEffect(() => {
@@ -1002,6 +1016,7 @@ function GalleryContent() {
     setFilterDate("");
     setFilterLocation("");
     setFilterBin("");
+    setFilterSession("");
     setPage(1);
   }
 
@@ -1013,6 +1028,7 @@ function GalleryContent() {
     setFilterDate(viewState.filterDate);
     setFilterLocation(viewState.filterLocation);
     setFilterBin(viewState.filterBin);
+    setFilterSession(viewState.filterSession);
     setPage(1);
   }
 
@@ -1063,6 +1079,7 @@ function GalleryContent() {
           name: record.fileName,
           folder: record.plant ?? "",
           bin: record.captureBin ?? undefined,
+          session: record.captureSession,
           createdAt: Date.parse(record.capturedAt),
           captureRecordId: record.id,
           persistedPath: record.filePath,
@@ -1083,6 +1100,7 @@ function GalleryContent() {
         name: item.name,
         folder: item.folder,
         bin: item.bin,
+        session: null,
         createdAt: item.createdAt,
         captureRecordId: item.captureRecordId ?? null,
         persistedPath: item.persistedPath ?? null,
@@ -1118,6 +1136,18 @@ function GalleryContent() {
     }
   });
 
+  // Pilihan sesi diturunkan dari record yang ADA, bukan dari jadwal: jadwal
+  // tiap plant berbeda dan bisa berubah, sedangkan yang ingin dicari orang
+  // adalah sesi yang memang punya foto. Sesi yang sedang dipilih tetap ikut
+  // walau recordnya tidak termuat, supaya pilihannya tidak tampil kosong.
+  const sessionOptions = Array.from(
+    new Set(
+      [...captureRecords.map((record) => record.captureSession), filterSession].filter(
+        (session): session is string => !!session,
+      ),
+    ),
+  ).sort();
+
   const filteredGallery = sortedGallery.filter((item) => {
     const matchesSearch =
       searchQuery.trim() === "" ||
@@ -1126,7 +1156,8 @@ function GalleryContent() {
       filterDate === "" || new Date(item.createdAt).toISOString().slice(0, 10) === filterDate;
     const matchesLocation = filterLocation === "" || item.folder === filterLocation;
     const matchesBin = filterBin === "" || toBinSlot(item.bin) === toBinSlot(filterBin);
-    return matchesSearch && matchesDate && matchesLocation && matchesBin;
+    const matchesSession = filterSession === "" || item.session === filterSession;
+    return matchesSearch && matchesDate && matchesLocation && matchesBin && matchesSession;
   });
   const filteredCaptureRecords = captureRecords.filter((item) => {
     const matchesSearch =
@@ -1138,7 +1169,8 @@ function GalleryContent() {
     // (Chloride) adalah slot yang sama, dan record Acid Plant lama masih
     // tersimpan sebagai "BIN 1" dari sebelum istilahnya ditukar.
     const matchesBin = filterBin === "" || toBinSlot(item.captureBin) === toBinSlot(filterBin);
-    return matchesSearch && matchesDate && matchesLocation && matchesBin;
+    const matchesSession = filterSession === "" || item.captureSession === filterSession;
+    return matchesSearch && matchesDate && matchesLocation && matchesBin && matchesSession;
   });
   // Sebelumnya `slice(0, 8)`: sisanya tidak bisa dijangkau sama sekali,
   // sementara badge di sebelahnya tetap mengumumkan "18 record cocok filter".
@@ -1499,6 +1531,13 @@ function GalleryContent() {
           key: "bin",
           label: t(m.chipBin, { value: binLabel(filterBin === "BIN2" ? 2 : 1) }),
           clear: () => setFilterBin(""),
+        }
+      : null,
+    filterSession
+      ? {
+          key: "session",
+          label: t(m.chipSession, { value: filterSession }),
+          clear: () => setFilterSession(""),
         }
       : null,
     filterDate
@@ -1980,6 +2019,23 @@ ${storage.path ?? "—"}`}
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">
+              {t(m.colSession)}
+            </label>
+            <AppSelect
+              value={filterSession}
+              onValueChange={(value) => {
+                setFilterSession(value);
+                setPage(1);
+              }}
+              options={[
+                { value: "", label: t(m.allSessions) },
+                ...sessionOptions.map((session) => ({ value: session, label: session })),
+              ]}
+              ariaLabel={t(m.filterSessionAria)}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">
               {t(m.shift)}
             </label>
             <AppSelect
@@ -2029,7 +2085,7 @@ ${storage.path ?? "—"}`}
               ariaLabel={t(m.imageQuality)}
             />
           </div>
-          <div className="sm:col-span-2 lg:col-span-5">
+          <div className="sm:col-span-2 lg:col-span-4">
             <label className="mb-1 block text-xs font-medium text-muted-foreground">
               {t(m.searchFileName)}
             </label>

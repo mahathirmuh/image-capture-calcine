@@ -65,6 +65,8 @@ export type GalleryViewState = {
   // operator tanpa memberi apa pun -- teks yang dilihat operator diturunkan
   // dari plantnya lewat toBinLabel(), bukan dari nilai ini.
   filterBin: "" | "BIN1" | "BIN2";
+  // Label sesi sampling ("02.00"), kosong berarti semua sesi.
+  filterSession: string;
 };
 
 export const DEFAULT_GALLERY_VIEW_STATE: GalleryViewState = {
@@ -75,6 +77,7 @@ export const DEFAULT_GALLERY_VIEW_STATE: GalleryViewState = {
   filterDate: "",
   filterLocation: "",
   filterBin: "",
+  filterSession: "",
 };
 
 export const GALLERY_SAVED_VIEW_OPTIONS = [
@@ -154,6 +157,9 @@ const galleryViewStateSchema = z.object({
   filterDate: z.string(),
   filterLocation: z.string(),
   filterBin: z.enum(["", "BIN1", "BIN2"]),
+  // Bawaan kosong: preferensi yang tersimpan sebelum filter sesi ada tidak
+  // punya kunci ini, dan tidak boleh gugur seluruhnya hanya karena itu.
+  filterSession: z.string().default(""),
 });
 
 const gallerySavedViewSchema = z.enum(GALLERY_SAVED_VIEW_OPTIONS);
