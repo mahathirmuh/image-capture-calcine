@@ -546,6 +546,17 @@ Verification: 49 suites / 417 tests pass (8 new: dictionary completeness and pla
 APK 1.3.0 / versionCode 4 (debug) built on 2026-10-06 against the production HTTPS API: Gradle BUILD SUCCESSFUL, v1/v2 signatures verified, bundle contains both dictionaries. SHA256 `FA4285F04E47F40F40B09995C9EFCFAB88AB9B928B15516982C9D7FBC2ED123C`. Same workstation debug key as APK 1.2.0. Not installed or run on a device.
 
 
+## Post-M5 Maintenance — Gallery bulk download as one ZIP with date folders (2026-10-06)
+
+Web/backend change; no mobile source touched, APK stays 1.4.0. Details: docs/gallery-bulk-download.md.
+
+- [x] "Unduh massal" on `/gallery` (all roles): selected photos or all filtered results as one ZIP laid out `<date>/<plant folder>/<file>`; the existing multi-select download now opens the same dialog instead of starting one download per photo.
+- [x] Server: `createCaptureZipRequest` checks every record against the account's gallery scope and signs the id list; `POST /media/zip` verifies it and streams a store-only archive one photo at a time, ZIP64 only where needed, unreadable photos listed in `_tidak-terunduh.txt`. Up to 1000 photos per archive.
+- [x] OpenAPI reviewed: `/media/zip` is not part of `/api/v1`; no change.
+- [ ] Real download from the production share after deployment, including one archive above 4 GB opened in Windows Explorer.
+
+Verification: 55 suites / 499 tests pass (26 new). Archives written by the app's ZIP writer were opened by three independent readers (Python zipfile with CRC of every entry, .NET/Expand-Archive, Windows tar/libarchive): a small one with nested folders and a Chinese file name, and a 4.7 GB ZIP64 one. Read-only run of the archive query against the real registry: the latest 600 records become 40 date folders, 600 unique paths, 5.36 GB. Headless Chrome on an isolated dev server as Super Admin, Operator and Viewer in three languages: correct counts; the form POST reaches the real `/media/zip` and its signature is accepted (the test server then answers 503 for lack of a network folder, which the dialog shows); with the reply replaced by a small archive the browser starts and completes a download from the hidden iframe without leaving the page. Production build succeeds. Not verified: a real download from the production share, multi-GB behaviour through the production reverse proxy, Windows Explorer on an archive above 4 GB.
+
 ## Post-M5 — Account default language (2026-10-06)
 
 Sources: functional specification (new section "Account default language"), docs/web-i18n.md, docs/openapi.yaml. Requested for the web Users page; applied on mobile as well because the same accounts sign in there. Operator-only scope unchanged.

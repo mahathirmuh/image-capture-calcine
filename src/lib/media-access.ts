@@ -48,6 +48,67 @@ export const createCaptureMediaUrl = createServerFn({ method: "POST" })
     return { ok: true, url: buildMediaPath(data.recordId, token), expiresAt: token.expiresAt };
   });
 
+const zipRequestSchema = z.object({
+  // Batasnya sama dengan ZIP_MAX_RECORDS di server/media-zip.ts.
+  recordIds: z.array(z.number().int().positive()).min(1).max(1000),
+});
+
+export type ZipRequestResult =
+  | {
+      ok: true;
+      /** Tujuan form POST yang memulai unduhan. */
+      action: string;
+      fields: { ids: string; e: string; s: string };
+      /** Foto yang masuk arsip. */
+      count: number;
+      /** Yang diminta tetapi tidak masuk: di luar plant akun, atau tidak pernah sampai ke folder jaringan. */
+      skipped: number;
+      /** Jumlah ukuran menurut registry; null kalau ada yang tidak tercatat. */
+      totalBytes: number | null;
+    }
+  | { ok: false; code: string; message: string };
+
+/**
+ * Siapkan unduhan massal: satu arsip ZIP berisi folder per tanggal.
+ *
+ * Izin diputuskan DI SINI, per record, dengan aturan yang sama seperti foto
+ * tunggal. Yang keluar adalah daftar id bertanda tangan; browser mengirimnya
+ * sebagai form POST ke /media/zip dan arsipnya dialirkan dari sana.
+ */
+export const createCaptureZipRequest = createServerFn({ method: "POST" })
+  .validator(zipRequestSchema)
+  .handler(async ({ data }): Promise<ZipRequestResult> => {
+    const { requireGalleryAccess } = await import("./server/gallery-access");
+    const access = await requireGalleryAccess();
+    if (!access.ok) return access;
+
+    const { MEDIA_ZIP_PATH, createZipToken, findRecordsForZip } =
+      await import("./server/media-zip");
+    const requested = [...new Set(data.recordIds)];
+    const allowed = (await findRecordsForZip(requested)).filter(
+      (record) => record.servable && canViewGalleryPlant(access.scope, record.plant),
+    );
+    if (allowed.length === 0) {
+      return {
+        ok: false,
+        code: "NOTHING_TO_DOWNLOAD",
+        message: "Tidak ada foto pilihan yang bisa diunduh dari folder jaringan.",
+      };
+    }
+
+    const token = await createZipToken(allowed.map((record) => record.id));
+    return {
+      ok: true,
+      action: MEDIA_ZIP_PATH,
+      fields: { ids: token.ids, e: String(token.expiresAt), s: token.signature },
+      count: allowed.length,
+      skipped: requested.length - allowed.length,
+      totalBytes: allowed.every((record) => record.fileSizeBytes != null)
+        ? allowed.reduce((total, record) => total + (record.fileSizeBytes ?? 0), 0)
+        : null,
+    };
+  });
+
 const saveThumbSchema = z.object({
   recordId: z.number().int().positive(),
   /** JPEG ter-base64, tanpa awalan data URL. */

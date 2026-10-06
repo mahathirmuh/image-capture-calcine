@@ -233,6 +233,7 @@ Pada pembacaan awal 10 September, `docker-compose.yml` memiliki perubahan lokal 
 - [CI/CD](../CI_CD.md): referensi pipeline; konfirmasi terhadap lingkungan aktual.
 - [Integrasi kamera](../CAMERA_API_INTEGRATION.md) dan [preview polling](../CAMERA_PREVIEW_POLLING.md).
 - [Laporan edge camera 01](edge-camera-01-functional-2026-09-09.md): hasil dan batasan pengujian terakhir yang dibaca.
+- [Unduh massal Gallery](gallery-bulk-download.md): banyak foto sebagai satu ZIP berisi folder per tanggal; alur izin (daftar id bertanda tangan, `POST /media/zip`), susunan arsip, dan batasnya.
 - [Sinkronkan folder](share-folder-sync.md): cara foto yang ditaruh langsung di folder jaringan didaftarkan ke registry supaya tampil di Gallery (tombol di halaman Gallery, semua peran), aturan pembacaan path, dan konsekuensinya.
 
 Aturan kerja: baca sumber dokumentasi sebelum implementasi, review OpenAPI untuk perubahan backend, catat bukti verifikasi, dan sinkronkan roadmap/dokumen terkait. Hindari menulis ulang riwayat Git yang sudah dipublikasikan karena keterhubungan Lovable yang dicatat pada mobile/AGENTS.md.

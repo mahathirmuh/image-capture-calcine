@@ -194,6 +194,11 @@ export const errorMessages = defineMessages({
     en: "The language column is not in the database yet. Run db/mssql/add_app_users_default_language.sql (npm run db:migrate), then save again.",
     zh: "数据库中尚无语言列。请运行 db/mssql/add_app_users_default_language.sql（npm run db:migrate），然后重新保存。",
   },
+  NOTHING_TO_DOWNLOAD: {
+    id: "Tidak ada foto pilihan yang bisa diunduh dari folder jaringan.",
+    en: "None of the selected photos can be downloaded from the network folder.",
+    zh: "所选照片均无法从网络文件夹下载。",
+  },
   CAPTURE_RECORD_FAILED: {
     id: "Gagal menyimpan metadata capture ke registry.",
     en: "The capture metadata could not be saved to the registry.",

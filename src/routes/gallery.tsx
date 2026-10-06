@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Columns2,
   Download,
+  FolderArchive,
   FolderSync,
   HardDrive,
   ImageOff,
@@ -72,11 +73,13 @@ import { getImageDimensions, computeHistogram, type Histogram } from "@/lib/imag
 import { AppDatePicker } from "@/components/app-date-picker";
 import { AppSelect } from "@/components/app-select";
 import { PageTitle } from "@/components/page-shell";
+import { BulkDownloadDialog, type BulkDownloadPhoto } from "@/components/bulk-download-dialog";
 import { ShareSyncDialog } from "@/components/share-sync-dialog";
 import { commonMessages as c } from "@/i18n/common";
 import { failureText } from "@/i18n/errors";
 import { deviceStatusText } from "@/i18n/device-status";
 import {
+  bulkDownloadMessages as bm,
   galleryMessages as m,
   gallerySavedViewMessages as sv,
   shareSyncMessages as sm,
@@ -317,6 +320,18 @@ function formatSaveMethodLabel(
             : "—";
 }
 
+/** Bentuk ringkas sebuah kartu untuk dialog unduh massal. */
+function toBulkPhoto(card: GalleryCard): BulkDownloadPhoto {
+  return {
+    recordId: card.captureRecordId,
+    filePath: card.persistedPath,
+    capturedAt: card.createdAt,
+    plant: card.folder || null,
+    track: card.track,
+    sizeBytes: card.fileSizeBytes,
+  };
+}
+
 /** Penanda foto yang ditaruh langsung di folder jaringan lalu didaftarkan. */
 function ManualBadge() {
   const t = useT();
@@ -517,6 +532,7 @@ function GalleryContent() {
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [bulkDownloading, setBulkDownloading] = useState(false);
   const [shareSyncOpen, setShareSyncOpen] = useState(false);
+  const [bulkDownloadOpen, setBulkDownloadOpen] = useState(false);
 
   // Konfirmasi hapus & ubah nama dipegang di state, bukan lewat confirm()/
   // prompt() bawaan browser. Dialog bawaan itu menempel di tepi atas jendela,
@@ -1009,6 +1025,12 @@ function GalleryContent() {
     if (bulkDownloading) return;
     const cards = galleryCards.filter((card) => selectedIds.has(card.id));
     if (cards.length === 0) return;
+    // Lebih dari satu foto berarti unduhan massal: satu ZIP berisi folder per
+    // tanggal, bukan deretan unduhan terpisah yang menumpuk di satu folder.
+    if (cards.length > 1) {
+      setBulkDownloadOpen(true);
+      return;
+    }
     setBulkDownloading(true);
     try {
       let failed = 0;
@@ -1659,6 +1681,13 @@ function GalleryContent() {
               className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
             >
               <Download className="h-4 w-4" /> {bulkDownloading ? t(m.preparing) : t(m.download)}
+            </button>
+            <button
+              onClick={() => setBulkDownloadOpen(true)}
+              disabled={filteredGallery.length === 0 && selectedIds.size === 0}
+              className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
+            >
+              <FolderArchive className="h-4 w-4" /> {t(bm.button)}
             </button>
             {/* Untuk semua peran. Server membatasi pemindaian ke plant yang
                 boleh dilihat akunnya, sama seperti isi galeri ini. */}
@@ -2974,6 +3003,19 @@ ${storage.path ?? "—"}`}
           </div>
         </aside>
       )}
+
+      {/* Daftarnya hanya disusun saat dialog terbuka: sampai seribu kartu, dan
+          tidak ada gunanya memetakannya di setiap render galeri. */}
+      <BulkDownloadDialog
+        open={bulkDownloadOpen}
+        onOpenChange={setBulkDownloadOpen}
+        selected={
+          bulkDownloadOpen
+            ? galleryCards.filter((card) => selectedIds.has(card.id)).map(toBulkPhoto)
+            : []
+        }
+        filtered={bulkDownloadOpen ? filteredGallery.map(toBulkPhoto) : []}
+      />
 
       <ShareSyncDialog
         open={shareSyncOpen}

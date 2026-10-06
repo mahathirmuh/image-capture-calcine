@@ -73,6 +73,13 @@ export default {
       // Dicegat di sini, sama seperti API, karena `<img src>` tidak membawa
       // header apa pun: izinnya sudah diputuskan lebih dulu oleh serverFn
       // createCaptureMediaUrl dan dititipkan ke URL sebagai tanda tangan.
+      // Unduhan massal: satu arsip ZIP untuk banyak foto. Diperiksa lebih dulu
+      // dari /media/:id di bawah, yang akan membaca "zip" sebagai id tak sah.
+      if (pathname === "/media/zip") {
+        const { handleMediaZipRequest } = await import("./lib/server/media-zip");
+        return await handleMediaZipRequest(request);
+      }
+
       if (pathname.startsWith("/media/")) {
         const { handleMediaRequest } = await import("./lib/server/media-serve");
         return await handleMediaRequest(request);
@@ -92,7 +99,10 @@ export default {
           request,
           new Response(
             JSON.stringify({
-              error: { code: "INTERNAL_ERROR", message: "Permintaan gagal diproses di app server." },
+              error: {
+                code: "INTERNAL_ERROR",
+                message: "Permintaan gagal diproses di app server.",
+              },
             }),
             {
               status: 500,

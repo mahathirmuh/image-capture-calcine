@@ -762,3 +762,69 @@ export const shareSyncMessages = defineMessages({
     zh: "向服务器发送请求失败，请重试。",
   },
 });
+
+// Dialog "Unduh massal": banyak foto sebagai satu ZIP berisi folder per tanggal.
+export const bulkDownloadMessages = defineMessages({
+  button: { id: "Unduh massal", en: "Bulk download", zh: "批量下载" },
+  title: { id: "Unduh massal (ZIP)", en: "Bulk download (ZIP)", zh: "批量下载（ZIP）" },
+  intro: {
+    id: "Foto diunduh sebagai satu berkas ZIP. Di dalamnya setiap tanggal punya foldernya sendiri.",
+    en: "The photos are downloaded as one ZIP file. Inside it, every date has its own folder.",
+    zh: "照片将打包为一个 ZIP 文件下载，其中每个日期各有一个文件夹。",
+  },
+  scopeSelected: { id: "Foto yang dipilih", en: "Selected photos", zh: "所选照片" },
+  scopeFiltered: { id: "Semua hasil filter", en: "All filtered results", zh: "全部筛选结果" },
+  photoCount: { id: "{count} foto", en: "{count} photos", zh: "{count} 张照片" },
+  nothing: {
+    id: "Tidak ada foto yang bisa diunduh pada pilihan ini.",
+    en: "There are no photos to download in this choice.",
+    zh: "此选项下没有可下载的照片。",
+  },
+  statPhotos: { id: "Foto", en: "Photos", zh: "照片" },
+  statFolders: { id: "Folder tanggal", en: "Date folders", zh: "日期文件夹" },
+  statSize: { id: "Perkiraan ukuran", en: "Estimated size", zh: "预计大小" },
+  structureTitle: { id: "Susunan isi ZIP", en: "ZIP layout", zh: "ZIP 内部结构" },
+  structureHint: {
+    id: "Di dalam tiap folder tanggal, foto dipisah per plant (dan Trial) supaya nama berkas yang sama tidak saling menimpa.",
+    en: "Inside each date folder the photos are separated per plant (and Trial), so files with the same name do not overwrite each other.",
+    zh: "每个日期文件夹内再按工厂（及试行）分开，避免同名文件互相覆盖。",
+  },
+  localOnlySkipped: {
+    id: "{count} foto tidak ikut karena hanya tersimpan di browser ini, bukan di folder jaringan.",
+    en: "{count} photos are left out because they exist only in this browser, not in the network folder.",
+    zh: "有 {count} 张照片未包含，因为它们只保存在此浏览器中，不在网络文件夹里。",
+  },
+  tooMany: {
+    id: "Paling banyak {max} foto sekali unduh. Persempit dengan filter tanggal, atau pilih lebih sedikit.",
+    en: "One download can hold {max} photos at most. Narrow it down with the date filter, or select fewer.",
+    zh: "每次最多下载 {max} 张照片。请用日期筛选缩小范围，或减少所选数量。",
+  },
+  started: {
+    id: "Unduhan {count} foto dimulai.",
+    en: "Download of {count} photos started.",
+    zh: "已开始下载 {count} 张照片。",
+  },
+  startedHint: {
+    id: "Kemajuannya terlihat di daftar unduhan browser. Dialog ini boleh ditutup.",
+    en: "Progress is shown in the browser's download list. You can close this dialog.",
+    zh: "进度可在浏览器的下载列表中查看，可以关闭此对话框。",
+  },
+  startFailed: {
+    id: "Unduhan tidak dimulai: {reason}",
+    en: "The download did not start: {reason}",
+    zh: "下载未开始：{reason}",
+  },
+  serverSkipped: {
+    id: "{count} foto dilewati karena tidak ada di folder jaringan atau di luar akses plant akun ini.",
+    en: "{count} photos were skipped because they are not in the network folder or are outside this account's plant access.",
+    zh: "已跳过 {count} 张照片：它们不在网络文件夹中，或超出了此账号的工厂权限。",
+  },
+  close: { id: "Tutup", en: "Close", zh: "关闭" },
+  download: { id: "Unduh ZIP", en: "Download ZIP", zh: "下载 ZIP" },
+  preparing: { id: "Menyiapkan...", en: "Preparing...", zh: "正在准备…" },
+  requestFailed: {
+    id: "Permintaan ke server gagal. Coba lagi.",
+    en: "The request to the server failed. Try again.",
+    zh: "向服务器发送请求失败，请重试。",
+  },
+});
