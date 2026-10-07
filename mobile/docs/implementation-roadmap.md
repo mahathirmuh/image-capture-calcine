@@ -553,7 +553,7 @@ Backend rule; no mobile source touched, APK stays 1.4.0 (the app reads the corre
 - [x] From 2026-10-07 the Acid Plant regular track is always 02.00, 05.00, 08.00, 11.00, 14.00, 17.00, 20.00, 23.00 (window 180 minutes), overriding the "every 2 hours" version an admin saved for 2026-10-06 onward; 2026-10-06 keeps its schedule as history.
 - [x] Settings shows the Acid Plant schedule read-only; saving one is refused.
 - [x] OpenAPI `/schedules` description updated.
-- [ ] Deploy, then confirm the 3-hour tab on web and mobile shows the eight sessions.
+- [x] Deployed by the owner on 2026-10-07 (production answered 502 for about four minutes during the restart, back at 10:44 WITA). Checked afterwards through the read-only API: `/schedules` carries `fixed-Acid Plant`, `/sessions` for 2026-10-07 lists Acid Plant regular as 02.00, 05.00, 08.00, 11.00, 14.00, 17.00, 20.00, 23.00 (02.00 and 08.00 captured) and trial as every 2 hours; `/media/zip` exists. The tab itself on web and on a phone was not looked at from here. APK rebuilt the same day from the current sources: byte-identical to the 1.4.0 already delivered (same SHA256), so no new version.
 
 Verification: 55 suites / 503 tests pass; rule applied to the real production schedule data gives the expected hours for 6 and 7 Oct and an open 08.00 session at 08:25 WITA. Not deployed.
 
