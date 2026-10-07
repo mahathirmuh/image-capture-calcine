@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { PLANTS } from "@/lib/locations";
 import { fetchCaptureSchedules, updateCaptureSchedule } from "@/lib/capture-schedules";
 import {
+  hasFixedRegularSchedule,
   scheduleForDate,
   scheduleHours,
   scheduleValidation,
@@ -38,6 +39,7 @@ const KNOWN_ERRORS: Message[] = [
   m.errorTomorrowOnly,
   m.errorSessionEnded,
   m.errorAdminOnly,
+  m.errorFixedSchedule,
 ];
 
 const CODED_ERRORS: Record<string, Message> = {
@@ -112,6 +114,8 @@ export function CaptureScheduleSettings() {
     setDirty(true);
   };
   const hours = draft && !scheduleValidation(draft) ? scheduleHours(draft) : [];
+  // Plant berjalur trial: kedua jadwalnya tetap, jadi formulirnya hanya dibaca.
+  const fixed = hasFixedRegularSchedule(plant);
   async function save(event: React.FormEvent) {
     event.preventDefault();
     if (!draft || !snapshot || saving || loading) return;
@@ -241,7 +245,7 @@ export function CaptureScheduleSettings() {
                 <ScheduleSelect
                   value={String(draft.startHour)}
                   onValueChange={(v) => update({ startHour: Number(v) })}
-                  disabled={saving || loading}
+                  disabled={saving || loading || fixed}
                 >
                   <SelectTrigger aria-labelledby="schedule-start-label">
                     <SelectValue />
@@ -267,7 +271,7 @@ export function CaptureScheduleSettings() {
                       windowMinutes: Math.min(draft.windowMinutes, Number(v) * 60),
                     })
                   }
-                  disabled={saving || loading}
+                  disabled={saving || loading || fixed}
                 >
                   <SelectTrigger aria-labelledby="schedule-interval-label">
                     <SelectValue />
@@ -295,7 +299,7 @@ export function CaptureScheduleSettings() {
                   min={1}
                   max={draft.intervalHours * 60}
                   value={draft.windowMinutes}
-                  disabled={saving || loading}
+                  disabled={saving || loading || fixed}
                   onChange={(e) => update({ windowMinutes: Number(e.target.value) })}
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                 />
@@ -307,7 +311,7 @@ export function CaptureScheduleSettings() {
                 <ScheduleSelect
                   value={draft.timezone}
                   onValueChange={(v) => update({ timezone: v })}
-                  disabled={saving || loading}
+                  disabled={saving || loading || fixed}
                 >
                   <SelectTrigger aria-labelledby="schedule-zone-label">
                     <SelectValue />
@@ -332,12 +336,17 @@ export function CaptureScheduleSettings() {
                   inputMode="numeric"
                   placeholder="YYYY-MM-DD"
                   value={draft.effectiveDate}
-                  disabled={saving || loading}
+                  disabled={saving || loading || fixed}
                   onChange={(e) => update({ effectiveDate: e.target.value })}
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                 />
               </div>
             </div>
+            {fixed && (
+              <p className="rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm">
+                {t(m.fixedSchedule, { plant })}
+              </p>
+            )}
             <div className="rounded-lg bg-muted p-3" aria-live="polite">
               <p className="text-sm font-medium">
                 {t(m.preview, { sessions: hours.length, photos: hours.length * 2 })}
@@ -351,7 +360,7 @@ export function CaptureScheduleSettings() {
             <div className="flex flex-wrap gap-2">
               <button
                 type="submit"
-                disabled={saving || loading || !dirty}
+                disabled={saving || loading || !dirty || fixed}
                 className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
               >
                 {saving ? t(m.saving) : t(m.save)}

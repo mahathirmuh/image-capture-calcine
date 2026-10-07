@@ -589,7 +589,16 @@ paths:
       tags: [Reference]
       operationId: getCaptureSchedules
       summary: Jadwal capture per plant beserta versi historis
-      description: Sumber jadwal untuk web/mobile. Jam plant eksplisit; default 02:00 setiap 3 jam, jendela 120 menit, Asia/Makassar. Perubahan admin dilakukan melalui authenticated web RPC, hanya mulai besok. API key tetap read-only.
+      description: |
+        Sumber jadwal untuk web/mobile. Jam plant eksplisit; default 02:00 setiap 3 jam, jendela
+        180 menit, Asia/Makassar. Perubahan admin dilakukan melalui authenticated web RPC, hanya
+        mulai besok. API key tetap read-only.
+
+        Plant berjalur trial (Acid Plant) berjadwal reguler TETAP sejak 2026-10-07: respons memuat
+        versi `fixed-Acid Plant` (setiap 3 jam mulai 02:00, jendela 180 menit, berlaku
+        2026-10-07) yang menggantikan versi tersimpan mana pun untuk tanggal itu dan sesudahnya.
+        Versi tersimpan sebelum tanggal itu tetap ada sebagai riwayat. Jadwal plant ini tidak bisa
+        diubah dari Settings.
       responses:
         "200":
           description: Snapshot konfigurasi dan waktu server.

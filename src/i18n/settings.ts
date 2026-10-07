@@ -383,6 +383,16 @@ export const scheduleSettingsMessages = defineMessages({
     en: "Your session has ended. Please sign in again.",
     zh: "您的登录已过期，请重新登录。",
   },
+  errorFixedSchedule: {
+    id: "Jadwal plant ini tetap dan tidak bisa diubah dari Settings.",
+    en: "This plant's schedule is fixed and cannot be changed from Settings.",
+    zh: "该工厂的排程是固定的，无法在设置中更改。",
+  },
+  fixedSchedule: {
+    id: "Jadwal {plant} tetap dan tidak diatur dari sini. Sesi per 3 jam: 02.00, 05.00, 08.00, 11.00, 14.00, 17.00, 20.00, 23.00 (berlaku sejak 7 Okt 2026). Sesi per 2 jam (Trial): 00.00, 02.00, 04.00, dan seterusnya.",
+    en: "The {plant} schedule is fixed and is not set here. 3-hour sessions: 02:00, 05:00, 08:00, 11:00, 14:00, 17:00, 20:00, 23:00 (since 7 Oct 2026). 2-hour sessions (Trial): 00:00, 02:00, 04:00 and so on.",
+    zh: "{plant} 的排程是固定的，不在此处设置。每 3 小时场次：02:00、05:00、08:00、11:00、14:00、17:00、20:00、23:00（自 2026 年 10 月 7 日起）。每 2 小时场次（试行）：00:00、02:00、04:00，依此类推。",
+  },
   errorAdminOnly: {
     id: "Hanya Super Admin yang boleh mengubah jadwal.",
     en: "Only Super Admin may change the schedule.",

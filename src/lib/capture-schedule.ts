@@ -93,6 +93,58 @@ export function versionsForTrack(
 ): ScheduleVersion[] {
   return track === "trial" ? [trialSchedule(plant)] : versions;
 }
+/**
+ * Sejak tanggal ini plant berjalur trial memakai jadwal reguler TETAP: per 3
+ * jam (02.00, 05.00, 08.00, 11.00, 14.00, 17.00, 20.00, 23.00), jendela 180
+ * menit. Keputusan pemilik pada 7 Okt 2026.
+ *
+ * Alasannya: di plant itu jadwal per 2 jam sudah punya jalurnya sendiri
+ * (trial), dan tab di layar menyebut jalur reguler "Sesi per 3 jam". Jadwal
+ * reguler yang diubah dari Settings menjadi per 2 jam (pernah terjadi, berlaku
+ * 6 Okt) membuat tab itu berbohong dan menggandakan pekerjaan operator.
+ *
+ * Riwayat SEBELUM tanggal ini dibiarkan apa adanya: foto yang sudah diambil
+ * menurut jadwal lama tetap dinilai dengan jadwal lama.
+ */
+export const FIXED_REGULAR_SINCE = "2026-10-07";
+
+export function hasFixedRegularSchedule(plant: string): boolean {
+  return hasTrialTrack(plant);
+}
+
+export function fixedRegularSchedule(plant: string): ScheduleVersion {
+  return {
+    ...defaultSchedule(plant),
+    id: `fixed-${plant}`,
+    effectiveDate: FIXED_REGULAR_SINCE,
+    createdAt: `${FIXED_REGULAR_SINCE}T00:00:00.000Z`,
+  };
+}
+
+/**
+ * Versi jadwal setelah aturan jadwal tetap diterapkan: versi tersimpan untuk
+ * plant berjadwal tetap yang berlaku mulai FIXED_REGULAR_SINCE diabaikan, lalu
+ * jadwal tetapnya ditambahkan di ujung (yang di ujung menang bila tanggalnya
+ * sama -- lihat scheduleForDate).
+ */
+export function applyFixedRegularSchedules(
+  versions: ScheduleVersion[],
+  plants: readonly string[],
+): ScheduleVersion[] {
+  const fixedPlants = plants.filter(hasFixedRegularSchedule);
+  return [
+    ...versions.filter(
+      (version) =>
+        !(
+          hasFixedRegularSchedule(version.plant) &&
+          (version.effectiveDate >= FIXED_REGULAR_SINCE ||
+            version.id === fixedRegularSchedule(version.plant).id)
+        ),
+    ),
+    ...fixedPlants.map(fixedRegularSchedule),
+  ];
+}
+
 /** Folder pertama di bawah NETWORK_SAVE_ROOT: "Acid Plant" atau "Acid Plant Trial". */
 export function trackFolder(plant: string, track: CaptureTrack): string {
   return track === "trial" ? `${plant} Trial` : plant;

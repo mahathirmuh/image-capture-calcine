@@ -546,6 +546,17 @@ Verification: 49 suites / 417 tests pass (8 new: dictionary completeness and pla
 APK 1.3.0 / versionCode 4 (debug) built on 2026-10-06 against the production HTTPS API: Gradle BUILD SUCCESSFUL, v1/v2 signatures verified, bundle contains both dictionaries. SHA256 `FA4285F04E47F40F40B09995C9EFCFAB88AB9B928B15516982C9D7FBC2ED123C`. Same workstation debug key as APK 1.2.0. Not installed or run on a device.
 
 
+## Post-M5 Maintenance — Acid Plant regular sessions fixed at every 3 hours (2026-10-07)
+
+Backend rule; no mobile source touched, APK stays 1.4.0 (the app reads the corrected schedule from `/schedules`). Details: docs/flexible-schedules.md.
+
+- [x] From 2026-10-07 the Acid Plant regular track is always 02.00, 05.00, 08.00, 11.00, 14.00, 17.00, 20.00, 23.00 (window 180 minutes), overriding the "every 2 hours" version an admin saved for 2026-10-06 onward; 2026-10-06 keeps its schedule as history.
+- [x] Settings shows the Acid Plant schedule read-only; saving one is refused.
+- [x] OpenAPI `/schedules` description updated.
+- [ ] Deploy, then confirm the 3-hour tab on web and mobile shows the eight sessions.
+
+Verification: 55 suites / 503 tests pass; rule applied to the real production schedule data gives the expected hours for 6 and 7 Oct and an open 08.00 session at 08:25 WITA. Not deployed.
+
 ## Post-M5 Maintenance — Gallery bulk download as one ZIP with date folders (2026-10-06)
 
 Web/backend change; no mobile source touched, APK stays 1.4.0. Details: docs/gallery-bulk-download.md.

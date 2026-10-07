@@ -24,7 +24,9 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 const input = {
-  plant: "Acid Plant",
+  // Acid Plant berjadwal tetap; plant lain yang dipakai untuk menguji
+  // penyimpanan jadwal yang bisa diatur.
+  plant: "Chloride Plant",
   effectiveDate: "2026-10-06",
   startHour: 6,
   intervalHours: 6,
@@ -37,7 +39,7 @@ it("persists versions atomically and reads them independently of memory", async 
   const loaded = await readScheduleSnapshot();
   expect(loaded.revision).toBe(1);
   expect(loaded.versions).toEqual(saved.versions);
-  expect(loaded.versions.at(-1)).toMatchObject({ createdBy: 42, intervalHours: 6 });
+  expect(loaded.versions.find((v) => v.createdBy === 42)).toMatchObject({ intervalHours: 6 });
 });
 it("rejects stale writes and historical changes", async () => {
   await saveScheduleVersion(input, 42);
@@ -76,6 +78,61 @@ it("binds finalization to server command time and user; rejects tampering and ex
   expect(() => verifyCaptureReceipt(ticket + "a", 42)).toThrow("INVALID_CAPTURE_RECEIPT");
   vi.spyOn(Date, "now").mockReturnValue(value.capturedAt + 3600001);
   expect(() => verifyCaptureReceipt(ticket, 42)).toThrow("INVALID_CAPTURE_RECEIPT");
+});
+it("never writes the fixed schedule into the stored file", async () => {
+  await saveScheduleVersion(input, 42);
+  const { readFile } = await import("node:fs/promises");
+  const stored = JSON.parse(
+    await readFile(join(config.root, "schedules", "versions.json"), "utf8"),
+  ) as { versions: { id: string }[] };
+  expect(stored.versions.map((v) => v.id)).not.toContain("fixed-Acid Plant");
+  expect((await readScheduleSnapshot()).versions.map((v) => v.id)).toContain("fixed-Acid Plant");
+});
+it("refuses to change a plant whose regular schedule is fixed", async () => {
+  await expect(saveScheduleVersion({ ...input, plant: "Acid Plant" }, 42)).rejects.toThrow(
+    "Jadwal plant ini tetap",
+  );
+  expect((await readScheduleSnapshot()).revision).toBe(0);
+});
+it("keeps old Acid Plant history but applies the fixed 3-hour schedule from 7 Oct", async () => {
+  await mkdir(join(config.root, "schedules"), { recursive: true });
+  const twoHourly = {
+    id: "dua-jam",
+    plant: "Acid Plant",
+    effectiveDate: "2026-10-06",
+    startHour: 2,
+    intervalHours: 2,
+    windowMinutes: 120,
+    timezone: "Asia/Makassar",
+    createdAt: "2026-10-05T04:04:09.249Z",
+    createdBy: 19,
+  };
+  const later = { ...twoHourly, id: "nanti", effectiveDate: "2026-10-09" };
+  await writeFile(
+    join(config.root, "schedules", "versions.json"),
+    JSON.stringify({ revision: 2, versions: [twoHourly, later] }),
+  );
+  const { scheduleForDate, scheduleHours } = await import("../capture-schedule");
+  const { versions } = await readScheduleSnapshot();
+  expect(versions.map((v) => v.id)).toEqual(["dua-jam", "fixed-Acid Plant"]);
+  expect(scheduleHours(scheduleForDate(versions, "Acid Plant", "2026-10-06"))).toEqual([
+    0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22,
+  ]);
+  for (const date of ["2026-10-07", "2026-10-09", "2027-01-01"]) {
+    const schedule = scheduleForDate(versions, "Acid Plant", date);
+    expect(scheduleHours(schedule)).toEqual([2, 5, 8, 11, 14, 17, 20, 23]);
+    expect(schedule.windowMinutes).toBe(180);
+  }
+});
+it("adds the fixed schedule even before any schedule was ever saved", async () => {
+  const { versions } = await readScheduleSnapshot();
+  expect(versions.filter((v) => v.plant === "Acid Plant").map((v) => v.id)).toEqual([
+    "default-Acid Plant",
+    "fixed-Acid Plant",
+  ]);
+  expect(versions.filter((v) => v.plant === "Chloride Plant").map((v) => v.id)).toEqual([
+    "default-Chloride Plant",
+  ]);
 });
 it("replaces stored default rows with the current built-in default", async () => {
   await mkdir(join(config.root, "schedules"), { recursive: true });

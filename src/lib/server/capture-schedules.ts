@@ -4,7 +4,9 @@ import { randomUUID, createHmac, timingSafeEqual } from "node:crypto";
 import { getServerEnv } from "../env";
 import { PLANTS } from "../locations";
 import {
+  applyFixedRegularSchedules,
   defaultSchedule,
+  hasFixedRegularSchedule,
   scheduleValidation,
   plantToday,
   zonedClock,
@@ -22,7 +24,19 @@ function directory() {
     throw new Error("SCHEDULE_STORAGE_UNAVAILABLE: CAPTURE_SPOOL_DIR belum dikonfigurasi.");
   return join(root, "schedules");
 }
+/**
+ * Jadwal yang berlaku: isi berkas, ditambah jadwal tetap plant berjalur trial.
+ *
+ * Jadwal tetap ditambahkan saat DIBACA dan tidak pernah ditulis ke berkas --
+ * berkasnya tetap catatan apa adanya tentang apa yang pernah disimpan admin.
+ */
 export async function readScheduleSnapshot(): Promise<ScheduleSnapshot> {
+  const stored = await readStoredSnapshot();
+  return { ...stored, versions: applyFixedRegularSchedules(stored.versions, PLANTS) };
+}
+
+/** Isi berkas jadwal apa adanya (baris bawaan diganti bawaan terkini). */
+async function readStoredSnapshot(): Promise<ScheduleSnapshot> {
   const fallback = { revision: 0, versions: PLANTS.map(defaultSchedule), serverNow: Date.now() };
   if (!getServerEnv().CAPTURE_SPOOL_DIR) return fallback;
   try {
@@ -56,6 +70,8 @@ export async function saveScheduleVersion(
   actorId: number,
 ): Promise<ScheduleSnapshot> {
   if (!(PLANTS as readonly string[]).includes(input.plant)) throw new Error("Plant tidak valid.");
+  if (hasFixedRegularSchedule(input.plant))
+    throw new Error("Jadwal plant ini tetap dan tidak bisa diubah dari Settings.");
   const invalid = scheduleValidation(input);
   if (invalid) throw new Error(invalid);
   const dir = directory();
@@ -70,7 +86,9 @@ export async function saveScheduleVersion(
   }
   const temp = join(dir, `versions-${randomUUID()}.tmp`);
   try {
-    const snapshot = await readScheduleSnapshot();
+    // Berkas mentah, bukan jadwal yang berlaku: jadwal tetap tidak boleh ikut
+    // tertulis ke berkas.
+    const snapshot = await readStoredSnapshot();
     if (snapshot.revision !== input.expectedRevision)
       throw new Error("Jadwal telah berubah. Muat ulang sebelum menyimpan.");
     const today = plantToday(snapshot.versions, input.plant, Date.now());
@@ -97,7 +115,11 @@ export async function saveScheduleVersion(
       await file.close();
     }
     await rename(temp, join(dir, "versions.json"));
-    return { ...next, serverNow: Date.now() };
+    return {
+      ...next,
+      versions: applyFixedRegularSchedules(next.versions, PLANTS),
+      serverNow: Date.now(),
+    };
   } finally {
     await unlink(temp).catch(() => undefined);
     await lock.close();

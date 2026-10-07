@@ -31,3 +31,30 @@ Supersedes "two-hour window" above: the built-in default schedule now uses a 180
 The two mobile lifecycle suites that assert out-of-window blocking could not be run on this workstation (missing `react-test-renderer` / `mobile/node_modules`) and must be re-run after `npm install`.
 
 Stored `default-<plant>` rows (written into `versions.json` when the first version is saved) are not admin decisions: on read they are replaced by the current built-in default, so the 180-minute default also applies on servers that already have a `versions.json`. Versions saved by an admin are never altered.
+
+## Acid Plant regular schedule fixed at every 3 hours (2026-10-07)
+
+Owner decision after an admin had saved "every 2 hours from 02:00" for Acid Plant (effective
+2026-10-06), which made the "Sesi per 3 jam" tab show 2-hourly sessions and duplicated the trial
+track.
+
+- Plants with a trial track (`hasTrialTrack`, today only Acid Plant) use two fixed schedules: regular
+  every 3 hours from 02:00 (02, 05, 08, 11, 14, 17, 20, 23), window 180 minutes, and the trial
+  schedule every 2 hours.
+- `applyFixedRegularSchedules()` (src/lib/capture-schedule.ts) is applied whenever schedules are read
+  (`readScheduleSnapshot`): stored versions for such a plant effective 2026-10-07 or later are ignored,
+  and a synthetic version `fixed-<plant>` effective 2026-10-07 is appended. Nothing is written to
+  `versions.json`; earlier versions stay as history, so 2026-10-06 is still evaluated with the
+  2-hour schedule it was captured under.
+- Effective for today (2026-10-07) once deployed — the usual "changes start tomorrow" rule is about
+  admin edits, and this is a code rule decided by the owner.
+- Settings shows the plant's schedule read-only with an explanation; the server refuses to save a
+  version for it.
+- Web capture page, server capture validation, `/schedules`, `/sessions` and the mobile app all read
+  the same snapshot, so APK 1.4.0 follows the change without a new build.
+
+Verification (2026-10-07): 55 suites / 503 tests pass (4 new). The rule applied to the production
+schedule fetched read-only from `GET /api/v1/schedules`: Acid Plant regular for 2026-10-06 stays
+00.00–22.00 every 2 hours, for 2026-10-07 it is 02.00, 05.00, 08.00, 11.00, 14.00, 17.00, 20.00,
+23.00; trial unchanged; at 08:25 WITA the open regular session is 08.00 until 11:00. Mobile
+`tsc -b` passes. Not deployed at the time of writing.
