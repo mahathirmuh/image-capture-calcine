@@ -606,3 +606,17 @@ Web/backend change; mobile scope and M0–M5 status unchanged, no mobile source 
 - [ ] Check with real data (database, camera, share) and with Operator and Viewer accounts.
 
 Verification: 50 suites / 426 tests pass; no TypeScript error beyond the 52 already on main; ESLint (formatter rule excluded) and Prettier pass on the changed files; production build succeeds and serves each language. Headless-browser walkthrough of all ten pages in three languages against an isolated dev server (no database, no camera, locally sealed admin session): no console or hydration errors, no untranslated page text found. docs/openapi.yaml reviewed: no REST contract change.
+
+## Post-M5 Maintenance — APK 1.4.0 run on an Android emulator (2026-11-03)
+
+Check only, no source change. APK 1.4.0 / versionCode 5 (SHA256 `A05DA57DB362826A292BE2B866F06811D331E65430E2692F576796220732EEF7`) installed on a clean Android 15 emulator (API 35, WebView 124) and driven through its own WebView.
+
+- [x] Fresh install and launch: native Capacitor platform, origin `https://localhost`, no crash or ANR from the app, no console errors. v1/v2 signatures verify.
+- [x] Against the real backend: an unknown account gets the rejection message (preflight 204, login 401); with the network off the app says it cannot reach the server.
+- [x] Simulated operator session with real read-only data (page wrapper refused every write and everything under `/camera` and `/jobs`, so the camera was never touched): both session tabs, with no 00:00 on the 3-hour tab; history; capture detail photo (6000x4000 in about 6 s); device; settings showing 1.4.0; English and Chinese; session kept across reload; background and resume; rotation; sign out.
+- [ ] Sign-in with a real account and a real capture on a physical Android device. Not covered by this run: no account was used and the camera was left alone.
+- [ ] Capture screen "latest saved result" ignores the date (`refreshLatestCapture` filters by plant and session only) and shows only a time, so an open slot can show a photo from an earlier day as "Saved". Reproduced on 2026-11-03 with the previous day's photo on an open slot.
+- [ ] History shows no thumbnails for recent captures: server thumbnails are produced only by the web client, and none of the newest 100 records has one, so each sign-in also spends up to 200 requests on 404s. Opening a photo creates a local thumbnail.
+- [ ] Landscape: the status bar overlaps the app header. Cosmetic.
+
+Operational: the production TLS certificate expires on 2026-11-20. Once it lapses the app cannot reach the server, whatever the APK version.
