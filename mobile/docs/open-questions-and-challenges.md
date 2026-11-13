@@ -12,6 +12,7 @@
 3. Public/mobile web access depends on deployed backend CORS support, not only local code changes.
 4. `Today Sessions` currently derives only `completed`, `missing`, and `upcoming` because `/sessions` has no dedicated `retake` state in the contract.
 5. Some older capture records may not have server-side thumbnails yet; `History` now falls back to placeholder or locally cached thumbs until the backend thumb store is fully populated.
+6. Phone sign-in can fail with `Cannot reach the server` although the app and the server work (found 2026-11-13). The production hostname exists only in the office DNS; public DNS has no record for it. The office Wi-Fi also hands out public resolvers that accept DNS-over-TLS, so Android's default Private DNS ("Automatic") can resolve through them and get no address. Mobile data fails the same way. Per-phone workaround: stay on the office Wi-Fi with Private DNS set to Off. Open decision for IT/owner: either a public DNS record pointing to the internal server address, or removing the public resolvers from the Wi-Fi DHCP. Sign-in outside the office would need a public endpoint, which is a separate decision.
 
 ## Resolved Decisions
 
