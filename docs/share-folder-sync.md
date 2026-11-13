@@ -38,7 +38,8 @@ Folder plant lain tidak dibaca dan tidak muncul di laporan.
 ### Folder yang dibaca
 
 Hanya folder plant yang dikelola aplikasi: `Acid Plant`, `Acid Plant Trial`, `Chloride Plant`,
-`Pyrite Plant`, `Copper Cathode Plant`. Di dalamnya:
+`Pyrite Plant`, `Copper Cathode Plant`. `Acid Plant Trial` adalah arsip sesi per 2 jam, yang
+dihapus 2026-11-13; foto di dalamnya tetap dibaca dan didaftarkan sebagai jalur trial. Di dalamnya:
 
 | Lokasi berkas | Dibaca? |
 | --- | --- |

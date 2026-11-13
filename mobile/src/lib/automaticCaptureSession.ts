@@ -1,33 +1,20 @@
-import {
-  activeScheduledContext,
-  hasTrialTrack,
-  versionsForTrack,
-  type CaptureTrack,
-  type ScheduleSnapshot,
-} from "../../../src/lib/capture-schedule";
+import { activeScheduledContext, type ScheduleSnapshot } from "../../../src/lib/capture-schedule";
 import { localDateKey, type TodaySessionItem } from "./sessionCoverage";
 
 const SESSION_HOURS = [2, 5, 8, 11, 14, 17, 20, 23] as const;
 
-/** Open session for a track. The no-snapshot branch is a legacy device-clock fallback. */
+/** Open session of the plant schedule. The no-snapshot branch is a legacy device-clock fallback. */
 export function resolveAutomaticCaptureSession(
   plant: string | null | undefined,
   now = new Date(),
   snapshot?: ScheduleSnapshot | null,
-  track: CaptureTrack = "regular",
 ): TodaySessionItem | null {
   if (!plant || plant === "ALL") return null;
-  if (track === "trial" && !hasTrialTrack(plant)) return null;
   if (snapshot) {
-    const context = activeScheduledContext(
-      versionsForTrack(snapshot.versions, plant, track),
-      plant,
-      now.getTime(),
-    );
+    const context = activeScheduledContext(snapshot.versions, plant, now.getTime());
     if (!context) return null;
     return {
-      key: `auto-${track}-${plant}-${context.date}-${context.hour}-${context.scheduleId}`,
-      track,
+      key: `auto-${plant}-${context.date}-${context.hour}-${context.scheduleId}`,
       plant,
       session: context.label,
       hour: context.hour,

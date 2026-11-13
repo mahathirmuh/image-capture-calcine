@@ -8,8 +8,6 @@ import {
   mapSessionCoverageToView,
   type TodaySessionItem,
 } from "../lib/sessionCoverage";
-import { TRIAL_PLANTS, type CaptureTrack } from "../../../src/lib/capture-schedule";
-import { TrackTabs } from "../components/TrackTabs";
 
 type TodaySessionsScreenProps = {
   session: AuthSession;
@@ -54,10 +52,6 @@ export function TodaySessionsScreen({
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<ReturnType<typeof mapSessionCoverageToView> | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
-  const [track, setTrack] = useState<CaptureTrack>("regular");
-  const userPlant = session.user.plant;
-  const trialAvailable = userPlant === "ALL" || (!!userPlant && TRIAL_PLANTS.includes(userPlant));
-  const activeTrack: CaptureTrack = trialAvailable ? track : "regular";
   useEffect(() => {
     const timer = window.setInterval(() => setReloadToken((value) => value + 1), 60000);
     return () => window.clearInterval(timer);
@@ -77,11 +71,10 @@ export function TodaySessionsScreen({
           // Backend supplies the plant-local date.
           date: undefined,
           plant,
-          track: activeTrack,
         });
         if (cancelled) return;
         onSessionUpdate(response.session);
-        setView(mapSessionCoverageToView(response.data, activeTrack));
+        setView(mapSessionCoverageToView(response.data));
       } catch (loadError) {
         if (cancelled) return;
         setError(describeError(loadError, "sessions.loadError"));
@@ -95,7 +88,7 @@ export function TodaySessionsScreen({
     return () => {
       cancelled = true;
     };
-  }, [activeTrack, onSessionUpdate, reloadToken, session]);
+  }, [onSessionUpdate, reloadToken, session]);
 
   const summaryItems = useMemo(() => {
     if (!view) return [];
@@ -148,8 +141,6 @@ export function TodaySessionsScreen({
             </div>
           </div>
         </div>
-
-        {trialAvailable ? <TrackTabs track={activeTrack} onChange={setTrack} /> : null}
 
         {loading ? (
           <div className="data-state-card" role="status" aria-live="polite">

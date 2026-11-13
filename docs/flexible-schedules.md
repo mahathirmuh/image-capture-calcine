@@ -10,7 +10,7 @@ Today Sessions distinguishes Upcoming, Open, Completed and Missing. Recovery sel
 
 No database migration. Retake filenames and existing photo retention behavior are unchanged. Do not change real production schedules as a smoke test; use local synthetic workflows and authenticated production reads. Physical camera/photo/share acceptance is separate from health and build checks.
 
-## Acid Plant trial track (2026-10-05)
+## Acid Plant trial track (2026-10-05, removed 2026-11-13 — see the last section)
 
 Web Capture shows two tabs for Acid Plant: **Sesi per 3 jam** (the plant schedule above) and **Sesi per 2 jam (Trial)**. The trial track is a fixed schedule — 00.00, 02.00, 04.00 … every two hours, 120-minute window, Asia/Makassar — defined in `src/lib/capture-schedule.ts` (`trialSchedule`). It is not editable in Settings and is not stored in `versions.json`.
 
@@ -58,3 +58,45 @@ schedule fetched read-only from `GET /api/v1/schedules`: Acid Plant regular for 
 00.00–22.00 every 2 hours, for 2026-10-07 it is 02.00, 05.00, 08.00, 11.00, 14.00, 17.00, 20.00,
 23.00; trial unchanged; at 08:25 WITA the open regular session is 08.00 until 11:00. Mobile
 `tsc -b` passes. Not deployed at the time of writing.
+
+## Trial track removed (2026-11-13)
+
+Owner decision: "hapus sesi yang per 2 jam". The trial track had not been used since 16 Oct 2026
+(135 trial photos, 5-16 Oct).
+
+- Web Capture and the mobile app (APK 1.5.0 / versionCode 6) no longer show the
+  `Sesi per 3 jam` / `Sesi per 2 jam (Trial)` tabs; every plant has one schedule. The fixed-schedule
+  note in Settings no longer mentions the trial schedule.
+- Acid Plant keeps its fixed 3-hour schedule from the previous section. It is now its own rule
+  (`hasFixedRegularSchedule`, a plant list) instead of following `hasTrialTrack`; without it the
+  2-hourly version saved for 2026-10-06 would apply again.
+- The server refuses `track: "trial"` in `checkScheduledCapture`, which both web `triggerCapture`
+  and REST `POST /camera/capture` call before the edge: `409 CAPTURE_SCHEDULE_REJECTED`, message
+  `INVALID_SESSION: Sesi per 2 jam (trial) sudah dihapus...`. APK 1.3.0-1.4.0 and stale web tabs in
+  English or Chinese show their existing "not part of the plant schedule" wording; Indonesian and
+  APK 1.2.0 show the server text. The shutter never fires.
+- `GET /sessions?track=trial` is still accepted, so the trial tab of APK 1.2.0-1.4.0 does not turn
+  into an error; it always answers without plants and without reading the registry, which leaves that
+  tab empty. Older APKs keep working for regular sessions.
+- Nothing is deleted. `captureTrack: "trial"`, `trackFolder` and the `Acid Plant Trial` folder stay
+  for the archive: Gallery (tag and "Jenis Sesi" filter), the bulk ZIP, Sinkronkan folder, and
+  `/sessions`, which still keeps old trial photos out of regular coverage. A capture receipt signed
+  for the trial track before the deploy is still finalized into `Acid Plant Trial`.
+- `trialSchedule`, `versionsForTrack` and the mobile `TrackTabs` component are removed. No
+  database migration.
+
+Verification (2026-11-13): 55 suites / 505 tests pass (four trial-schedule tests replaced by two
+archive and fixed-schedule tests; four new: trial refused before the camera on the server
+function and over REST, the old trial tab answered empty without a registry query, a pre-removal
+trial receipt still filed under `Acid Plant Trial`). Root TypeScript has the same 54 baseline
+errors; mobile `tsc -b`, ESLint (formatter rule excluded) and Prettier on the changed files pass;
+the production web build passes. Isolated dev server with the production schedule injected
+read-only: `/capture` as Operator and Super Admin and `/settings` in id/en/zh show no tab list and no
+2-hour wording, the session chip reads 11.00 (the session open at the time), no console errors. APK 1.5.0
+(SHA-256 `B911E057D3C60297A80857E18B7CBBAD91149DBCF0D079A6D4CDBA2F402E6635`) installed over 1.4.0
+on the Android 15 emulator without uninstalling, simulated operator session with read-only
+production data: Today Sessions lists 02:00-23:00 with no tabs (request `/sessions` without
+`track`), direct Capture opens "Auto session 11:00" with today's 11.00 result, a session picked from
+the list opens without a trial label, Settings shows 1.5.0, Chinese shows no trial wording, no crash
+or console error. Not covered: a real sign-in and capture on a phone, and the old-APK behaviour
+against a deployed server (covered by the REST tests only). Not deployed at the time of writing.

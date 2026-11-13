@@ -27,14 +27,7 @@ import {
   issueCaptureReceipt,
   verifyCaptureReceipt,
 } from "./capture-schedules";
-import {
-  plantToday,
-  validDate,
-  hasTrialTrack,
-  trackFolder,
-  trialSchedule,
-  type CaptureTrack,
-} from "../capture-schedule";
+import { plantToday, validDate, trackFolder, type CaptureTrack } from "../capture-schedule";
 import { canViewGalleryPlant } from "../gallery-access";
 import { CAPTURE_PLANT_SQL, requireGalleryUserAccess } from "./gallery-access";
 
@@ -734,6 +727,8 @@ async function handleCaptureFinalize(principal: ApiPrincipal, request: Request):
     );
   // Folder mengikuti jalur yang DITANDATANGANI di receipt, bukan isi body:
   // klien tidak bisa memindahkan foto reguler ke folder trial atau sebaliknya.
+  // Sejak jalur trial dihapus (13 Nov 2026) receipt baru selalu reguler; yang
+  // trial hanya receipt yang terbit sebelum itu.
   const captureTrack: CaptureTrack = receipt.track === "trial" ? "trial" : "regular";
   const folder = trackFolder(plant, captureTrack);
   const fileName = `${receipt.captureSession} ${toBinTitle(plant, slot)}.jpg`;
@@ -1884,26 +1879,31 @@ async function handleSessions(url: URL): Promise<Response> {
   if (requestedPlant !== null && !(PLANTS as readonly string[]).includes(requestedPlant)) {
     return apiError(400, "INVALID_PARAM", `plant tidak dikenal: ${requestedPlant}`);
   }
-  // Jalur trial punya jadwal dan cakupannya sendiri, hanya untuk plant yang
-  // memang menjalankannya. Tanpa parameter, yang dijawab jalur reguler.
+  // Sesi per 2 jam (trial) dihapus 13 Nov 2026. `track=trial` tetap diterima
+  // supaya tab trial di APK 1.2.0-1.4.0 tidak berubah jadi galat: jawabannya
+  // selalu tanpa plant, jadi tab itu kosong. Tanpa parameter, yang dijawab
+  // jalur reguler.
   const rawTrack = url.searchParams.get("track");
   if (rawTrack !== null && rawTrack !== "regular" && rawTrack !== "trial") {
     return apiError(400, "INVALID_PARAM", `track harus regular atau trial, bukan: ${rawTrack}`);
   }
   const track: CaptureTrack = rawTrack === "trial" ? "trial" : "regular";
-  const plants = (requestedPlant ? [requestedPlant] : [...PLANTS]).filter(
-    (plant) => track === "regular" || hasTrialTrack(plant),
-  );
+  const plants = track === "trial" ? [] : requestedPlant ? [requestedPlant] : [...PLANTS];
+
+  const dayStart = new Date(`${date}T00:00:00.000Z`);
+  if (Number.isNaN(dayStart.getTime())) {
+    return apiError(400, "INVALID_PARAM", `date bukan tanggal yang sah: ${date}`);
+  }
+  if (!plants.length) {
+    const coverage = buildSessionCoverage({ date, plants, records: [] });
+    return json({ date, track, serverNow: Date.now(), ...coverage });
+  }
 
   // Jendela ambil sengaja lebih lebar dari satu hari: sesi 23.00 di-capture
   // setelah tengah malam (hari berikutnya menurut jam dinding), dan
   // `captured_at` tersimpan dalam UTC sementara tanggal sesi bersifat lokal.
   // Penyaringan yang sebenarnya dilakukan buildSessionCoverage() atas tanggal
   // sesi, bukan atas jam dinding.
-  const dayStart = new Date(`${date}T00:00:00.000Z`);
-  if (Number.isNaN(dayStart.getTime())) {
-    return apiError(400, "INVALID_PARAM", `date bukan tanggal yang sah: ${date}`);
-  }
   const windowStart = new Date(dayStart.getTime() - 24 * 60 * 60 * 1000);
   const windowEnd = new Date(dayStart.getTime() + 2 * 24 * 60 * 60 * 1000);
 
@@ -1920,17 +1920,16 @@ async function handleSessions(url: URL): Promise<Response> {
       WHERE (@plant IS NULL OR ${CAPTURE_PLANT_SQL} = @plant) AND cr.captured_at >= @from AND cr.captured_at < @to
       ORDER BY cr.captured_at ASC, cr.id ASC;`);
 
-  // Capture jalur trial berbagi plant dan label jam dengan jalur reguler
-  // (02.00, 08.00, ...), jadi harus disisihkan sebelum cakupan dihitung --
-  // kalau tidak, foto trial akan menutup sesi reguler yang sebenarnya kosong.
+  // Foto trial lama (5-16 Okt 2026) berbagi plant dan label jam dengan jalur
+  // reguler (02.00, 08.00, ...), jadi harus disisihkan sebelum cakupan
+  // dihitung -- kalau tidak, foto trial akan menutup sesi reguler yang
+  // sebenarnya kosong.
   const records = result.recordset
     .map((row: unknown) => mapCaptureRecordRow(row as Record<string, unknown>))
-    .filter((view: CaptureRecordView) => view.captureTrack === track)
+    .filter((view: CaptureRecordView) => view.captureTrack === "regular")
     .map(toCoverageRecord);
 
-  const versions =
-    track === "trial" ? plants.map((plant) => trialSchedule(plant)) : snapshot.versions;
-  const coverage = buildSessionCoverage({ date, plants, records, versions });
+  const coverage = buildSessionCoverage({ date, plants, records, versions: snapshot.versions });
   return json({ date, track, serverNow: Date.now(), ...coverage });
 }
 

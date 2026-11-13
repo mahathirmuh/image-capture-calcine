@@ -7,20 +7,6 @@ import { defineMessages } from "@/lib/i18n";
 // token itu tampil apa adanya di ketiga bahasa -- itu token pola nama berkas,
 // bukan placeholder terjemahan.
 export const captureMessages = defineMessages({
-  // Jalur jadwal
-  trackRegular: { id: "Sesi per 3 jam", en: "Session every 3 hours", zh: "每 3 小时一场" },
-  trackTrial: {
-    id: "Sesi per 2 jam (Trial)",
-    en: "Session every 2 hours (Trial)",
-    zh: "每 2 小时一场（试行）",
-  },
-  trackTabsLabel: { id: "Jalur sesi capture", en: "Capture session track", zh: "拍摄场次类别" },
-  trialFolderNote: {
-    id: "Foto jalur ini disimpan terpisah di folder {folder}.",
-    en: "Photos on this track are saved separately in the {folder} folder.",
-    zh: "此类别的照片单独保存在 {folder} 文件夹中。",
-  },
-
   // Waktu relatif pada kartu runtime
   relativeNoData: { id: "Belum ada data", en: "No data yet", zh: "暂无数据" },
   relativeJustNow: { id: "Baru saja", en: "Just now", zh: "刚刚" },

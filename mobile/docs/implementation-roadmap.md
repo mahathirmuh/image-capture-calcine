@@ -620,3 +620,17 @@ Check only, no source change. APK 1.4.0 / versionCode 5 (SHA256 `A05DA57DB362826
 - [ ] Landscape: the status bar overlaps the app header. Cosmetic.
 
 Operational: the production TLS certificate expires on 2026-11-20. Once it lapses the app cannot reach the server, whatever the APK version.
+
+## Post-M5 — Trial track (2-hour sessions) removed (2026-11-13)
+
+Owner request: "saat ini kan ada sesi 2 jam sama sesi per 3 jam, sekarang hapus sesi yang per 2 jam". Sources: functional specification (new section "Trial track removed"), docs/flexible-schedules.md, docs/openapi.yaml. Supersedes the two trial-track entries of 2026-10-05. Production check before the change (read-only REST): 135 trial photos from 5-16 Oct, none since; no other plant has a 2-hour schedule. Operator-only scope unchanged.
+
+- [x] Mobile: `3-Hour Sessions` / `2-Hour Trial` tabs removed from Today Sessions and direct Capture; requests no longer carry `track`; the latest-result card ignores old trial photos; `TrackTabs` and its strings removed. Version 1.5.0 / versionCode 6.
+- [x] Web: tabs and the trial-folder note removed from `/capture`; the Settings note for Acid Plant mentions only the 3-hour schedule.
+- [x] Acid Plant keeps the fixed 3-hour schedule as its own rule, independent of the trial archive.
+- [x] Server: `track: "trial"` refused before any camera command (web server function and REST, `409 CAPTURE_SCHEDULE_REJECTED`, `INVALID_SESSION:` reason); `GET /sessions?track=trial` answers without plants so the trial tab of APK 1.2.0-1.4.0 stays empty instead of failing. OpenAPI updated (`track` on `/sessions` and `/camera/capture`, `CaptureRecord.captureTrack`, `/schedules` wording).
+- [x] Trial archive kept: records, `Acid Plant Trial/` folder, Gallery tag and filter, ZIP folders, folder sync, exclusion from regular coverage, and finalize of a trial receipt signed before the deploy. Nothing deleted.
+- [ ] Deploy the server, then install APK 1.5.0 on the operators' phones (either order works).
+- [ ] Real sign-in and capture with APK 1.5.0 on a physical Android device.
+
+Verification: 55 suites / 505 tests pass (four trial-schedule tests replaced by two; four new for the refusal, the empty trial tab without a registry query, and a pre-removal trial receipt). Root TypeScript keeps the same 54 baseline errors; mobile `tsc -b`, ESLint (formatter rule excluded) and Prettier on the changed files pass; production web build passes. Headless Chrome on an isolated dev server with the production schedule injected read-only: `/capture` (Operator, Super Admin) and `/settings` in id/en/zh have no tab list and no 2-hour wording, the session chip shows the open 11.00 session, no console errors. APK 1.5.0 (SHA256 `B911E057D3C60297A80857E18B7CBBAD91149DBCF0D079A6D4CDBA2F402E6635`, Gradle BUILD SUCCESSFUL) installed over 1.4.0 on the Android 15 emulator without uninstalling; simulated operator session with read-only production data (writes and `/camera` refused in the page): Today Sessions 02:00-23:00 without tabs, `/sessions` requested without `track`, direct Capture "Auto session 11:00" with today's 11.00 result, Settings shows 1.5.0, Chinese without trial wording, no crash or console error. Not covered: a real account and camera, and an old APK against the deployed server (REST tests only).

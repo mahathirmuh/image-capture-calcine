@@ -49,7 +49,8 @@ const recordCaptureSchema = z.object({
   captureSession: z.string().trim().max(20).nullable().optional(),
   // Jalur jadwal. Kosong berarti jalur reguler; "trial" adalah sesi per 2 jam
   // yang disimpan di folder "<Plant> Trial" dan TIDAK dihitung sebagai cakupan
-  // sesi reguler walau label jamnya sama (02.00, 08.00, 14.00, 20.00).
+  // sesi reguler walau label jamnya sama (02.00, 08.00, 14.00, 20.00). Jalur
+  // trial dihapus 13 Nov 2026; halaman Capture tidak lagi mengirim kunci ini.
   captureTrack: z.enum(["regular", "trial"]).nullable().optional(),
   station: z.string().trim().nullable().optional(),
   fileName: z.string().trim().min(1, "Nama file wajib diisi"),

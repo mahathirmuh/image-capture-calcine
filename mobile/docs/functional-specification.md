@@ -127,3 +127,10 @@ Explicit account scope `ALL` allows selecting a scheduled session from any plant
 - When an operator signs in, the app switches to the account's default language if it is English or Chinese, and stores it as the device preference. An account set to Indonesia — or a backend that does not send the field yet — leaves the device language as it was, because this app has no Indonesian.
 - The switch on the Login screen and in Settings keeps working after sign-in; the default is applied again at the next sign-in. A session restored from stored tokens does not change the language.
 - API: `user.defaultLanguage` on `/auth/login`, `/auth/refresh` and `/auth/me` (additive, nullable). APK 1.4.0 (versionCode 5); older APKs ignore the field.
+
+## Trial track removed — 2026-11-13 (supersedes "Trial track" above)
+
+- The owner removed the 2-hour trial sessions. Today Sessions and direct Capture show the plant schedule only, without the `3-Hour Sessions` / `2-Hour Trial` tabs. For Acid Plant that is the fixed 3-hour schedule: 02:00, 05:00, 08:00, 11:00, 14:00, 17:00, 20:00, 23:00.
+- The latest-result card on Capture never presents an old trial photo as the result of a regular session.
+- Nothing is deleted: trial photos taken until 16 Oct 2026 stay in `Acid Plant Trial/` on the share, in History and in the web Gallery.
+- APK 1.5.0 (versionCode 6). Older APKs keep working for regular sessions; after the server update their trial tab shows no sessions, and a capture started from it is refused before the camera fires.

@@ -977,15 +977,6 @@ input {
   margin-bottom: 14px;
 }
 
-.track-tabs {
-  margin-bottom: 16px;
-}
-
-.track-tabs .capture-slot-selector__button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 .capture-session-bar {
   display: flex;
   align-items: center;

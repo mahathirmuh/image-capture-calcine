@@ -11,8 +11,6 @@ import {
   plantToday,
   zonedClock,
   validateCaptureContext,
-  hasTrialTrack,
-  versionsForTrack,
   type CaptureTrack,
   type ScheduleSnapshot,
   type ScheduleVersion,
@@ -25,7 +23,7 @@ function directory() {
   return join(root, "schedules");
 }
 /**
- * Jadwal yang berlaku: isi berkas, ditambah jadwal tetap plant berjalur trial.
+ * Jadwal yang berlaku: isi berkas, ditambah jadwal tetap Acid Plant.
  *
  * Jadwal tetap ditambahkan saat DIBACA dan tidak pernah ditulis ke berkas --
  * berkasnya tetap catatan apa adanya tentang apa yang pernah disimpan admin.
@@ -137,11 +135,13 @@ export async function checkScheduledCapture(
 ) {
   if (!(PLANTS as readonly string[]).includes(plant))
     throw new Error("INVALID_SESSION: Plant tidak valid.");
-  if (track === "trial") {
-    if (!hasTrialTrack(plant))
-      throw new Error("INVALID_SESSION: Jalur trial tidak tersedia untuk plant ini.");
-    return validateCaptureContext(versionsForTrack([], plant, track), plant, Date.now(), input);
-  }
+  // Sesi per 2 jam (trial) dihapus 13 Nov 2026. APK 1.2.0-1.4.0 dan tab web
+  // yang dibuka sebelum deploy masih bisa memintanya; ditolak di sini, sebelum
+  // perintahnya sampai ke kamera.
+  if (track === "trial")
+    throw new Error(
+      "INVALID_SESSION: Sesi per 2 jam (trial) sudah dihapus. Gunakan sesi per 3 jam.",
+    );
   const snapshot = await readScheduleSnapshot();
   return validateCaptureContext(snapshot.versions, plant, Date.now(), input);
 }
@@ -153,8 +153,9 @@ type Receipt = {
   captureSession: string;
   capturedAt: number;
   jobId: string;
-  // Jalur jadwal saat perintah diberikan. Receipt lama tidak punya kunci ini
-  // dan dibaca sebagai jalur reguler.
+  // Jalur jadwal saat perintah diberikan. Receipt tanpa kunci ini dibaca
+  // sebagai jalur reguler; "trial" hanya mungkin pada receipt yang terbit
+  // sebelum jalur trial dihapus (13 Nov 2026).
   track?: CaptureTrack;
 };
 function signature(body: string) {

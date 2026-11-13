@@ -12,6 +12,7 @@ vi.mock("../env", () => ({
 import {
   readScheduleSnapshot,
   saveScheduleVersion,
+  checkScheduledCapture,
   issueCaptureReceipt,
   verifyCaptureReceipt,
 } from "./capture-schedules";
@@ -123,6 +124,17 @@ it("keeps old Acid Plant history but applies the fixed 3-hour schedule from 7 Oc
     expect(scheduleHours(schedule)).toEqual([2, 5, 8, 11, 14, 17, 20, 23]);
     expect(schedule.windowMinutes).toBe(180);
   }
+});
+it("refuses the removed 2-hour trial track, also where its hour matches a 3-hour session", async () => {
+  // 08:10 WITA: 08.00 is open on the 3-hour schedule and used to be a trial session too.
+  vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-10-05T00:10:00Z"));
+  const session = { sessionDate: "2026-10-05", captureSession: "08.00" };
+  await expect(checkScheduledCapture("Acid Plant", session, "trial")).rejects.toThrow(
+    "INVALID_SESSION: Sesi per 2 jam (trial) sudah dihapus",
+  );
+  await expect(checkScheduledCapture("Acid Plant", session)).resolves.toMatchObject({
+    label: "08.00",
+  });
 });
 it("adds the fixed schedule even before any schedule was ever saved", async () => {
   const { versions } = await readScheduleSnapshot();

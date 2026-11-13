@@ -55,10 +55,6 @@ import { useIsAdmin, useSessionUser } from "@/lib/use-session-user";
 import { fetchCaptureSchedules } from "@/lib/capture-schedules";
 import {
   activeScheduledContext,
-  hasTrialTrack,
-  trackFolder,
-  versionsForTrack,
-  type CaptureTrack,
   type ScheduleSnapshot,
   type ScheduledContext,
 } from "@/lib/capture-schedule";
@@ -67,14 +63,7 @@ import { deviceStatusText } from "@/i18n/device-status";
 import { captureMessages as m } from "@/i18n/capture";
 import { commonMessages } from "@/i18n/common";
 import { failureText } from "@/i18n/errors";
-import {
-  useLocale,
-  useNativeLocale,
-  useRichT,
-  useT,
-  type Message,
-  type Translator,
-} from "@/lib/i18n";
+import { useLocale, useNativeLocale, useRichT, useT, type Translator } from "@/lib/i18n";
 
 const CAPTURE_PAGE_PLANTS = ["Acid Plant", "Chloride Plant"] as const;
 
@@ -120,15 +109,7 @@ type BinPreview = {
   assetId: string;
   capturedAt: number;
   context: ScheduledContext;
-  // Jalur saat tombol ditekan. Dipaku bersama context supaya berkasnya tetap
-  // mendarat di folder jalur itu walau tab sempat berganti sebelum simpan.
-  track: CaptureTrack;
 };
-
-const TRACK_TABS: { track: CaptureTrack; label: Message }[] = [
-  { track: "regular", label: m.trackRegular },
-  { track: "trial", label: m.trackTrial },
-];
 
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
@@ -376,23 +357,12 @@ function CapturePage() {
       clearInterval(timer);
     };
   }, []);
-  // Jalur jadwal yang sedang dibuka. Plant tanpa jalur trial selalu reguler,
-  // apa pun tab terakhir yang dipilih di plant lain.
-  const [track, setTrack] = useState<CaptureTrack>("regular");
-  const trialAvailable = hasTrialTrack(activePlant);
-  const activeTrack: CaptureTrack = trialAvailable ? track : "regular";
   const resolveContext = (at: number) =>
-    schedule
-      ? activeScheduledContext(
-          versionsForTrack(schedule.versions, activePlant, activeTrack),
-          activePlant,
-          at,
-        )
-      : null;
+    schedule ? activeScheduledContext(schedule.versions, activePlant, at) : null;
   const scheduledContext = useMemo(
     () => resolveContext(now.getTime() + clockOffset.current),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [schedule, activePlant, activeTrack, now],
+    [schedule, activePlant, now],
   );
   const activeSession = scheduledContext
     ? {
@@ -451,13 +421,6 @@ function CapturePage() {
     setLocation(nextPlant);
   }
 
-  // Kamera dan lease-nya sama untuk kedua jalur, jadi berganti tab tidak
-  // menyentuh session -- hanya konteks sesi dan folder tujuan yang berubah.
-  function changeCaptureTrack(nextTrack: CaptureTrack) {
-    if (cameraBusyRef.current || savingRef.current) return;
-    setTrack(nextTrack);
-  }
-
   useEffect(() => {
     for (const setBin of [setBin1, setBin2]) {
       setBin((previous) => {
@@ -465,7 +428,7 @@ function CapturePage() {
         return null;
       });
     }
-  }, [activePlant, activeTrack]);
+  }, [activePlant]);
 
   async function logOperationalEvent(
     eventType: string,
@@ -554,7 +517,6 @@ function CapturePage() {
   }, [livePreview, sessionId]);
 
   async function captureToBin(bin: Bin) {
-    const pinnedTrack = activeTrack;
     const pinnedContext = resolveContext(Date.now() + clockOffset.current);
     if (
       !pinnedContext ||
@@ -580,7 +542,6 @@ function CapturePage() {
           plant: activePlant,
           sessionDate: pinnedContext.date,
           captureSession: pinnedContext.label,
-          track: pinnedTrack,
         },
       });
       if (!triggered.ok) {
@@ -627,14 +588,7 @@ function CapturePage() {
       });
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
-      const captured: BinPreview = {
-        blob,
-        url,
-        assetId,
-        capturedAt,
-        context: pinnedContext,
-        track: pinnedTrack,
-      };
+      const captured: BinPreview = { blob, url, assetId, capturedAt, context: pinnedContext };
       const setBin = bin === 1 ? setBin1 : setBin2;
       setBin((prev) => {
         if (prev) URL.revokeObjectURL(prev.url);
@@ -843,11 +797,7 @@ function CapturePage() {
         // Folder plant dan tanggalnya dibuat sendiri oleh saveMediaToNetwork --
         // hanya root-nya yang wajib sudah ada, karena root yang hilang adalah
         // tanda share tidak ter-mount.
-        //
-        // Jalur trial memakai folder saudaranya, "Acid Plant Trial": nama
-        // berkasnya sama dengan jalur reguler di jam 02/08/14/20, jadi hanya
-        // folder inilah yang menjaga keduanya tidak saling menimpa.
-        const relativePath = `${trackFolder(activePlant, previewItem.track)}/${previewItem.context.date.replaceAll("-", "/")}/${base}.${ext}`;
+        const relativePath = `${activePlant}/${previewItem.context.date.replaceAll("-", "/")}/${base}.${ext}`;
         const saved = await saveMediaToNetwork({
           data: {
             deviceId: captureDevice.deviceId,
@@ -900,16 +850,10 @@ function CapturePage() {
             fallbackReasons.push("browser-folder:permission-not-granted");
             throw new Error("Folder permission not granted");
           }
-          // Folder cadangan di browser ikut dipisah untuk jalur trial, dengan
-          // alasan yang sama seperti di share.
-          const trialDirName =
-            previewItem.track === "trial" ? trackFolder(activePlant, "trial") : null;
-          const baseDir = trialDirName
-            ? await dirHandle.getDirectoryHandle(trialDirName, { create: true })
-            : dirHandle;
-          const dated = await getDatedDirHandle(baseDir, activeSession.startsAt);
-          const dayDir = dated.dir;
-          const datedPath = trialDirName ? `${trialDirName}/${dated.path}` : dated.path;
+          const { dir: dayDir, path: datedPath } = await getDatedDirHandle(
+            dirHandle,
+            activeSession.startsAt,
+          );
           // Menimpa yang senama, sama seperti jalur jaringan: satu sesi
           // hanya punya satu berkas per slot.
           filename = `${base}.${ext}`;
@@ -1011,7 +955,6 @@ function CapturePage() {
           plant: activePlant,
           captureBin: binLabel(bin),
           captureSession: previewItem.context.label,
-          captureTrack: previewItem.track,
           station: captureDevice?.station ?? null,
           fileName: filename,
           filePath: persistedPath ?? savedNetworkPath ?? `browser-download/${filename}`,
@@ -1312,44 +1255,6 @@ function CapturePage() {
           </div>
         </div>
       </header>
-
-      {/* Dua jalur jadwal di plant yang sama. Tab hanya muncul untuk plant yang
-          punya jalur trial; plant lain tetap satu jadwal tanpa pilihan. */}
-      {trialAvailable && (
-        <div
-          role="tablist"
-          aria-label={t(m.trackTabsLabel)}
-          className="mb-4 inline-flex rounded-lg border bg-card p-1 shadow-sm"
-        >
-          {TRACK_TABS.map((tab) => {
-            const selected = activeTrack === tab.track;
-            return (
-              <button
-                key={tab.track}
-                type="button"
-                role="tab"
-                aria-selected={selected}
-                disabled={capturingBin !== null || savingBin !== null || autofocusing}
-                onClick={() => changeCaptureTrack(tab.track)}
-                className={`rounded-md px-4 py-1.5 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-                  selected
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {t(tab.label)}
-              </button>
-            );
-          })}
-        </div>
-      )}
-      {trialAvailable && activeTrack === "trial" && (
-        <p className="mb-4 text-xs text-muted-foreground">
-          {rich(m.trialFolderNote, {
-            folder: <span className="font-semibold">{trackFolder(activePlant, "trial")}</span>,
-          })}
-        </p>
-      )}
 
       {error && (
         <div className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">

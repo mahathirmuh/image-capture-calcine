@@ -134,6 +134,58 @@ it("rejects wrong session or unrelated assets before storing a photo", async () 
   expect((await post("/captures/finalize", { ...base, assetId: "other-asset" })).status).toBe(409);
   expect(mock.record).not.toHaveBeenCalled();
 });
+it("refuses a 2-hour trial capture from an old app before touching the camera", async () => {
+  const response = await post("/camera/capture", { ...command, track: "trial" });
+  expect(response.status).toBe(409);
+  expect((await response.json()).error).toMatchObject({
+    code: "CAPTURE_SCHEDULE_REJECTED",
+    message: expect.stringMatching(/^INVALID_SESSION: Sesi per 2 jam \(trial\) sudah dihapus/),
+  });
+  expect(mock.fetch).not.toHaveBeenCalled();
+});
+it("answers an old app's trial tab with no sessions, without reading the registry", async () => {
+  const response = await handleApiRequest(
+    new Request("http://localhost/api/v1/sessions?track=trial&plant=Acid%20Plant"),
+  );
+  expect(response!.status).toBe(200);
+  expect(await response!.json()).toMatchObject({
+    track: "trial",
+    plants: [],
+    summary: { expected: 0, captured: 0, missing: 0 },
+  });
+  const { getCardDbPool } = await import("../carddb");
+  expect(getCardDbPool).not.toHaveBeenCalled();
+});
+it("still files a trial receipt issued before the trial track was removed in the trial folder", async () => {
+  const { issueCaptureReceipt } = await import("./capture-schedules");
+  const receipt = issueCaptureReceipt({
+    userId: 42,
+    deviceId: 7,
+    plant: "Acid Plant",
+    sessionDate: "2026-10-05",
+    captureSession: "14.00",
+    capturedAt: Date.now(),
+    jobId: "synthetic-job",
+    track: "trial",
+  });
+  const finalized = await post("/captures/finalize", {
+    assetId: "synthetic-asset",
+    capturedAt: Date.now(),
+    plant: "Acid Plant",
+    captureSession: "14.00",
+    slot: 1,
+    deviceId: 7,
+    receipt,
+  });
+  expect(finalized.status).toBe(201);
+  expect(
+    await readFile(
+      join(mock.root, "Acid Plant Trial", "2026", "10", "05", "14.00 Train 1.jpg"),
+      "utf8",
+    ),
+  ).toBe("synthetic-jpeg");
+  expect(mock.record.mock.calls[0][0].captureTrack).toBe("trial");
+});
 it("keeps API key access read-only while exposing schedule snapshots", async () => {
   mock.auth.mockResolvedValue({ ok: true, principal: { kind: "api-key" } });
   expect((await post("/camera/capture", command)).status).toBe(403);

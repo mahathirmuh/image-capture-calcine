@@ -8,10 +8,10 @@ import {
   validateCaptureContext,
   scheduleValidation,
   plantToday,
-  trialSchedule,
+  applyFixedRegularSchedules,
+  hasFixedRegularSchedule,
   hasTrialTrack,
   trackFolder,
-  versionsForTrack,
   type ScheduleVersion,
 } from "./capture-schedule";
 import { buildSessionCoverage } from "./session-coverage";
@@ -127,46 +127,32 @@ describe("versioned plant schedules", () => {
     ).toBe(16);
   });
 });
-describe("trial capture track", () => {
+describe("after the 2-hour trial sessions were removed (13 Nov 2026)", () => {
   const at = (iso: string) => Date.parse(iso);
-  it("runs every 2 hours from 00.00 beside the regular 3-hour schedule", () => {
-    expect(scheduleHours(trialSchedule(plant))).toEqual([
-      0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22,
-    ]);
-    expect(scheduleHours(legacy)).toEqual([2, 5, 8, 11, 14, 17, 20, 23]);
-  });
-  it("is offered only for Acid Plant and saves to its own folder", () => {
+  it("still names the trial folder that holds the old trial photos", () => {
     expect(hasTrialTrack("Acid Plant")).toBe(true);
     expect(hasTrialTrack("Chloride Plant")).toBe(false);
     expect(trackFolder(plant, "trial")).toBe("Acid Plant Trial");
     expect(trackFolder(plant, "regular")).toBe("Acid Plant");
   });
-  it("ignores admin schedule versions and always has an open session", () => {
-    const versions = versionsForTrack([version], plant, "trial");
-    // 04:30 WITA: regular is still inside the 02.00 range, trial is in 04.00.
-    const now = at("2026-10-06T04:30:00+08:00");
-    expect(activeScheduledContext([legacy], plant, now)?.label).toBe("02.00");
-    expect(activeScheduledContext(versions, plant, now)?.label).toBe("04.00");
-    // 13:10 WITA belongs to the 11.00 range until 14.00 starts.
-    expect(activeScheduledContext([legacy], plant, at("2026-10-06T13:10:00+08:00"))?.label).toBe(
-      "11.00",
+  it("keeps Acid Plant on the fixed 3-hour schedule on its own", () => {
+    expect(hasFixedRegularSchedule("Acid Plant")).toBe(true);
+    expect(hasFixedRegularSchedule("Chloride Plant")).toBe(false);
+    // The 2-hourly version an admin saved for 6 Oct must not come back.
+    const twoHourly = { ...version, intervalHours: 2, windowMinutes: 120 };
+    const versions = applyFixedRegularSchedules([legacy, twoHourly], [plant]);
+    expect(scheduleHours(scheduleForDate(versions, plant, "2026-11-13"))).toEqual([
+      2, 5, 8, 11, 14, 17, 20, 23,
+    ]);
+    // 04:30 WITA belongs to the 02.00 session: there is no 04.00 session any more.
+    expect(activeScheduledContext(versions, plant, at("2026-11-13T04:30:00+08:00"))?.label).toBe(
+      "02.00",
     );
-    expect(versionsForTrack([version], plant, "regular")).toEqual([version]);
-  });
-  it("rejects a regular-only session label on the trial track", () => {
-    const versions = versionsForTrack([], plant, "trial");
-    const now = at("2026-10-06T05:10:00+08:00");
     expect(() =>
-      validateCaptureContext(versions, plant, now, {
-        sessionDate: "2026-10-06",
-        captureSession: "05.00",
+      validateCaptureContext(versions, plant, at("2026-11-13T04:30:00+08:00"), {
+        sessionDate: "2026-11-13",
+        captureSession: "04.00",
       }),
     ).toThrow(/INVALID_SESSION/);
-    expect(
-      validateCaptureContext(versions, plant, now, {
-        sessionDate: "2026-10-06",
-        captureSession: "04.00",
-      }).label,
-    ).toBe("04.00");
   });
 });

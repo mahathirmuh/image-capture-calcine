@@ -65,51 +65,38 @@ export function defaultSchedule(plant: string): ScheduleVersion {
     createdBy: null,
   };
 }
-// Jalur capture. "regular" memakai jadwal plant yang diatur admin; "trial"
-// berjalan berdampingan di plant yang sama dengan jadwal tetap per 2 jam
-// (00.00, 02.00, 04.00, ...) dan folder simpannya sendiri. Kamera, operator
-// dan slot Train/Bin tetap milik plant asalnya -- yang berbeda hanya jadwal
-// dan tujuan berkas.
+// Jalur capture, tersimpan sebagai `captureTrack` pada record. "regular" memakai
+// jadwal plant. "trial" adalah sesi Acid Plant per 2 jam (00.00, 02.00, 04.00,
+// ...) dengan folder simpannya sendiri; jalur ini DIHAPUS pada 13 Nov 2026 atas
+// keputusan pemilik, jadi tidak ada lagi sesi trial yang ditawarkan atau
+// diterima. Nilai "trial" tetap dikenal karena foto trial lama tetap ada -- di
+// folder "<plant> Trial" dan di registry -- dan tetap dibaca Gallery, unduhan
+// ZIP, dan Sinkronkan folder.
 export const CAPTURE_TRACKS = ["regular", "trial"] as const;
 export type CaptureTrack = (typeof CAPTURE_TRACKS)[number];
+/** Plant yang punya arsip trial, yaitu folder "<plant> Trial". */
 export const TRIAL_PLANTS: readonly string[] = ["Acid Plant"];
 export function hasTrialTrack(plant: string): boolean {
   return TRIAL_PLANTS.includes(plant);
 }
-export function trialSchedule(plant: string): ScheduleVersion {
-  return {
-    ...defaultSchedule(plant),
-    id: `trial-${plant}`,
-    startHour: 0,
-    intervalHours: 2,
-    windowMinutes: 120,
-  };
-}
-/** Versi jadwal yang berlaku untuk sebuah jalur. Trial tidak ikut versi admin. */
-export function versionsForTrack(
-  versions: ScheduleVersion[],
-  plant: string,
-  track: CaptureTrack,
-): ScheduleVersion[] {
-  return track === "trial" ? [trialSchedule(plant)] : versions;
-}
 /**
- * Sejak tanggal ini plant berjalur trial memakai jadwal reguler TETAP: per 3
- * jam (02.00, 05.00, 08.00, 11.00, 14.00, 17.00, 20.00, 23.00), jendela 180
- * menit. Keputusan pemilik pada 7 Okt 2026.
+ * Sejak tanggal ini Acid Plant memakai jadwal TETAP: per 3 jam (02.00, 05.00,
+ * 08.00, 11.00, 14.00, 17.00, 20.00, 23.00), jendela 180 menit. Keputusan
+ * pemilik pada 7 Okt 2026, dan tetap berlaku setelah jalur trial dihapus.
  *
- * Alasannya: di plant itu jadwal per 2 jam sudah punya jalurnya sendiri
- * (trial), dan tab di layar menyebut jalur reguler "Sesi per 3 jam". Jadwal
- * reguler yang diubah dari Settings menjadi per 2 jam (pernah terjadi, berlaku
- * 6 Okt) membuat tab itu berbohong dan menggandakan pekerjaan operator.
+ * Alasannya: jadwal yang diubah dari Settings menjadi per 2 jam (pernah
+ * terjadi, berlaku 6 Okt) menggandakan sesi trial yang waktu itu masih
+ * berjalan. Versi per 2 jam itu masih tersimpan di versions.json sebagai
+ * riwayat; tanpa jadwal tetap ini ia akan berlaku lagi.
  *
  * Riwayat SEBELUM tanggal ini dibiarkan apa adanya: foto yang sudah diambil
  * menurut jadwal lama tetap dinilai dengan jadwal lama.
  */
 export const FIXED_REGULAR_SINCE = "2026-10-07";
+const FIXED_SCHEDULE_PLANTS: readonly string[] = ["Acid Plant"];
 
 export function hasFixedRegularSchedule(plant: string): boolean {
-  return hasTrialTrack(plant);
+  return FIXED_SCHEDULE_PLANTS.includes(plant);
 }
 
 export function fixedRegularSchedule(plant: string): ScheduleVersion {

@@ -114,7 +114,7 @@ export function CaptureScheduleSettings() {
     setDirty(true);
   };
   const hours = draft && !scheduleValidation(draft) ? scheduleHours(draft) : [];
-  // Plant berjalur trial: kedua jadwalnya tetap, jadi formulirnya hanya dibaca.
+  // Plant berjadwal tetap (Acid Plant): formulirnya hanya dibaca.
   const fixed = hasFixedRegularSchedule(plant);
   async function save(event: React.FormEvent) {
     event.preventDefault();
