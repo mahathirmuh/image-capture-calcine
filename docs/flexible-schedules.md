@@ -128,6 +128,6 @@ and 06:00.
   until 18:00). Every later midnight handover is plain: 21.00 runs until 00:00, then 00.00 starts.
   There is no 02.00 session any more.
 - Web capture, server validation, `/schedules`, `/sessions` and the mobile app read the same
-  snapshot, so no new APK is needed. The Settings note for Acid Plant names both hour sets.
+  snapshot, so no new APK is needed. The Settings note for Acid Plant lists only the current sampling hours (owner, 14 Nov: "cukup jam jam yang tertera saja"); older hours stay in the collapsed version history.
 - The legacy `sessions` list of `GET /plants` keeps the built-in 02.00 hours. It is documented as
   legacy, and consumers use `/schedules`.

@@ -657,7 +657,7 @@ Owner request: "eh, tolong, waktunya diubah". The source is the slide "Interval 
 
 Operator-only scope is unchanged. No mobile code changed, so there is no APK bump.
 
-- [x] Server/web: a second fixed Acid Plant version with sessions 00.00, 03.00, …, 21.00 (180-minute window, Asia/Makassar). The Settings note names both sets of hours.
+- [x] Server/web: a second fixed Acid Plant version with sessions 00.00, 03.00, …, 21.00 (180-minute window, Asia/Makassar). The Settings note lists only the 8 sampling hours of the slide (owner: "cukup jam jam yang tertera saja"); older versions stay in the collapsed history list.
 - [x] First version, effective 16 Nov (the slide's first trial day), deployed by the owner the same afternoon (`/schedules` showed `fixed-Acid Plant-2026-11-16`).
 - [x] Changed to effective **2026-11-14** (`fixed-Acid Plant-2026-11-14`) on the owner's follow-up: "ubah waktunya sesuai gambar ini loh", answered "Mulai sekarang (hari ini)". Dates up to 13 Nov keep 02.00 … 23.00.
   - Accepted: the 10 Acid Plant photos of 14 Nov taken earlier (02.00-14.00, both trains) stay in place but are not counted in that day's coverage.

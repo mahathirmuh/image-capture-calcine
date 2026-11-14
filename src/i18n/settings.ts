@@ -389,9 +389,9 @@ export const scheduleSettingsMessages = defineMessages({
     zh: "该工厂的排程是固定的，无法在设置中更改。",
   },
   fixedSchedule: {
-    id: "Jadwal {plant} tetap dan tidak diatur dari sini. Sesi per 3 jam: 00.00, 03.00, 06.00, 09.00, 12.00, 15.00, 18.00, 21.00 (mulai 14 Nov 2026; 7 Okt-13 Nov 2026: 02.00, 05.00, 08.00, 11.00, 14.00, 17.00, 20.00, 23.00).",
-    en: "The {plant} schedule is fixed and is not set here. 3-hour sessions: 00:00, 03:00, 06:00, 09:00, 12:00, 15:00, 18:00, 21:00 (from 14 Nov 2026; 7 Oct-13 Nov 2026: 02:00, 05:00, 08:00, 11:00, 14:00, 17:00, 20:00, 23:00).",
-    zh: "{plant} 的排程是固定的，不在此处设置。每 3 小时场次：00:00、03:00、06:00、09:00、12:00、15:00、18:00、21:00（自 2026 年 11 月 14 日起；2026 年 10 月 7 日至 11 月 13 日：02:00、05:00、08:00、11:00、14:00、17:00、20:00、23:00）。",
+    id: "Jadwal {plant} tetap dan tidak diatur dari sini. Jam sampling: 00.00, 03.00, 06.00, 09.00, 12.00, 15.00, 18.00, 21.00.",
+    en: "The {plant} schedule is fixed and is not set here. Sampling hours: 00:00, 03:00, 06:00, 09:00, 12:00, 15:00, 18:00, 21:00.",
+    zh: "{plant} 的排程是固定的，不在此处设置。采样时间：00:00、03:00、06:00、09:00、12:00、15:00、18:00、21:00。",
   },
   errorAdminOnly: {
     id: "Hanya Super Admin yang boleh mengubah jadwal.",
