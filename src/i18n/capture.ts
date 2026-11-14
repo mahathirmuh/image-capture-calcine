@@ -7,6 +7,16 @@ import { defineMessages } from "@/lib/i18n";
 // token itu tampil apa adanya di ketiga bahasa -- itu token pola nama berkas,
 // bukan placeholder terjemahan.
 export const captureMessages = defineMessages({
+  // Jalur jadwal (Acid Plant): dua jadwal yang berjalan bersamaan.
+  trackRegular: { id: "Sampling Rutin", en: "Routine sampling", zh: "常规取样" },
+  trackAi: { id: "Sampling AI", en: "AI sampling", zh: "AI 取样" },
+  trackTabsLabel: { id: "Jenis sampling", en: "Sampling type", zh: "取样类别" },
+  aiFolderNote: {
+    id: "Foto Sampling AI disimpan terpisah di folder {folder}.",
+    en: "AI sampling photos are saved separately in the {folder} folder.",
+    zh: "AI 取样照片单独保存在 {folder} 文件夹中。",
+  },
+
   // Waktu relatif pada kartu runtime
   relativeNoData: { id: "Belum ada data", en: "No data yet", zh: "暂无数据" },
   relativeJustNow: { id: "Baru saja", en: "Just now", zh: "刚刚" },

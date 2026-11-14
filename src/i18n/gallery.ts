@@ -235,7 +235,9 @@ export const galleryMessages = defineMessages({
   filterDateAria: { id: "Filter tanggal", en: "Date filter", zh: "日期筛选" },
   sessionType: { id: "Jenis Sesi", en: "Session Type", zh: "场次类别" },
   allSessionTypes: { id: "Semua Jenis Sesi", en: "All Session Types", zh: "全部类别" },
-  trackRegular: { id: "Sesi per 3 jam", en: "Session every 3 hours", zh: "每 3 小时一场" },
+  trackRegular: { id: "Sampling Rutin", en: "Routine sampling", zh: "常规取样" },
+  trackAi: { id: "Sampling AI", en: "AI sampling", zh: "AI 取样" },
+  trackAiShort: { id: "AI", en: "AI", zh: "AI" },
   trackTrial: {
     id: "Sesi per 2 jam (Trial)",
     en: "Session every 2 hours (Trial)",
@@ -785,9 +787,9 @@ export const bulkDownloadMessages = defineMessages({
   statSize: { id: "Perkiraan ukuran", en: "Estimated size", zh: "预计大小" },
   structureTitle: { id: "Susunan isi ZIP", en: "ZIP layout", zh: "ZIP 内部结构" },
   structureHint: {
-    id: "Di dalam tiap folder tanggal, foto dipisah per plant (dan Trial) supaya nama berkas yang sama tidak saling menimpa.",
-    en: "Inside each date folder the photos are separated per plant (and Trial), so files with the same name do not overwrite each other.",
-    zh: "每个日期文件夹内再按工厂（及试行）分开，避免同名文件互相覆盖。",
+    id: "Di dalam tiap folder tanggal, foto dipisah per plant (dan AI/Trial) supaya nama berkas yang sama tidak saling menimpa.",
+    en: "Inside each date folder the photos are separated per plant (and AI/Trial), so files with the same name do not overwrite each other.",
+    zh: "每个日期文件夹内再按工厂（及 AI/试行）分开，避免同名文件互相覆盖。",
   },
   localOnlySkipped: {
     id: "{count} foto tidak ikut karena hanya tersimpan di browser ini, bukan di folder jaringan.",

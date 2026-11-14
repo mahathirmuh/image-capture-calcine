@@ -186,6 +186,55 @@ it("still files a trial receipt issued before the trial track was removed in the
   ).toBe("synthetic-jpeg");
   expect(mock.record.mock.calls[0][0].captureTrack).toBe("trial");
 });
+it("captures an AI sampling session from the app and files it in the AI folder", async () => {
+  // 17:20 WITA on 14 Nov 2026: routine is in 17.00, AI is in 15.00.
+  vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-11-14T17:20:00+08:00"));
+  const aiCommand = {
+    ...command,
+    sessionDate: "2026-11-14",
+    captureSession: "15.00",
+    track: "ai",
+  };
+  // The same hour on the routine track is refused before the camera fires.
+  const routine = await post("/camera/capture", { ...aiCommand, track: undefined });
+  expect(routine.status).toBe(409);
+  expect(mock.fetch).not.toHaveBeenCalled();
+  const accepted = await post("/camera/capture", aiCommand);
+  expect(accepted.status).toBe(202);
+  const { receipt } = await accepted.json();
+  const finalized = await post("/captures/finalize", {
+    assetId: "synthetic-asset",
+    capturedAt: Date.now(),
+    plant: "Acid Plant",
+    captureSession: "15.00",
+    slot: 1,
+    deviceId: 7,
+    receipt,
+  });
+  expect(finalized.status).toBe(201);
+  expect(
+    await readFile(
+      join(mock.root, "Acid Plant AI", "2026", "11", "14", "15.00 Train 1.jpg"),
+      "utf8",
+    ),
+  ).toBe("synthetic-jpeg");
+  expect(mock.record.mock.calls[0][0].captureTrack).toBe("ai");
+});
+it("answers the AI tab only for dates that run AI sampling", async () => {
+  const sessions = async (query: string) =>
+    (await handleApiRequest(new Request("http://localhost/api/v1/sessions?" + query)))!;
+  // Before 14 Nov there were no AI sessions: an empty answer, no registry read.
+  const response = await sessions("track=ai&plant=Acid%20Plant&date=2026-11-13");
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({
+    track: "ai",
+    plants: [],
+    summary: { expected: 0, captured: 0, missing: 0 },
+  });
+  expect((await sessions("track=nope")).status).toBe(400);
+  const { getCardDbPool } = await import("../carddb");
+  expect(getCardDbPool).not.toHaveBeenCalled();
+});
 it("keeps API key access read-only while exposing schedule snapshots", async () => {
   mock.auth.mockResolvedValue({ ok: true, principal: { kind: "api-key" } });
   expect((await post("/camera/capture", command)).status).toBe(403);

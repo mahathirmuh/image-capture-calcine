@@ -219,7 +219,7 @@ type GalleryCard = {
   name: string;
   folder: string;
   bin?: string;
-  /** Jalur jadwal: sesi per 3 jam ("regular") atau sesi per 2 jam ("trial"). */
+  /** Jalur jadwal: Sampling Rutin ("regular"), Sampling AI ("ai"), atau arsip trial. */
   track: CaptureRecordView["captureTrack"];
   /** Ditaruh langsung di folder jaringan lalu didaftarkan, bukan hasil capture. */
   imported: boolean;
@@ -1596,7 +1596,13 @@ function GalleryContent() {
       ? {
           key: "track",
           label: t(m.chipTrack, {
-            value: t(filterTrack === "trial" ? m.trackTrial : m.trackRegular),
+            value: t(
+              filterTrack === "trial"
+                ? m.trackTrial
+                : filterTrack === "ai"
+                  ? m.trackAi
+                  : m.trackRegular,
+            ),
           }),
           clear: () => setFilterTrack(""),
         }
@@ -1909,6 +1915,11 @@ function GalleryContent() {
                               {t(m.trackTrialShort)}
                             </span>
                           )}
+                          {record.captureTrack === "ai" && (
+                            <span className="ml-1 rounded bg-sky-500/15 px-1 py-0.5 text-[10px] font-medium text-sky-700">
+                              {t(m.trackAiShort)}
+                            </span>
+                          )}
                         </td>
                         <td className="p-2 text-xs text-muted-foreground">
                           {record.capturedBy ?? "—"}
@@ -2113,6 +2124,7 @@ ${storage.path ?? "—"}`}
               options={[
                 { value: "", label: t(m.allSessionTypes) },
                 { value: "regular", label: t(m.trackRegular) },
+                { value: "ai", label: t(m.trackAi) },
                 { value: "trial", label: t(m.trackTrial) },
               ]}
               ariaLabel={t(m.filterTrackAria)}

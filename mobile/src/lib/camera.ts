@@ -191,7 +191,12 @@ export async function triggerAutofocus(
 export async function triggerCapture(
   session: AuthSession,
   lease: CameraLease,
-  context: { sessionDate?: string; captureSession?: string; recovery?: boolean } = {},
+  context: {
+    sessionDate?: string;
+    captureSession?: string;
+    recovery?: boolean;
+    track?: "regular" | "ai";
+  } = {},
 ): Promise<{ session: AuthSession; data: CameraJobAccepted }> {
   return requestWithSession<CameraJobAccepted>(session, "/camera/capture", {
     method: "POST",

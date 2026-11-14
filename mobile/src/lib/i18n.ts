@@ -42,6 +42,10 @@ const en = {
   "nav.device": "Device",
   "nav.settings": "Settings",
 
+  "track.aria": "Sampling type",
+  "track.regular": "Routine Sampling",
+  "track.ai": "AI Sampling",
+
   "login.aria": "Operator sign in",
   "login.kicker": "Calcine Sampling Operator Tool",
   "login.subtitle": "Sign in to continue your assigned sampling session and capture workflow.",
@@ -110,6 +114,7 @@ const en = {
   "capture.blockedAutomatic": "Session not available, please take sample at defined sessions.",
   "capture.blockedSelect": "Select a session from Today Sessions to define plant context first.",
   "capture.notAvailable": "Session not available",
+  "capture.aiTag": "AI",
   "capture.autoSession": "Auto session",
   "capture.headerDefault": "Capture Workflow",
   "capture.openSessionsAria": "Open today sessions",
@@ -374,6 +379,10 @@ const zh: Record<TranslationKey, string> = {
   "nav.device": "设备",
   "nav.settings": "设置",
 
+  "track.aria": "取样类别",
+  "track.regular": "常规取样",
+  "track.ai": "AI 取样",
+
   "login.aria": "操作员登录",
   "login.kicker": "焙砂取样操作员工具",
   "login.subtitle": "登录后继续您负责的取样场次和拍摄流程。",
@@ -441,6 +450,7 @@ const zh: Record<TranslationKey, string> = {
   "capture.blockedAutomatic": "当前无可用场次，请在规定场次取样。",
   "capture.blockedSelect": "请先在“今日场次”中选择一个场次以确定工厂。",
   "capture.notAvailable": "当前无可用场次",
+  "capture.aiTag": "AI 取样",
   "capture.autoSession": "自动场次",
   "capture.headerDefault": "拍摄流程",
   "capture.openSessionsAria": "打开今日场次",

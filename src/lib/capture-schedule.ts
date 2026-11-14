@@ -65,19 +65,63 @@ export function defaultSchedule(plant: string): ScheduleVersion {
     createdBy: null,
   };
 }
-// Jalur capture, tersimpan sebagai `captureTrack` pada record. "regular" memakai
-// jadwal plant. "trial" adalah sesi Acid Plant per 2 jam (00.00, 02.00, 04.00,
-// ...) dengan folder simpannya sendiri; jalur ini DIHAPUS pada 13 Nov 2026 atas
-// keputusan pemilik, jadi tidak ada lagi sesi trial yang ditawarkan atau
-// diterima. Nilai "trial" tetap dikenal karena foto trial lama tetap ada -- di
-// folder "<plant> Trial" dan di registry -- dan tetap dibaca Gallery, unduhan
-// ZIP, dan Sinkronkan folder.
-export const CAPTURE_TRACKS = ["regular", "trial"] as const;
+// Jalur capture, tersimpan sebagai `captureTrack` pada record.
+// - "regular" = Sampling Rutin: jadwal plant (Acid Plant: 02.00, 05.00, ...).
+// - "ai" = Sampling AI: jalur kedua Acid Plant sejak 14 Nov 2026, jadwal
+//   tetap 00.00, 03.00, ..., 21.00, berkasnya di folder "<plant> AI". Kamera,
+//   operator dan slot Train tetap milik plant asalnya -- yang berbeda hanya
+//   jadwal dan tujuan berkas.
+// - "trial" = arsip sesi per 2 jam (5-16 Okt 2026) di folder "<plant> Trial".
+//   Jalur ini DIHAPUS 13 Nov 2026: tidak ditawarkan dan tidak diterima lagi,
+//   tetapi fotonya tetap dibaca Gallery, unduhan ZIP, dan Sinkronkan folder.
+export const CAPTURE_TRACKS = ["regular", "trial", "ai"] as const;
 export type CaptureTrack = (typeof CAPTURE_TRACKS)[number];
+/** Nilai jalur dari luar (body, metadata, query); yang tidak dikenal = reguler. */
+export function parseCaptureTrack(value: unknown): CaptureTrack {
+  return value === "trial" || value === "ai" ? value : "regular";
+}
 /** Plant yang punya arsip trial, yaitu folder "<plant> Trial". */
 export const TRIAL_PLANTS: readonly string[] = ["Acid Plant"];
 export function hasTrialTrack(plant: string): boolean {
   return TRIAL_PLANTS.includes(plant);
+}
+/**
+ * Sampling AI: permintaan pemilik 14 Nov 2026 -- "Sampling Rutin" 02.00, 05.00,
+ * ..., 23.00 dan "Sampling AI" 09.00, 12.00, 15.00, 18.00, 21.00, 00.00,
+ * 03.00, 06.00 -- dua jadwal yang berjalan bersamaan di Acid Plant.
+ */
+export const AI_PLANTS: readonly string[] = ["Acid Plant"];
+/** Hari pertama ada sesi Sampling AI; sebelum tanggal ini jalur AI kosong. */
+export const AI_TRACK_SINCE = "2026-11-14";
+export function hasAiTrack(plant: string): boolean {
+  return AI_PLANTS.includes(plant);
+}
+export function aiSchedule(plant: string): ScheduleVersion {
+  return {
+    ...defaultSchedule(plant),
+    id: `ai-${plant}`,
+    effectiveDate: AI_TRACK_SINCE,
+    startHour: 0,
+    createdAt: `${AI_TRACK_SINCE}T00:00:00.000Z`,
+  };
+}
+/** Plant yang punya sesi pada jalur ini untuk tanggal tersebut. */
+export function trackHasSessions(plant: string, track: CaptureTrack, date: string): boolean {
+  if (track === "regular") return true;
+  if (track === "ai") return hasAiTrack(plant) && date >= AI_TRACK_SINCE;
+  return false;
+}
+/**
+ * Versi jadwal yang berlaku untuk sebuah jalur. Jalur AI tidak ikut versi
+ * admin dan jadwal Rutin; jalur trial tidak punya jadwal lagi.
+ */
+export function versionsForTrack(
+  versions: ScheduleVersion[],
+  plant: string,
+  track: CaptureTrack,
+): ScheduleVersion[] {
+  if (track === "ai") return [aiSchedule(plant)];
+  return versions;
 }
 /**
  * Sejak tanggal ini Acid Plant memakai jadwal TETAP per 3 jam dengan jendela
@@ -100,19 +144,17 @@ const FIXED_SCHEDULE_PLANTS: readonly string[] = ["Acid Plant"];
  * berikutnya.
  * - 7 Okt 2026: 02.00, 05.00, 08.00, 11.00, 14.00, 17.00, 20.00, 23.00
  *   (keputusan pemilik; tetap berlaku setelah jalur trial dihapus 13 Nov).
- * - 14 Nov 2026: 00.00, 03.00, 06.00, 09.00, 12.00, 15.00, 18.00, 21.00
- *   (slide "Interval 3 Hours Sampling" tertanggal 11 Nov 2026). Slide itu
- *   menyebut masa trial 16 Nov-31 Des 2026, tetapi pemilik meminta jam ini
- *   berlaku SEJAK hari permintaan (14 Nov, siang) dan tetap berlaku sesudah
- *   31 Des sampai diubah lagi. Akibat yang diterima pemilik: foto 14 Nov yang
- *   diambil sebelum perubahan (sesi 02.00-14.00) tidak cocok dengan jam baru
- *   dan tidak terhitung di rekap hari itu; berkas dan record-nya tetap ada.
+ *   Sejak 14 Nov 2026 ini disebut "Sampling Rutin".
+ * Pada 14 Nov siang jam 00.00, 03.00, ..., 21.00 sempat dipasang sebagai
+ * pengganti jadwal ini (versi "fixed-Acid Plant-2026-11-14", ter-deploy
+ * beberapa jam), lalu atas permintaan pemilik dipindah menjadi jalur kedua,
+ * "Sampling AI" (lihat aiSchedule), sehingga jadwal Rutin kembali utuh juga
+ * untuk 14 Nov.
  * Baris yang sudah lewat jangan diubah atau dihapus: riwayat sesi dihitung
  * ulang dari baris ini.
  */
 const FIXED_SCHEDULE_CHANGES: readonly { effectiveDate: string; startHour: number }[] = [
   { effectiveDate: FIXED_REGULAR_SINCE, startHour: 2 },
-  { effectiveDate: "2026-11-14", startHour: 0 },
 ];
 
 export function hasFixedRegularSchedule(plant: string): boolean {
@@ -157,9 +199,14 @@ export function applyFixedRegularSchedules(
   ];
 }
 
-/** Folder pertama di bawah NETWORK_SAVE_ROOT: "Acid Plant" atau "Acid Plant Trial". */
+/**
+ * Folder pertama di bawah NETWORK_SAVE_ROOT: "Acid Plant", "Acid Plant AI",
+ * atau arsip "Acid Plant Trial".
+ */
 export function trackFolder(plant: string, track: CaptureTrack): string {
-  return track === "trial" ? `${plant} Trial` : plant;
+  if (track === "trial") return `${plant} Trial`;
+  if (track === "ai") return `${plant} AI`;
+  return plant;
 }
 export function scheduleForDate(versions: ScheduleVersion[], plant: string, date: string) {
   return versions.reduce(

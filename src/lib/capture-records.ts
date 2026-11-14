@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
 import { isSafeFileName } from "./network-path";
+import { parseCaptureTrack, type CaptureTrack } from "./capture-schedule";
 
 type SqlModule = typeof import("mssql").default;
 type SqlRequest = import("mssql").Request;
@@ -47,11 +48,11 @@ const recordCaptureSchema = z.object({
   // bisa dijawab dari registry, bukan dengan mengurai nama berkas yang bisa
   // bersuffix "(2)" atau sudah di-rename orang.
   captureSession: z.string().trim().max(20).nullable().optional(),
-  // Jalur jadwal. Kosong berarti jalur reguler; "trial" adalah sesi per 2 jam
-  // yang disimpan di folder "<Plant> Trial" dan TIDAK dihitung sebagai cakupan
-  // sesi reguler walau label jamnya sama (02.00, 08.00, 14.00, 20.00). Jalur
-  // trial dihapus 13 Nov 2026; halaman Capture tidak lagi mengirim kunci ini.
-  captureTrack: z.enum(["regular", "trial"]).nullable().optional(),
+  // Jalur jadwal. Kosong berarti jalur reguler (Sampling Rutin); "ai" adalah
+  // Sampling AI di folder "<Plant> AI"; "trial" adalah arsip sesi per 2 jam di
+  // folder "<Plant> Trial" (dihapus 13 Nov 2026). Jalur selain reguler TIDAK
+  // dihitung sebagai cakupan sesi reguler walau label jamnya sama.
+  captureTrack: z.enum(["regular", "trial", "ai"]).nullable().optional(),
   station: z.string().trim().nullable().optional(),
   fileName: z.string().trim().min(1, "Nama file wajib diisi"),
   filePath: z.string().trim().min(1, "Path file wajib diisi"),
@@ -196,7 +197,7 @@ export type CaptureRecordView = {
   plant: string | null;
   captureBin: string | null;
   captureSession: string | null;
-  captureTrack: "regular" | "trial";
+  captureTrack: CaptureTrack;
   capturedBy: string | null;
   station: string | null;
   fileName: string;
@@ -383,7 +384,7 @@ function parseCaptureRecordMetadata(raw: unknown): {
   // Record dari sebelum skema sesi dipakai tidak punya kunci ini, jadi nullable
   // bukan kelalaian -- Gallery menampilkannya sebagai "—" untuk capture lama.
   captureSession: string | null;
-  captureTrack: "regular" | "trial";
+  captureTrack: CaptureTrack;
   // Record dari sebelum atribusi operator dipasang tidak punya kunci ini.
   capturedBy: string | null;
   capturedByUserId: number | null;
@@ -413,7 +414,7 @@ function parseCaptureRecordMetadata(raw: unknown): {
     plant: typeof parsed.plant === "string" ? parsed.plant : null,
     captureBin: typeof parsed.captureBin === "string" ? parsed.captureBin : null,
     captureSession: typeof parsed.captureSession === "string" ? parsed.captureSession : null,
-    captureTrack: parsed.captureTrack === "trial" ? "trial" : "regular",
+    captureTrack: parseCaptureTrack(parsed.captureTrack),
     capturedBy: typeof parsed.capturedBy === "string" ? parsed.capturedBy : null,
     capturedByUserId: typeof parsed.capturedByUserId === "number" ? parsed.capturedByUserId : null,
     station: typeof parsed.station === "string" ? parsed.station : null,

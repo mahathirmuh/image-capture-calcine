@@ -101,33 +101,35 @@ the list opens without a trial label, Settings shows 1.5.0, Chinese shows no tri
 or console error. Not covered: a real sign-in and capture on a phone, and the old-APK behaviour
 against a deployed server (covered by the REST tests only). Not deployed at the time of writing.
 
-## Acid Plant hours from 2026-11-14
+## Two Acid Plant schedules: Sampling Rutin and Sampling AI (2026-11-14)
 
-Owner request (2026-11-14, "waktunya diubah"), based on the slide "Interval 3 Hours Sampling"
-dated 11 Nov 2026. That slide covers the trial window 16 Nov-31 Dec 2026 with 8 samplings a day.
-Its day shift samples at 09:00, 12:00, 15:00 and 18:00, and its night shift at 21:00, 00:00, 03:00
-and 06:00.
+Owner request on 2026-11-14 ("buatkan 2 jadwal gini ... kerjakan sekarang"):
 
-- Acid Plant only. Chloride, Pyrite and Copper Cathode keep their own schedules (built-in 02.00
-  every 3 hours unless an admin saves a version in Settings).
-- The fixed Acid Plant schedule is now 00.00, 03.00, 06.00, 09.00, 12.00, 15.00, 18.00, 21.00. It is
-  still every 3 hours with a 180-minute window in Asia/Makassar. The owner decided it stays after
-  31 Dec 2026 until changed again.
-- Start date. A first version started on 16 Nov, the slide's first trial day, and was deployed. The
-  same afternoon the owner asked for it to start immediately ("ubah waktunya sesuai gambar ini").
-  The effective date is therefore 2026-11-14, the day of the request. Settings never allows that
-  for a stored version.
-- Accepted consequence: the 10 Acid Plant photos of 14 Nov taken before the switch (sessions 02.00
-  to 14.00, Train 1 and 2) keep their files, names and records. Their labels do not match the new
-  hours, so they are not counted in the 14 Nov coverage, and the 00.00 to 12.00 sessions of 14 Nov
-  show as missing. A photo whose capture was started before the deploy is still saved under its
-  signed session label, because finalize does not re-check the schedule.
-- It is a second fixed version, `fixed-Acid Plant-2026-11-14`, next to `fixed-Acid Plant`
-  (2026-10-07). Dates up to 13 Nov keep the 02.00 hours.
-- From the deploy on, the open session follows the new hours (at 16:55 WITA on 14 Nov that is 15.00
-  until 18:00). Every later midnight handover is plain: 21.00 runs until 00:00, then 00.00 starts.
-  There is no 02.00 session any more.
-- Web capture, server validation, `/schedules`, `/sessions` and the mobile app read the same
-  snapshot, so no new APK is needed. The Settings note for Acid Plant lists only the current sampling hours (owner, 14 Nov: "cukup jam jam yang tertera saja"); older hours stay in the collapsed version history.
-- The legacy `sessions` list of `GET /plants` keeps the built-in 02.00 hours. It is documented as
-  legacy, and consumers use `/schedules`.
+- **Sampling Rutin**: 02.00, 05.00, 08.00, 11.00, 14.00, 17.00, 20.00, 23.00
+- **Sampling AI**: 09.00, 12.00, 15.00, 18.00, 21.00, 00.00, 03.00, 06.00 (the hours of the slide
+  "Interval 3 Hours Sampling", 11 Nov 2026)
+
+History of the same day. First, the AI hours were set to start on 16 Nov ("waktunya diubah"), then
+on 14 Nov ("mulai sekarang"). Both times they replaced the Acid Plant schedule as the version
+`fixed-Acid Plant-2026-11-14`, and both were deployed. Hours later the owner asked for both
+schedules side by side. That version was withdrawn, so routine sampling keeps 02.00 … 23.00 for
+every date, including 14 Nov. This morning's routine photos count again.
+
+- Tracks. `regular` is Sampling Rutin (the fixed Acid Plant schedule from 2026-10-07, unchanged).
+  `ai` is Sampling AI: Acid Plant only, from 2026-11-14, every 3 hours from 00.00, 180-minute
+  window, Asia/Makassar, defined in code (`aiSchedule`). `trial` stays archive-only.
+- Folders. AI photos go to `Acid Plant AI/YYYY/MM/DD/<session> Train n.jpg`, routine photos to
+  `Acid Plant/...` as before. Gallery has an `AI` tag and a "Sampling AI" filter. ZIP downloads and
+  Sinkronkan folder include the AI folder.
+- Choosing a track. The web Capture page and the app (Today Sessions and direct Capture) show the
+  tabs `Sampling Rutin` / `Sampling AI`, in the app `Routine Sampling` / `AI Sampling`. A capture is
+  validated against its own track's hours. The track is signed into the receipt and decides the
+  folder.
+- Coverage. `/sessions` counts each track from its own photos (`?track=ai` for AI). It answers AI
+  only for Acid Plant from 14 Nov.
+- Settings shows both hour lists for Acid Plant.
+- The app needs **APK 1.6.0** (versionCode 8) for the AI tabs. Older APKs keep working for routine
+  sampling only.
+- Known leftover. Photos taken on 14 Nov between the deploy of the replaced schedule and this change
+  are routine-track records with AI-hour labels (e.g. `15.00`). They stay on the share under
+  `Acid Plant/` and are not counted on either track. Nothing was moved or rewritten.

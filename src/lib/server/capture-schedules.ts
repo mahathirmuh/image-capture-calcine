@@ -11,6 +11,9 @@ import {
   plantToday,
   zonedClock,
   validateCaptureContext,
+  hasAiTrack,
+  trackHasSessions,
+  versionsForTrack,
   type CaptureTrack,
   type ScheduleSnapshot,
   type ScheduleVersion,
@@ -142,6 +145,21 @@ export async function checkScheduledCapture(
     throw new Error(
       "INVALID_SESSION: Sesi per 2 jam (trial) sudah dihapus. Gunakan sesi per 3 jam.",
     );
+  if (track === "ai") {
+    // Sampling AI berjalan di samping Sampling Rutin dengan jadwal tetapnya
+    // sendiri, hanya di plant yang memang menjalankannya dan mulai tanggalnya.
+    if (!hasAiTrack(plant))
+      throw new Error("INVALID_SESSION: Sampling AI tidak tersedia untuk plant ini.");
+    const context = validateCaptureContext(
+      versionsForTrack([], plant, track),
+      plant,
+      Date.now(),
+      input,
+    );
+    if (!trackHasSessions(plant, track, context.date))
+      throw new Error("INVALID_SESSION: Sampling AI belum berjalan pada tanggal ini.");
+    return context;
+  }
   const snapshot = await readScheduleSnapshot();
   return validateCaptureContext(snapshot.versions, plant, Date.now(), input);
 }
@@ -153,9 +171,9 @@ type Receipt = {
   captureSession: string;
   capturedAt: number;
   jobId: string;
-  // Jalur jadwal saat perintah diberikan. Receipt tanpa kunci ini dibaca
-  // sebagai jalur reguler; "trial" hanya mungkin pada receipt yang terbit
-  // sebelum jalur trial dihapus (13 Nov 2026).
+  // Jalur jadwal saat perintah diberikan: "regular" (Rutin) atau "ai".
+  // Receipt tanpa kunci ini dibaca sebagai jalur reguler; "trial" hanya
+  // mungkin pada receipt yang terbit sebelum jalur trial dihapus (13 Nov 2026).
   track?: CaptureTrack;
 };
 function signature(body: string) {

@@ -142,3 +142,14 @@ Explicit account scope `ALL` allows selecting a scheduled session from any plant
 - Dates up to 13 Nov keep 02:00 … 23:00. On 14 Nov, photos taken before the switch are kept but do not match the new hours.
 - Other plants are unchanged.
 - Today Sessions and direct Capture take the hours from the server schedule, so no app change or new APK is needed (APK 1.5.0 and 1.5.1 both follow it).
+
+## Two Acid Plant schedules — 2026-11-14 (supersedes "Acid Plant hours from 2026-11-14")
+
+- Acid Plant runs two sampling schedules side by side:
+  - **Routine Sampling**: 02:00, 05:00, 08:00, 11:00, 14:00, 17:00, 20:00, 23:00, unchanged.
+  - **AI Sampling**: 00:00, 03:00, 06:00, 09:00, 12:00, 15:00, 18:00, 21:00, from 14 Nov 2026.
+- Each session lasts 3 hours.
+- Today Sessions and direct Capture show the tabs `Routine Sampling` / `AI Sampling` for an Acid Plant operator (and an `ALL` account). Other plants see no tabs.
+- A session picked in Today Sessions keeps its track. The Capture header shows `Acid Plant AI • …` for AI sessions.
+- AI photos are saved by the server in the `Acid Plant AI` folder. The latest-result card only matches photos of the same track.
+- APK 1.6.0 (versionCode 8). Older APKs only see Routine Sampling.

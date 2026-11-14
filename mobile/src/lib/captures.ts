@@ -20,7 +20,7 @@ export type ApiCaptureRecord = {
   plant: string | null;
   captureBin: string | null;
   captureSession: string | null;
-  captureTrack?: "regular" | "trial";
+  captureTrack?: "regular" | "trial" | "ai";
   capturedBy: string | null;
   station: string | null;
   fileName: string;

@@ -27,7 +27,15 @@ import {
   issueCaptureReceipt,
   verifyCaptureReceipt,
 } from "./capture-schedules";
-import { plantToday, validDate, trackFolder, type CaptureTrack } from "../capture-schedule";
+import {
+  aiSchedule,
+  parseCaptureTrack,
+  plantToday,
+  trackFolder,
+  trackHasSessions,
+  validDate,
+  type CaptureTrack,
+} from "../capture-schedule";
 import { canViewGalleryPlant } from "../gallery-access";
 import { CAPTURE_PLANT_SQL, requireGalleryUserAccess } from "./gallery-access";
 
@@ -729,7 +737,7 @@ async function handleCaptureFinalize(principal: ApiPrincipal, request: Request):
   // klien tidak bisa memindahkan foto reguler ke folder trial atau sebaliknya.
   // Sejak jalur trial dihapus (13 Nov 2026) receipt baru selalu reguler; yang
   // trial hanya receipt yang terbit sebelum itu.
-  const captureTrack: CaptureTrack = receipt.track === "trial" ? "trial" : "regular";
+  const captureTrack: CaptureTrack = parseCaptureTrack(receipt.track);
   const folder = trackFolder(plant, captureTrack);
   const fileName = `${receipt.captureSession} ${toBinTitle(plant, slot)}.jpg`;
   const pathResult = {
@@ -1798,7 +1806,7 @@ async function handleCameraCommand(
   if (!target.ok) return edgeFailure(target);
 
   let captureContext;
-  const captureTrack: CaptureTrack = body.track === "trial" ? "trial" : "regular";
+  const captureTrack: CaptureTrack = parseCaptureTrack(body.track);
   const commandAt = Date.now();
   if (kind === "capture") {
     try {
@@ -1879,16 +1887,23 @@ async function handleSessions(url: URL): Promise<Response> {
   if (requestedPlant !== null && !(PLANTS as readonly string[]).includes(requestedPlant)) {
     return apiError(400, "INVALID_PARAM", `plant tidak dikenal: ${requestedPlant}`);
   }
-  // Sesi per 2 jam (trial) dihapus 13 Nov 2026. `track=trial` tetap diterima
+  // Jalur: `regular` (Sampling Rutin, bawaan tanpa parameter) atau `ai`
+  // (Sampling AI, hanya plant yang menjalankannya dan sejak tanggal mulainya).
+  // Sesi per 2 jam (trial) dihapus 13 Nov 2026; `track=trial` tetap diterima
   // supaya tab trial di APK 1.2.0-1.4.0 tidak berubah jadi galat: jawabannya
-  // selalu tanpa plant, jadi tab itu kosong. Tanpa parameter, yang dijawab
-  // jalur reguler.
+  // selalu tanpa plant, jadi tab itu kosong.
   const rawTrack = url.searchParams.get("track");
-  if (rawTrack !== null && rawTrack !== "regular" && rawTrack !== "trial") {
-    return apiError(400, "INVALID_PARAM", `track harus regular atau trial, bukan: ${rawTrack}`);
+  if (rawTrack !== null && rawTrack !== "regular" && rawTrack !== "trial" && rawTrack !== "ai") {
+    return apiError(
+      400,
+      "INVALID_PARAM",
+      `track harus regular, ai, atau trial, bukan: ${rawTrack}`,
+    );
   }
-  const track: CaptureTrack = rawTrack === "trial" ? "trial" : "regular";
-  const plants = track === "trial" ? [] : requestedPlant ? [requestedPlant] : [...PLANTS];
+  const track: CaptureTrack = parseCaptureTrack(rawTrack);
+  const plants = (requestedPlant ? [requestedPlant] : [...PLANTS]).filter((plant) =>
+    trackHasSessions(plant, track, date),
+  );
 
   const dayStart = new Date(`${date}T00:00:00.000Z`);
   if (Number.isNaN(dayStart.getTime())) {
@@ -1920,16 +1935,17 @@ async function handleSessions(url: URL): Promise<Response> {
       WHERE (@plant IS NULL OR ${CAPTURE_PLANT_SQL} = @plant) AND cr.captured_at >= @from AND cr.captured_at < @to
       ORDER BY cr.captured_at ASC, cr.id ASC;`);
 
-  // Foto trial lama (5-16 Okt 2026) berbagi plant dan label jam dengan jalur
-  // reguler (02.00, 08.00, ...), jadi harus disisihkan sebelum cakupan
-  // dihitung -- kalau tidak, foto trial akan menutup sesi reguler yang
+  // Setiap jalur hanya dihitung dari fotonya sendiri. Foto trial lama (5-16
+  // Okt 2026) berbagi plant dan label jam dengan jalur reguler (02.00, 08.00,
+  // ...); tanpa penyaringan ini foto jalur lain akan menutup sesi yang
   // sebenarnya kosong.
   const records = result.recordset
     .map((row: unknown) => mapCaptureRecordRow(row as Record<string, unknown>))
-    .filter((view: CaptureRecordView) => view.captureTrack === "regular")
+    .filter((view: CaptureRecordView) => view.captureTrack === track)
     .map(toCoverageRecord);
 
-  const coverage = buildSessionCoverage({ date, plants, records, versions: snapshot.versions });
+  const versions = track === "ai" ? plants.map((plant) => aiSchedule(plant)) : snapshot.versions;
+  const coverage = buildSessionCoverage({ date, plants, records, versions });
   return json({ date, track, serverNow: Date.now(), ...coverage });
 }
 

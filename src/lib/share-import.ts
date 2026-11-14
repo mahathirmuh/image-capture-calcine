@@ -14,6 +14,7 @@ import { z } from "zod";
 
 import {
   defaultSchedule,
+  hasAiTrack,
   hasTrialTrack,
   sessionContext,
   shiftDate,
@@ -66,6 +67,9 @@ export type SharePlantFolder = { folder: string; plant: string; track: CaptureTr
 export function sharePlantFolders(): SharePlantFolder[] {
   return PLANTS.flatMap((plant): SharePlantFolder[] => [
     { folder: trackFolder(plant, "regular"), plant, track: "regular" },
+    ...(hasAiTrack(plant)
+      ? [{ folder: trackFolder(plant, "ai"), plant, track: "ai" as const }]
+      : []),
     ...(hasTrialTrack(plant)
       ? [{ folder: trackFolder(plant, "trial"), plant, track: "trial" as const }]
       : []),

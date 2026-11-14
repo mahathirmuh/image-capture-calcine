@@ -12,10 +12,14 @@ import {
   hasFixedRegularSchedule,
   hasTrialTrack,
   trackFolder,
+  aiSchedule,
+  hasAiTrack,
+  parseCaptureTrack,
+  trackHasSessions,
+  versionsForTrack,
   type ScheduleVersion,
 } from "./capture-schedule";
 import { buildSessionCoverage } from "./session-coverage";
-import { PLANTS } from "./locations";
 const plant = "Acid Plant";
 const legacy = defaultSchedule(plant);
 const version: ScheduleVersion = {
@@ -157,72 +161,93 @@ describe("after the 2-hour trial sessions were removed (13 Nov 2026)", () => {
     ).toThrow(/INVALID_SESSION/);
   });
 });
-describe("Acid Plant hours move to 00.00, 03.00, ... 21.00 on 14 Nov 2026", () => {
+describe("two Acid Plant schedules from 14 Nov 2026: Sampling Rutin and Sampling AI", () => {
   const at = (iso: string) => Date.parse(iso);
   const versions = applyFixedRegularSchedules([legacy], [plant]);
-  const label = (iso: string) => {
-    const context = activeScheduledContext(versions, plant, at(iso));
+  const label = (track: "regular" | "ai", iso: string) => {
+    const context = activeScheduledContext(
+      versionsForTrack(versions, plant, track),
+      plant,
+      at(iso),
+    );
     return context && `${context.date} ${context.label}`;
   };
-  it("keeps the old hours up to 13 Nov and uses the new hours from 14 Nov on", () => {
-    for (const date of ["2026-10-07", "2026-11-12", "2026-11-13"])
+  it("keeps routine sampling on 02.00 ... 23.00 and runs AI sampling on 00.00 ... 21.00", () => {
+    for (const date of ["2026-11-13", "2026-11-14", "2026-12-31", "2027-01-01"])
       expect(scheduleHours(scheduleForDate(versions, plant, date))).toEqual([
         2, 5, 8, 11, 14, 17, 20, 23,
       ]);
-    for (const date of ["2026-11-14", "2026-11-16", "2026-12-31", "2027-01-01"]) {
-      const schedule = scheduleForDate(versions, plant, date);
+    const ai = versionsForTrack(versions, plant, "ai");
+    for (const date of ["2026-11-14", "2026-12-31", "2027-01-01"]) {
+      const schedule = scheduleForDate(ai, plant, date);
       expect(scheduleHours(schedule)).toEqual([0, 3, 6, 9, 12, 15, 18, 21]);
       expect(schedule.windowMinutes).toBe(180);
       expect(schedule.timezone).toBe("Asia/Makassar");
     }
-    // Other plants keep the built-in 02.00 schedule.
-    const chloride = applyFixedRegularSchedules([defaultSchedule("Chloride Plant")], PLANTS);
-    expect(scheduleHours(scheduleForDate(chloride, "Chloride Plant", "2026-11-14"))).toEqual([
-      2, 5, 8, 11, 14, 17, 20, 23,
-    ]);
+    expect(aiSchedule(plant).effectiveDate).toBe("2026-11-14");
   });
-  it("hands over at midnight WITA without a gap or a 02.00 session", () => {
-    expect(label("2026-11-13T23:30:00+08:00")).toBe("2026-11-13 23.00");
-    expect(label("2026-11-14T00:00:00+08:00")).toBe("2026-11-14 00.00");
-    expect(label("2026-11-14T02:30:00+08:00")).toBe("2026-11-14 00.00");
-    expect(label("2026-11-14T03:00:00+08:00")).toBe("2026-11-14 03.00");
-    expect(label("2026-11-14T23:59:00+08:00")).toBe("2026-11-14 21.00");
-    expect(label("2026-11-15T01:00:00+08:00")).toBe("2026-11-15 00.00");
+  it("offers AI sampling only at Acid Plant, from 14 Nov on, in its own folder", () => {
+    expect(hasAiTrack("Acid Plant")).toBe(true);
+    expect(hasAiTrack("Chloride Plant")).toBe(false);
+    expect(trackHasSessions("Acid Plant", "ai", "2026-11-13")).toBe(false);
+    expect(trackHasSessions("Acid Plant", "ai", "2026-11-14")).toBe(true);
+    expect(trackHasSessions("Chloride Plant", "ai", "2026-11-14")).toBe(false);
+    expect(trackHasSessions("Chloride Plant", "regular", "2026-11-14")).toBe(true);
+    expect(trackHasSessions("Acid Plant", "trial", "2026-11-14")).toBe(false);
+    expect(trackFolder(plant, "ai")).toBe("Acid Plant AI");
+    expect(trackFolder(plant, "regular")).toBe("Acid Plant");
+    expect(parseCaptureTrack("ai")).toBe("ai");
+    expect(parseCaptureTrack("trial")).toBe("trial");
+    expect(parseCaptureTrack(undefined)).toBe("regular");
+    expect(parseCaptureTrack("something")).toBe("regular");
+  });
+  it("opens one session per track at the same moment", () => {
+    expect(label("regular", "2026-11-14T17:20:00+08:00")).toBe("2026-11-14 17.00");
+    expect(label("ai", "2026-11-14T17:20:00+08:00")).toBe("2026-11-14 15.00");
+    expect(label("regular", "2026-11-15T00:30:00+08:00")).toBe("2026-11-14 23.00");
+    expect(label("ai", "2026-11-15T00:30:00+08:00")).toBe("2026-11-15 00.00");
+    expect(label("ai", "2026-11-15T23:59:00+08:00")).toBe("2026-11-15 21.00");
     expect(() =>
-      validateCaptureContext(versions, plant, at("2026-11-14T02:10:00+08:00"), {
+      validateCaptureContext(
+        versionsForTrack(versions, plant, "ai"),
+        plant,
+        at("2026-11-14T17:20:00+08:00"),
+        { sessionDate: "2026-11-14", captureSession: "17.00" },
+      ),
+    ).toThrow(/INVALID_SESSION/);
+    expect(() =>
+      validateCaptureContext(versions, plant, at("2026-11-14T17:20:00+08:00"), {
         sessionDate: "2026-11-14",
-        captureSession: "02.00",
+        captureSession: "15.00",
       }),
     ).toThrow(/INVALID_SESSION/);
-    // A missed 23.00 of 13 Nov can still be recovered the next day.
-    expect(
-      validateCaptureContext(versions, plant, at("2026-11-14T08:00:00+08:00"), {
-        sessionDate: "2026-11-13",
-        captureSession: "23.00",
-        recovery: true,
-      }).label,
-    ).toBe("23.00");
   });
-  it("switches on the day it was asked for: 16:50 WITA on 14 Nov is in 15.00, not 14.00", () => {
-    expect(label("2026-11-14T16:50:00+08:00")).toBe("2026-11-14 15.00");
-    const open = activeScheduledContext(versions, plant, at("2026-11-14T16:50:00+08:00"))!;
-    expect(new Date(open.endsAt).toISOString()).toBe("2026-11-14T10:00:00.000Z"); // 18:00 WITA
-    expect(() =>
-      validateCaptureContext(versions, plant, at("2026-11-14T16:50:00+08:00"), {
-        sessionDate: "2026-11-14",
-        captureSession: "14.00",
-      }),
-    ).toThrow(/INVALID_SESSION/);
-  });
-  it("counts 8 sessions x 2 slots on the changeover day", () => {
-    const day = buildSessionCoverage({
+  it("counts 8 sessions x 2 slots on each track", () => {
+    const routine = buildSessionCoverage({
       date: "2026-11-14",
       plants: [plant],
       versions,
       records: [],
     });
-    expect(day.summary.expected).toBe(16);
-    expect(day.plants[0].sessions.map((s) => s.session)).toEqual([
+    const ai = buildSessionCoverage({
+      date: "2026-11-14",
+      plants: [plant],
+      versions: [aiSchedule(plant)],
+      records: [],
+    });
+    expect(routine.summary.expected).toBe(16);
+    expect(ai.summary.expected).toBe(16);
+    expect(routine.plants[0].sessions.map((s) => s.session)).toEqual([
+      "02.00",
+      "05.00",
+      "08.00",
+      "11.00",
+      "14.00",
+      "17.00",
+      "20.00",
+      "23.00",
+    ]);
+    expect(ai.plants[0].sessions.map((s) => s.session)).toEqual([
       "00.00",
       "03.00",
       "06.00",

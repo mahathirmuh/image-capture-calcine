@@ -683,3 +683,59 @@ The production schedule, fetched read-only, was also run through the new rule:
 - The read-only `/sessions` for 14 Nov before the switch listed 10 captured slots (02.00-14.00).
 
 Not covered: the Settings and Capture pages in a browser.
+
+## Post-M5 — Two Acid Plant schedules: Routine and AI sampling (2026-11-14)
+
+Owner request: "Sampling Rutin … dan Sampling AI … buatkan 2 jadwal gini … kerjakan sekarang". Sources updated:
+
+- docs/flexible-schedules.md (section rewritten)
+- functional specification (new section)
+- docs/openapi.yaml, reviewed and updated:
+  - `track` gains `ai` on `/sessions` and `/camera/capture`
+  - `CaptureRecord.captureTrack` gains `ai`
+  - `/schedules` describes the AI schedule and the withdrawn version
+  - additive only; no schema removed
+
+Operator-only scope is unchanged.
+
+This supersedes the same day's two attempts that *replaced* the Acid Plant hours with the AI hours: first from 16 Nov, then from 14 Nov (`fixed-Acid Plant-2026-11-14`). Both were deployed by the owner. That version is withdrawn, so routine sampling is 02.00 … 23.00 again for every date.
+
+- [x] Shared schedule code:
+  - track `ai`, Acid Plant only, from 2026-11-14, sessions 00.00 … 21.00, 180-minute window
+  - folder `Acid Plant AI`
+  - `parseCaptureTrack` replaces the two-way `trial ? trial : regular` mapping
+- [x] Server:
+  - capture validation per track (AI refused for other plants, for dates before 14 Nov, and for routine hours)
+  - the receipt carries the track, and finalize files the photo into the track's folder
+  - `/sessions?track=ai`
+  - registry, ZIP and folder sync read `ai`
+- [x] Web:
+  - `Sampling Rutin` / `Sampling AI` tabs on `/capture` with an AI folder note; browser-folder fallback separated too
+  - Gallery `AI` tag and filter
+  - Settings note lists both schedules
+- [x] Mobile, version 1.6.0 / versionCode 8:
+  - `TrackTabs` on Today Sessions and direct Capture
+  - the track travels with a picked session and the capture request
+  - `AI` tag in the Capture header; latest result matched per track
+- [x] APK `CaptureCalcine-1.6.0-debug.apk` delivered to the owner, built with the public server address as for 1.5.1. SHA256 `C42EDB56C9D39CC9024BD0914A0685246B43A43CD420320AC5514AEC840061E0`.
+- [ ] Deploy the server, then install APK 1.6.0 on the operators' phones.
+- [ ] On a phone and on the web: one capture per tab. The AI photo should land in `Acid Plant AI/`, and each tab's Today Sessions should count only its own photo.
+- [ ] Leftover: photos taken on 14 Nov between the replaced-schedule deploy and this change are routine records with AI-hour labels (e.g. `15.00`), not counted on either track. Nothing was moved; the owner decides whether to retake them.
+
+Verification: 55 suites / 512 tests pass. The tests replaced the changeover tests with two-track tests:
+- each track's hours
+- AI only at Acid Plant from 14 Nov, with its own folder
+- one open session per track at 17:20 and 00:30
+- 16 slots per track per day
+- server: AI accepted on its own hours, refused for routine hours, Chloride, and 13 Nov recovery
+- REST: an AI capture filed in `Acid Plant AI/2026/11/14/15.00 Train 1.jpg` with `captureTrack: ai`, and the same hour refused on the routine track before the camera; `/sessions?track=ai` empty for 13 Nov without a registry read
+- folder lists now include `Acid Plant AI`
+
+Further checks:
+- Root TypeScript keeps its 54 baseline errors.
+- Mobile `tsc -b` passes, and ESLint passes on the changed files.
+- Prettier passes; the only differences are CRLF line endings in the working copy.
+- The production web build passes, and so does the APK build (Gradle BUILD SUCCESSFUL, versionName 1.6.0).
+- The APK bundle carries the public address, the production API key (fingerprint match) and the new tab texts.
+
+Not covered: the tabs in a browser or on the emulator with a signed-in account, and a real capture.

@@ -104,9 +104,10 @@ describe("share file filters", () => {
     expect(isShareNoiseFile("02.00 Train 1.jpg")).toBe(false);
   });
 
-  it("lists the trial folder only for plants that have a trial track", () => {
+  it("lists the AI and trial folders only for plants that have those tracks", () => {
     expect(sharePlantFolders().map((entry) => entry.folder)).toEqual([
       "Acid Plant",
+      "Acid Plant AI",
       "Acid Plant Trial",
       "Chloride Plant",
       "Pyrite Plant",

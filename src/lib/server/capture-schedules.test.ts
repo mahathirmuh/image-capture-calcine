@@ -115,22 +115,15 @@ it("keeps old Acid Plant history but applies the fixed 3-hour schedule from 7 Oc
   );
   const { scheduleForDate, scheduleHours } = await import("../capture-schedule");
   const { versions } = await readScheduleSnapshot();
-  expect(versions.map((v) => v.id)).toEqual([
-    "dua-jam",
-    "fixed-Acid Plant",
-    "fixed-Acid Plant-2026-11-14",
-  ]);
+  expect(versions.map((v) => v.id)).toEqual(["dua-jam", "fixed-Acid Plant"]);
   expect(scheduleHours(scheduleForDate(versions, "Acid Plant", "2026-10-06"))).toEqual([
     0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22,
   ]);
-  for (const date of ["2026-10-07", "2026-10-09", "2026-11-13"]) {
+  // Routine sampling keeps 02.00 ... 23.00, also on and after 14 Nov 2026 when
+  // AI sampling started beside it.
+  for (const date of ["2026-10-07", "2026-10-09", "2026-11-14", "2027-01-01"]) {
     const schedule = scheduleForDate(versions, "Acid Plant", date);
     expect(scheduleHours(schedule)).toEqual([2, 5, 8, 11, 14, 17, 20, 23]);
-    expect(schedule.windowMinutes).toBe(180);
-  }
-  for (const date of ["2026-11-14", "2027-01-01"]) {
-    const schedule = scheduleForDate(versions, "Acid Plant", date);
-    expect(scheduleHours(schedule)).toEqual([0, 3, 6, 9, 12, 15, 18, 21]);
     expect(schedule.windowMinutes).toBe(180);
   }
 });
@@ -145,12 +138,41 @@ it("refuses the removed 2-hour trial track, also where its hour matches a 3-hour
     label: "08.00",
   });
 });
+it("accepts AI sampling for Acid Plant on its own hours, from 14 Nov 2026 on", async () => {
+  // 17:20 WITA on 14 Nov: routine is in 17.00, AI is in 15.00.
+  vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-11-14T17:20:00+08:00"));
+  await expect(checkScheduledCapture("Acid Plant", undefined, "ai")).resolves.toMatchObject({
+    date: "2026-11-14",
+    label: "15.00",
+  });
+  await expect(checkScheduledCapture("Acid Plant")).resolves.toMatchObject({ label: "17.00" });
+  const ai = { sessionDate: "2026-11-14", captureSession: "15.00" };
+  await expect(checkScheduledCapture("Acid Plant", ai, "ai")).resolves.toMatchObject({
+    label: "15.00",
+  });
+  // A routine hour is not an AI session, and the reverse.
+  await expect(
+    checkScheduledCapture("Acid Plant", { ...ai, captureSession: "14.00" }, "ai"),
+  ).rejects.toThrow("INVALID_SESSION");
+  await expect(checkScheduledCapture("Acid Plant", ai)).rejects.toThrow("INVALID_SESSION");
+  await expect(checkScheduledCapture("Chloride Plant", undefined, "ai")).rejects.toThrow(
+    "Sampling AI tidak tersedia",
+  );
+  // There were no AI sessions before 14 Nov, not even for a late recovery.
+  vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-11-14T08:00:00+08:00"));
+  await expect(
+    checkScheduledCapture(
+      "Acid Plant",
+      { sessionDate: "2026-11-13", captureSession: "23.00", recovery: true },
+      "ai",
+    ),
+  ).rejects.toThrow("Sampling AI belum berjalan");
+});
 it("adds the fixed schedule even before any schedule was ever saved", async () => {
   const { versions } = await readScheduleSnapshot();
   expect(versions.filter((v) => v.plant === "Acid Plant").map((v) => v.id)).toEqual([
     "default-Acid Plant",
     "fixed-Acid Plant",
-    "fixed-Acid Plant-2026-11-14",
   ]);
   expect(versions.filter((v) => v.plant === "Chloride Plant").map((v) => v.id)).toEqual([
     "default-Chloride Plant",

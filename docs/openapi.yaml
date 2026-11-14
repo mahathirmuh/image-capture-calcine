@@ -597,12 +597,17 @@ paths:
 
         Acid Plant berjadwal TETAP sejak 2026-10-07: respons memuat
         versi `fixed-Acid Plant` (setiap 3 jam mulai 02:00, jendela 180 menit, berlaku
-        2026-10-07) dan `fixed-Acid Plant-2026-11-14` (setiap 3 jam mulai 00:00 -- 00.00, 03.00,
-        ..., 21.00 -- jendela 180 menit, berlaku 2026-11-14). Keduanya menggantikan versi tersimpan
-        mana pun untuk tanggal 2026-10-07 dan sesudahnya; versi yang berlaku untuk suatu tanggal
-        tetap yang `effectiveDate`-nya terbaru dan tidak melewati tanggal itu. Versi tersimpan
-        sebelum 2026-10-07 tetap ada sebagai riwayat. Jadwal plant ini tidak bisa diubah dari
-        Settings.
+        2026-10-07) yang menggantikan versi tersimpan mana pun untuk tanggal itu dan sesudahnya.
+        Versi tersimpan sebelum tanggal itu tetap ada sebagai riwayat. Jadwal plant ini tidak bisa
+        diubah dari Settings. Ini jadwal **Sampling Rutin** (jalur `regular`).
+
+        Sejak 2026-11-14 Acid Plant juga menjalankan **Sampling AI** (jalur `ai`): jadwal tetap
+        setiap 3 jam mulai 00:00 (00.00, 03.00, ..., 21.00), jendela 180 menit, Asia/Makassar.
+        Jadwal ini tertanam di kode bersama (`aiSchedule` di `src/lib/capture-schedule.ts`) dan
+        **tidak** muncul di `versions`; klien menghitung sesinya sendiri dari kode yang sama, dan
+        server memvalidasinya di `POST /camera/capture` dengan `track: ai`. (Pada 2026-11-14 jam
+        AI ini sempat beberapa jam menggantikan jadwal Rutin sebagai versi
+        `fixed-Acid Plant-2026-11-14`; versi itu sudah dicabut.)
       responses:
         "200":
           description: Snapshot konfigurasi dan waktu server.
@@ -634,9 +639,10 @@ paths:
         **yang terbaru**: capture ulang menimpa berkas di share, jadi tulisan
         terakhirlah yang menggambarkan berkas yang benar-benar ada di sana.
 
-        Hanya jalur reguler yang dihitung. Capture ber-`captureTrack: trial`
-        (arsip sesi per 2 jam, yang dihapus 2026-11-13) disisihkan, karena
-        label jamnya bisa sama dengan sesi reguler.
+        Setiap jalur hanya dihitung dari fotonya sendiri: `track=regular`
+        (bawaan) hanya record `captureTrack: regular`, `track=ai` hanya record
+        `captureTrack: ai`. Capture ber-`captureTrack: trial` (arsip sesi per
+        2 jam, yang dihapus 2026-11-13) tidak pernah dihitung.
       parameters:
         - name: date
           in: query
@@ -649,11 +655,14 @@ paths:
         - name: track
           in: query
           description: |
-            Jalur jadwal. Bawaan `regular`. Sesi trial per 2 jam dihapus
-            2026-11-13: `trial` masih diterima supaya tab trial di APK
-            1.2.0-1.4.0 tidak berubah jadi galat, tetapi selalu dijawab tanpa
-            plant (`plants: []`, ringkasan nol) dan tanpa membaca registry.
-          schema: { type: string, enum: [regular, trial], default: regular }
+            Jalur jadwal. Bawaan `regular` (Sampling Rutin). `ai` (Sampling AI)
+            hanya menjawab plant yang menjalankannya (Acid Plant) dan tanggal
+            sejak 2026-11-14; selain itu `plants: []`, ringkasan nol, tanpa
+            membaca registry. Sesi trial per 2 jam dihapus 2026-11-13: `trial`
+            masih diterima supaya tab trial di APK 1.2.0-1.4.0 tidak berubah
+            jadi galat, tetapi selalu dijawab tanpa plant. Nilai lain `400
+            INVALID_PARAM`.
+          schema: { type: string, enum: [regular, ai, trial], default: regular }
       responses:
         "200":
           description: Cakupan sesi. Jawaban memuat `track` yang dipakai.
@@ -1176,16 +1185,19 @@ paths:
                 captureSession: { $ref: "#/components/schemas/SessionLabel" }
                 track:
                   type: string
-                  enum: [regular, trial]
+                  enum: [regular, ai, trial]
                   default: regular
                   description: |
                     Jalur jadwal untuk validasi jendela sesi; ikut ditandatangani
-                    di `receipt`. Sejak 2026-11-13 hanya `regular`: sesi trial per
-                    2 jam sudah dihapus, dan `trial` ditolak `409
+                    di `receipt`, dan menentukan folder saat finalize.
+                    `regular` = Sampling Rutin (folder `<plant>`). `ai` =
+                    Sampling AI, hanya Acid Plant sejak 2026-11-14, jam 00.00,
+                    03.00, ..., 21.00 (folder `Acid Plant AI`); sesi di luar jam
+                    itu, plant lain, atau tanggal sebelumnya ditolak `409
                     CAPTURE_SCHEDULE_REJECTED` (pesan berawalan `INVALID_SESSION:`)
-                    sebelum rana jatuh. Receipt `trial` yang terbit sebelum
-                    tanggal itu tetap disimpan ke folder `Acid Plant Trial` saat
-                    finalize.
+                    sebelum rana jatuh. `trial` (sesi per 2 jam, dihapus
+                    2026-11-13) selalu ditolak; receipt `trial` yang terbit
+                    sebelum tanggal itu tetap disimpan ke folder `Acid Plant Trial`.
                 recovery:
                   {
                     type: boolean,
@@ -1633,14 +1645,16 @@ components:
             kelalaian, dan halaman Gallery pun menampilkannya sebagai "—".
         captureTrack:
           type: string
-          enum: [regular, trial]
+          enum: [regular, ai, trial]
           description: |
-            Jalur jadwal. `trial` adalah sesi Acid Plant per 2 jam (00.00,
-            02.00, ...) yang disimpan di folder `Acid Plant Trial`; sesi ini
+            Jalur jadwal. `regular` = Sampling Rutin. `ai` = Sampling AI
+            (Acid Plant sejak 2026-11-14, folder `Acid Plant AI`), dihitung
+            hanya di `/sessions?track=ai`. `trial` adalah sesi Acid Plant per 2
+            jam (00.00, 02.00, ...) di folder `Acid Plant Trial`; sesi ini
             dihapus 2026-11-13, jadi record trial hanyalah arsip dari sebelum
-            tanggal itu. Record trial tetap ber-`plant` Acid Plant, tetapi
-            **tidak** dihitung di `/sessions`. Record lama tanpa kunci ini
-            dibaca sebagai `regular`.
+            tanggal itu dan tidak dihitung di `/sessions`. Semua record ini
+            tetap ber-`plant` Acid Plant. Record lama tanpa kunci ini dibaca
+            sebagai `regular`.
         capturedBy:
           type: string
           nullable: true

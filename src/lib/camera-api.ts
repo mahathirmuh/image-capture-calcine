@@ -211,10 +211,11 @@ export const triggerCapture = createServerFn({ method: "POST" })
     sessionRefSchema.extend({
       sessionDate: z.string().optional(),
       captureSession: z.string().optional(),
-      // Jalur jadwal. Halaman Capture tidak lagi mengirimnya; "trial" tetap
-      // dikenali supaya tab yang dibuka sebelum jalur trial dihapus ditolak
-      // checkScheduledCapture, bukan diam-diam dipotret sebagai sesi reguler.
-      track: z.enum(["regular", "trial"]).optional(),
+      // Jalur jadwal: "regular" (Sampling Rutin) atau "ai" (Sampling AI).
+      // "trial" tetap dikenali supaya tab yang dibuka sebelum jalur trial
+      // dihapus ditolak checkScheduledCapture, bukan diam-diam dipotret
+      // sebagai sesi reguler.
+      track: z.enum(["regular", "trial", "ai"]).optional(),
     }),
   )
   .handler(async ({ data }): Promise<ApiSuccess<{ job: CaptureJob }> | ApiFailure> => {

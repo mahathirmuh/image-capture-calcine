@@ -69,6 +69,7 @@ describe("listShareFiles", () => {
     const listing = await listShareFiles(root, "2026-10-01", "2026-10-06");
     expect(listing.folders.map((entry) => [entry.folder, entry.found])).toEqual([
       ["Acid Plant", true],
+      ["Acid Plant AI", false],
       ["Acid Plant Trial", true],
       ["Chloride Plant", false],
       ["Pyrite Plant", false],

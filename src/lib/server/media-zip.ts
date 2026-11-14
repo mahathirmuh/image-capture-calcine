@@ -16,7 +16,7 @@
 import sql from "mssql";
 
 import { getCardDbPool, getCardDbSchema, isCardDbConfigured } from "../carddb";
-import type { CaptureTrack } from "../capture-schedule";
+import { parseCaptureTrack, type CaptureTrack } from "../capture-schedule";
 import { getServerEnv } from "../env";
 import {
   ZipStoreWriter,
@@ -127,7 +127,7 @@ function mapZipRow(row: Record<string, unknown>): ZipRecord {
     plant:
       (typeof row.meta_plant === "string" ? row.meta_plant : null) ??
       (typeof row.location_plant === "string" ? row.location_plant : null),
-    track: row.capture_track === "trial" ? "trial" : "regular",
+    track: parseCaptureTrack(row.capture_track),
     fileSizeBytes: row.file_size_bytes == null ? null : Number(row.file_size_bytes),
     servable:
       filePath !== "" &&
