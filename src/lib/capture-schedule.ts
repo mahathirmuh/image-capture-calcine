@@ -80,32 +80,54 @@ export function hasTrialTrack(plant: string): boolean {
   return TRIAL_PLANTS.includes(plant);
 }
 /**
- * Sejak tanggal ini Acid Plant memakai jadwal TETAP: per 3 jam (02.00, 05.00,
- * 08.00, 11.00, 14.00, 17.00, 20.00, 23.00), jendela 180 menit. Keputusan
- * pemilik pada 7 Okt 2026, dan tetap berlaku setelah jalur trial dihapus.
+ * Sejak tanggal ini Acid Plant memakai jadwal TETAP per 3 jam dengan jendela
+ * 180 menit, yang tidak diatur dari Settings. Jamnya berubah menurut
+ * FIXED_SCHEDULE_CHANGES di bawah.
  *
  * Alasannya: jadwal yang diubah dari Settings menjadi per 2 jam (pernah
  * terjadi, berlaku 6 Okt) menggandakan sesi trial yang waktu itu masih
  * berjalan. Versi per 2 jam itu masih tersimpan di versions.json sebagai
  * riwayat; tanpa jadwal tetap ini ia akan berlaku lagi.
  *
- * Riwayat SEBELUM tanggal ini dibiarkan apa adanya: foto yang sudah diambil
+ * Riwayat SEBELUM tiap tanggal dibiarkan apa adanya: foto yang sudah diambil
  * menurut jadwal lama tetap dinilai dengan jadwal lama.
  */
 export const FIXED_REGULAR_SINCE = "2026-10-07";
 const FIXED_SCHEDULE_PLANTS: readonly string[] = ["Acid Plant"];
 
+/**
+ * Perubahan jam jadwal tetap, urut tanggal; tiap baris berlaku sampai baris
+ * berikutnya.
+ * - 7 Okt 2026: 02.00, 05.00, 08.00, 11.00, 14.00, 17.00, 20.00, 23.00
+ *   (keputusan pemilik; tetap berlaku setelah jalur trial dihapus 13 Nov).
+ * - 16 Nov 2026: 00.00, 03.00, 06.00, 09.00, 12.00, 15.00, 18.00, 21.00
+ *   (slide "Interval 3 Hours Sampling" tertanggal 11 Nov 2026). Slide itu
+ *   menyebut masa trial 16 Nov-31 Des 2026; pemilik memutuskan jam ini tetap
+ *   berlaku sesudahnya sampai diubah lagi.
+ * Baris yang sudah lewat jangan diubah atau dihapus: riwayat sesi dihitung
+ * ulang dari baris ini.
+ */
+const FIXED_SCHEDULE_CHANGES: readonly { effectiveDate: string; startHour: number }[] = [
+  { effectiveDate: FIXED_REGULAR_SINCE, startHour: 2 },
+  { effectiveDate: "2026-11-16", startHour: 0 },
+];
+
 export function hasFixedRegularSchedule(plant: string): boolean {
   return FIXED_SCHEDULE_PLANTS.includes(plant);
 }
 
-export function fixedRegularSchedule(plant: string): ScheduleVersion {
-  return {
+/**
+ * Versi jadwal tetap sebuah plant, satu per baris FIXED_SCHEDULE_CHANGES.
+ * Versi pertama tetap ber-id "fixed-<plant>" seperti sebelum ada perubahan jam.
+ */
+export function fixedRegularSchedules(plant: string): ScheduleVersion[] {
+  return FIXED_SCHEDULE_CHANGES.map(({ effectiveDate, startHour }, index) => ({
     ...defaultSchedule(plant),
-    id: `fixed-${plant}`,
-    effectiveDate: FIXED_REGULAR_SINCE,
-    createdAt: `${FIXED_REGULAR_SINCE}T00:00:00.000Z`,
-  };
+    id: index === 0 ? `fixed-${plant}` : `fixed-${plant}-${effectiveDate}`,
+    effectiveDate,
+    startHour,
+    createdAt: `${effectiveDate}T00:00:00.000Z`,
+  }));
 }
 
 /**
@@ -125,10 +147,10 @@ export function applyFixedRegularSchedules(
         !(
           hasFixedRegularSchedule(version.plant) &&
           (version.effectiveDate >= FIXED_REGULAR_SINCE ||
-            version.id === fixedRegularSchedule(version.plant).id)
+            fixedRegularSchedules(version.plant).some((fixed) => fixed.id === version.id))
         ),
     ),
-    ...fixedPlants.map(fixedRegularSchedule),
+    ...fixedPlants.flatMap(fixedRegularSchedules),
   ];
 }
 

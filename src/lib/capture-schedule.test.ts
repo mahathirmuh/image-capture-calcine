@@ -15,6 +15,7 @@ import {
   type ScheduleVersion,
 } from "./capture-schedule";
 import { buildSessionCoverage } from "./session-coverage";
+import { PLANTS } from "./locations";
 const plant = "Acid Plant";
 const legacy = defaultSchedule(plant);
 const version: ScheduleVersion = {
@@ -154,5 +155,71 @@ describe("after the 2-hour trial sessions were removed (13 Nov 2026)", () => {
         captureSession: "04.00",
       }),
     ).toThrow(/INVALID_SESSION/);
+  });
+});
+describe("Acid Plant hours move to 00.00, 03.00, ... 21.00 on 16 Nov 2026", () => {
+  const at = (iso: string) => Date.parse(iso);
+  const versions = applyFixedRegularSchedules([legacy], [plant]);
+  const label = (iso: string) => {
+    const context = activeScheduledContext(versions, plant, at(iso));
+    return context && `${context.date} ${context.label}`;
+  };
+  it("keeps the old hours up to 15 Nov and uses the new hours from 16 Nov on", () => {
+    for (const date of ["2026-10-07", "2026-11-14", "2026-11-15"])
+      expect(scheduleHours(scheduleForDate(versions, plant, date))).toEqual([
+        2, 5, 8, 11, 14, 17, 20, 23,
+      ]);
+    for (const date of ["2026-11-16", "2026-12-31", "2027-01-01"]) {
+      const schedule = scheduleForDate(versions, plant, date);
+      expect(scheduleHours(schedule)).toEqual([0, 3, 6, 9, 12, 15, 18, 21]);
+      expect(schedule.windowMinutes).toBe(180);
+      expect(schedule.timezone).toBe("Asia/Makassar");
+    }
+    // Other plants keep the built-in 02.00 schedule.
+    const chloride = applyFixedRegularSchedules([defaultSchedule("Chloride Plant")], PLANTS);
+    expect(scheduleHours(scheduleForDate(chloride, "Chloride Plant", "2026-11-16"))).toEqual([
+      2, 5, 8, 11, 14, 17, 20, 23,
+    ]);
+  });
+  it("hands over at midnight WITA without a gap or a 02.00 session", () => {
+    expect(label("2026-11-15T23:30:00+08:00")).toBe("2026-11-15 23.00");
+    expect(label("2026-11-16T00:00:00+08:00")).toBe("2026-11-16 00.00");
+    expect(label("2026-11-16T02:30:00+08:00")).toBe("2026-11-16 00.00");
+    expect(label("2026-11-16T03:00:00+08:00")).toBe("2026-11-16 03.00");
+    expect(label("2026-11-16T23:59:00+08:00")).toBe("2026-11-16 21.00");
+    expect(label("2026-11-17T01:00:00+08:00")).toBe("2026-11-17 00.00");
+    expect(() =>
+      validateCaptureContext(versions, plant, at("2026-11-16T02:10:00+08:00"), {
+        sessionDate: "2026-11-16",
+        captureSession: "02.00",
+      }),
+    ).toThrow(/INVALID_SESSION/);
+    // A missed 23.00 of 15 Nov can still be recovered the next day.
+    expect(
+      validateCaptureContext(versions, plant, at("2026-11-16T08:00:00+08:00"), {
+        sessionDate: "2026-11-15",
+        captureSession: "23.00",
+        recovery: true,
+      }).label,
+    ).toBe("23.00");
+  });
+  it("counts 8 sessions x 2 slots on the changeover day", () => {
+    const day = buildSessionCoverage({
+      date: "2026-11-16",
+      plants: [plant],
+      versions,
+      records: [],
+    });
+    expect(day.summary.expected).toBe(16);
+    expect(day.plants[0].sessions.map((s) => s.session)).toEqual([
+      "00.00",
+      "03.00",
+      "06.00",
+      "09.00",
+      "12.00",
+      "15.00",
+      "18.00",
+      "21.00",
+    ]);
   });
 });

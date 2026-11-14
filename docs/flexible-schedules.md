@@ -100,3 +100,26 @@ production data: Today Sessions lists 02:00-23:00 with no tabs (request `/sessio
 the list opens without a trial label, Settings shows 1.5.0, Chinese shows no trial wording, no crash
 or console error. Not covered: a real sign-in and capture on a phone, and the old-APK behaviour
 against a deployed server (covered by the REST tests only). Not deployed at the time of writing.
+
+## Acid Plant hours from 2026-11-16
+
+Owner request (2026-11-14, "waktunya diubah"), based on the slide "Interval 3 Hours Sampling"
+dated 11 Nov 2026. That slide covers the trial window 16 Nov-31 Dec 2026 with 8 samplings a day.
+Its day shift samples at 09:00, 12:00, 15:00 and 18:00, and its night shift at 21:00, 00:00, 03:00
+and 06:00.
+
+- Acid Plant only. Chloride, Pyrite and Copper Cathode keep their own schedules (built-in 02.00
+  every 3 hours unless an admin saves a version in Settings).
+- From 2026-11-16 the fixed Acid Plant schedule is 00.00, 03.00, 06.00, 09.00, 12.00, 15.00, 18.00,
+  21.00, still every 3 hours with a 180-minute window in Asia/Makassar. The owner decided it stays
+  after 31 Dec 2026 until changed again.
+- It is a second fixed version, `fixed-Acid Plant-2026-11-16`, next to `fixed-Acid Plant`
+  (2026-10-07). Dates up to 15 Nov keep the 02.00 hours, so history and coverage are unchanged.
+- Changeover at midnight WITA, 15/16 Nov: the 23.00 session of 15 Nov is open until 00:00, then the
+  00.00 session of 16 Nov takes over. A missed 23.00 can still be captured the next day with
+  recovery, as for any late session. There is no 02.00 session from 16 Nov on.
+- Web capture, server validation, `/schedules`, `/sessions` and the mobile app read the same
+  snapshot, so no new APK is needed. The Settings note for Acid Plant names both hour sets.
+- The legacy `sessions` list of `GET /plants` keeps the built-in 02.00 hours. It is documented as
+  legacy, and consumers use `/schedules`.
+- The server must be deployed before 2026-11-16 00:00 WITA. Otherwise the old hours continue.

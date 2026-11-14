@@ -94,8 +94,9 @@ info:
 
     - `capturedAt` adalah **waktu sebenarnya** tombol Capture ditekan,
       dikembalikan sebagai ISO 8601 UTC.
-    - `captureSession` adalah **sesi jadwal** yang dituju (`"02.00"` ...
-      `"23.00"`), dan tanggal sesinya bisa berbeda dari tanggal `capturedAt`:
+    - `captureSession` adalah **sesi jadwal** yang dituju (mis. `"02.00"` ...
+      `"23.00"`; jamnya mengikuti jadwal plant pada tanggal itu, lihat
+      `GET /schedules`), dan tanggal sesinya bisa berbeda dari tanggal `capturedAt`:
       sesi 23.00 sering dikerjakan setelah tengah malam, dan tetap milik hari
       sebelumnya.
 
@@ -596,9 +597,12 @@ paths:
 
         Acid Plant berjadwal TETAP sejak 2026-10-07: respons memuat
         versi `fixed-Acid Plant` (setiap 3 jam mulai 02:00, jendela 180 menit, berlaku
-        2026-10-07) yang menggantikan versi tersimpan mana pun untuk tanggal itu dan sesudahnya.
-        Versi tersimpan sebelum tanggal itu tetap ada sebagai riwayat. Jadwal plant ini tidak bisa
-        diubah dari Settings.
+        2026-10-07) dan `fixed-Acid Plant-2026-11-16` (setiap 3 jam mulai 00:00 -- 00.00, 03.00,
+        ..., 21.00 -- jendela 180 menit, berlaku 2026-11-16). Keduanya menggantikan versi tersimpan
+        mana pun untuk tanggal 2026-10-07 dan sesudahnya; versi yang berlaku untuk suatu tanggal
+        tetap yang `effectiveDate`-nya terbaru dan tidak melewati tanggal itu. Versi tersimpan
+        sebelum 2026-10-07 tetap ada sebagai riwayat. Jadwal plant ini tidak bisa diubah dari
+        Settings.
       responses:
         "200":
           description: Snapshot konfigurasi dan waktu server.
