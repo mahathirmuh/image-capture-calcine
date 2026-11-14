@@ -135,8 +135,10 @@ Explicit account scope `ALL` allows selecting a scheduled session from any plant
 - Nothing is deleted: trial photos taken until 16 Oct 2026 stay in `Acid Plant Trial/` on the share, in History and in the web Gallery.
 - APK 1.5.0 (versionCode 6). Older APKs keep working for regular sessions; after the server update their trial tab shows no sessions, and a capture started from it is refused before the camera fires.
 
-## Acid Plant hours from 2026-11-16
+## Acid Plant hours from 2026-11-14
 
-- From 16 Nov 2026 the Acid Plant sessions are 00:00, 03:00, 06:00, 09:00, 12:00, 15:00, 18:00, 21:00. Each session still lasts 3 hours, and the times stay after the 16 Nov-31 Dec trial window. Dates up to 15 Nov keep 02:00 … 23:00.
+- From 14 Nov 2026 the Acid Plant sessions are 00:00, 03:00, 06:00, 09:00, 12:00, 15:00, 18:00, 21:00. Each session still lasts 3 hours.
+- The owner asked for the change to start on the day of the request. The new hours also stay after the slide's 16 Nov-31 Dec trial window.
+- Dates up to 13 Nov keep 02:00 … 23:00. On 14 Nov, photos taken before the switch are kept but do not match the new hours.
 - Other plants are unchanged.
 - Today Sessions and direct Capture take the hours from the server schedule, so no app change or new APK is needed (APK 1.5.0 and 1.5.1 both follow it).

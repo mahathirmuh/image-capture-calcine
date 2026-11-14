@@ -118,17 +118,17 @@ it("keeps old Acid Plant history but applies the fixed 3-hour schedule from 7 Oc
   expect(versions.map((v) => v.id)).toEqual([
     "dua-jam",
     "fixed-Acid Plant",
-    "fixed-Acid Plant-2026-11-16",
+    "fixed-Acid Plant-2026-11-14",
   ]);
   expect(scheduleHours(scheduleForDate(versions, "Acid Plant", "2026-10-06"))).toEqual([
     0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22,
   ]);
-  for (const date of ["2026-10-07", "2026-10-09", "2026-11-15"]) {
+  for (const date of ["2026-10-07", "2026-10-09", "2026-11-13"]) {
     const schedule = scheduleForDate(versions, "Acid Plant", date);
     expect(scheduleHours(schedule)).toEqual([2, 5, 8, 11, 14, 17, 20, 23]);
     expect(schedule.windowMinutes).toBe(180);
   }
-  for (const date of ["2026-11-16", "2027-01-01"]) {
+  for (const date of ["2026-11-14", "2027-01-01"]) {
     const schedule = scheduleForDate(versions, "Acid Plant", date);
     expect(scheduleHours(schedule)).toEqual([0, 3, 6, 9, 12, 15, 18, 21]);
     expect(schedule.windowMinutes).toBe(180);
@@ -150,7 +150,7 @@ it("adds the fixed schedule even before any schedule was ever saved", async () =
   expect(versions.filter((v) => v.plant === "Acid Plant").map((v) => v.id)).toEqual([
     "default-Acid Plant",
     "fixed-Acid Plant",
-    "fixed-Acid Plant-2026-11-16",
+    "fixed-Acid Plant-2026-11-14",
   ]);
   expect(versions.filter((v) => v.plant === "Chloride Plant").map((v) => v.id)).toEqual([
     "default-Chloride Plant",

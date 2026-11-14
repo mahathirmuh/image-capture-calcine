@@ -101,7 +101,7 @@ the list opens without a trial label, Settings shows 1.5.0, Chinese shows no tri
 or console error. Not covered: a real sign-in and capture on a phone, and the old-APK behaviour
 against a deployed server (covered by the REST tests only). Not deployed at the time of writing.
 
-## Acid Plant hours from 2026-11-16
+## Acid Plant hours from 2026-11-14
 
 Owner request (2026-11-14, "waktunya diubah"), based on the slide "Interval 3 Hours Sampling"
 dated 11 Nov 2026. That slide covers the trial window 16 Nov-31 Dec 2026 with 8 samplings a day.
@@ -110,16 +110,24 @@ and 06:00.
 
 - Acid Plant only. Chloride, Pyrite and Copper Cathode keep their own schedules (built-in 02.00
   every 3 hours unless an admin saves a version in Settings).
-- From 2026-11-16 the fixed Acid Plant schedule is 00.00, 03.00, 06.00, 09.00, 12.00, 15.00, 18.00,
-  21.00, still every 3 hours with a 180-minute window in Asia/Makassar. The owner decided it stays
-  after 31 Dec 2026 until changed again.
-- It is a second fixed version, `fixed-Acid Plant-2026-11-16`, next to `fixed-Acid Plant`
-  (2026-10-07). Dates up to 15 Nov keep the 02.00 hours, so history and coverage are unchanged.
-- Changeover at midnight WITA, 15/16 Nov: the 23.00 session of 15 Nov is open until 00:00, then the
-  00.00 session of 16 Nov takes over. A missed 23.00 can still be captured the next day with
-  recovery, as for any late session. There is no 02.00 session from 16 Nov on.
+- The fixed Acid Plant schedule is now 00.00, 03.00, 06.00, 09.00, 12.00, 15.00, 18.00, 21.00. It is
+  still every 3 hours with a 180-minute window in Asia/Makassar. The owner decided it stays after
+  31 Dec 2026 until changed again.
+- Start date. A first version started on 16 Nov, the slide's first trial day, and was deployed. The
+  same afternoon the owner asked for it to start immediately ("ubah waktunya sesuai gambar ini").
+  The effective date is therefore 2026-11-14, the day of the request. Settings never allows that
+  for a stored version.
+- Accepted consequence: the 10 Acid Plant photos of 14 Nov taken before the switch (sessions 02.00
+  to 14.00, Train 1 and 2) keep their files, names and records. Their labels do not match the new
+  hours, so they are not counted in the 14 Nov coverage, and the 00.00 to 12.00 sessions of 14 Nov
+  show as missing. A photo whose capture was started before the deploy is still saved under its
+  signed session label, because finalize does not re-check the schedule.
+- It is a second fixed version, `fixed-Acid Plant-2026-11-14`, next to `fixed-Acid Plant`
+  (2026-10-07). Dates up to 13 Nov keep the 02.00 hours.
+- From the deploy on, the open session follows the new hours (at 16:55 WITA on 14 Nov that is 15.00
+  until 18:00). Every later midnight handover is plain: 21.00 runs until 00:00, then 00.00 starts.
+  There is no 02.00 session any more.
 - Web capture, server validation, `/schedules`, `/sessions` and the mobile app read the same
   snapshot, so no new APK is needed. The Settings note for Acid Plant names both hour sets.
 - The legacy `sessions` list of `GET /plants` keeps the built-in 02.00 hours. It is documented as
   legacy, and consumers use `/schedules`.
-- The server must be deployed before 2026-11-16 00:00 WITA. Otherwise the old hours continue.

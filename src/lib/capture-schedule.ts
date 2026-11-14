@@ -100,16 +100,19 @@ const FIXED_SCHEDULE_PLANTS: readonly string[] = ["Acid Plant"];
  * berikutnya.
  * - 7 Okt 2026: 02.00, 05.00, 08.00, 11.00, 14.00, 17.00, 20.00, 23.00
  *   (keputusan pemilik; tetap berlaku setelah jalur trial dihapus 13 Nov).
- * - 16 Nov 2026: 00.00, 03.00, 06.00, 09.00, 12.00, 15.00, 18.00, 21.00
+ * - 14 Nov 2026: 00.00, 03.00, 06.00, 09.00, 12.00, 15.00, 18.00, 21.00
  *   (slide "Interval 3 Hours Sampling" tertanggal 11 Nov 2026). Slide itu
- *   menyebut masa trial 16 Nov-31 Des 2026; pemilik memutuskan jam ini tetap
- *   berlaku sesudahnya sampai diubah lagi.
+ *   menyebut masa trial 16 Nov-31 Des 2026, tetapi pemilik meminta jam ini
+ *   berlaku SEJAK hari permintaan (14 Nov, siang) dan tetap berlaku sesudah
+ *   31 Des sampai diubah lagi. Akibat yang diterima pemilik: foto 14 Nov yang
+ *   diambil sebelum perubahan (sesi 02.00-14.00) tidak cocok dengan jam baru
+ *   dan tidak terhitung di rekap hari itu; berkas dan record-nya tetap ada.
  * Baris yang sudah lewat jangan diubah atau dihapus: riwayat sesi dihitung
  * ulang dari baris ini.
  */
 const FIXED_SCHEDULE_CHANGES: readonly { effectiveDate: string; startHour: number }[] = [
   { effectiveDate: FIXED_REGULAR_SINCE, startHour: 2 },
-  { effectiveDate: "2026-11-16", startHour: 0 },
+  { effectiveDate: "2026-11-14", startHour: 0 },
 ];
 
 export function hasFixedRegularSchedule(plant: string): boolean {

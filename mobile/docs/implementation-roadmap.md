@@ -647,30 +647,39 @@ Owner request: "build apk baru aja deh". Background is open-questions-and-challe
 
 Verification: Gradle BUILD SUCCESSFUL. APK SHA256 is `98FD64FABE8A03A8218459ED840DBC5062B882F849E4D0AD3C8B04F72667BA14`. The extracted bundle contains only the public address, and its API key matches production's by fingerprint. On the Android 15 emulator, 1.5.1 installed over 1.5.0 without uninstalling. With Private DNS forced to dns.google, the failing phones' condition, the internal hostname failed with `Failed to fetch`. A sign-in with a made-up account through 1.5.1 reached the server and got `Incorrect username or password` (one `login.failed` row). Not covered: a real account, and camera preview/capture through the public address.
 
-## Post-M5 — Acid Plant hours from 2026-11-16 (2026-11-14)
+## Post-M5 — Acid Plant hours from 2026-11-14 (2026-11-14)
 
 Owner request: "eh, tolong, waktunya diubah". The source is the slide "Interval 3 Hours Sampling" (11 Nov 2026): trial window 16 Nov-31 Dec 2026, 8 samplings a day at 09:00, 12:00, 15:00, 18:00, 21:00, 00:00, 03:00 and 06:00. The owner decided the scope: Acid Plant only, and the new hours stay after 31 Dec. Sources updated:
+
 - docs/flexible-schedules.md (new section)
 - docs/openapi.yaml: the `/schedules` description and the `captureSession` wording were reviewed and updated; the schema is unchanged
 - the functional specification (new section)
 
 Operator-only scope is unchanged. No mobile code changed, so there is no APK bump.
 
-- [x] Server/web: a second fixed Acid Plant version, `fixed-Acid Plant-2026-11-16`, with sessions 00.00, 03.00, …, 21.00 (180-minute window, Asia/Makassar). Dates up to 15 Nov keep 02.00 … 23.00. The Settings note names both sets of hours.
+- [x] Server/web: a second fixed Acid Plant version with sessions 00.00, 03.00, …, 21.00 (180-minute window, Asia/Makassar). The Settings note names both sets of hours.
+- [x] First version, effective 16 Nov (the slide's first trial day), deployed by the owner the same afternoon (`/schedules` showed `fixed-Acid Plant-2026-11-16`).
+- [x] Changed to effective **2026-11-14** (`fixed-Acid Plant-2026-11-14`) on the owner's follow-up: "ubah waktunya sesuai gambar ini loh", answered "Mulai sekarang (hari ini)". Dates up to 13 Nov keep 02.00 … 23.00.
+  - Accepted: the 10 Acid Plant photos of 14 Nov taken earlier (02.00-14.00, both trains) stay in place but are not counted in that day's coverage.
+  - Captures started before the deploy still save under their signed label.
 - [x] Mobile: nothing to change; Today Sessions and Capture follow the server schedule (APK 1.5.0 and 1.5.1).
-- [ ] Deploy the server before 2026-11-16 00:00 WITA.
-- [ ] After 16 Nov 00:00 WITA: check on a phone that Today Sessions lists 00:00 … 21:00 and that a capture is filed under the new session label.
+- [ ] Deploy the server again so the 14 Nov version replaces the 16 Nov one.
+- [ ] After the deploy, check on a phone that Today Sessions lists 00:00 … 21:00 and that a capture is filed under the new session label.
 
-Verification: 55 suites / 508 tests pass. Three tests are new:
-- the hours before and after the change, with the other plants unchanged
-- the midnight handover on 15/16 Nov: no 02.00 session, and a missed 23.00 is still recoverable the next day
-- 8 sessions × 2 slots on 16 Nov
+Verification: 55 suites / 509 tests pass. Four tests are new:
 
-Two existing fixed-schedule tests were extended. Root TypeScript keeps its 54 baseline errors. Mobile `tsc -b`, ESLint and Prettier on the changed files, and the production web build all pass.
+- the hours up to 13 Nov and from 14 Nov, with other plants unchanged
+- the midnight handover on 13/14 Nov: no 02.00 session, and a missed 23.00 is still recoverable the next day
+- 16:50 WITA on 14 Nov falls in 15.00 (open until 18:00), and 14.00 is refused
+- 8 sessions × 2 slots on 14 Nov
+
+Two existing fixed-schedule tests were extended. Root TypeScript keeps its 54 baseline errors. Mobile `tsc -b`, ESLint and Prettier on the changed files, and the production web build (first version) all pass.
 
 The production schedule, fetched read-only, was also run through the new rule:
-- Acid Plant: 02.00 … 23.00 on 2026-11-15; 00.00 … 21.00 on 2026-11-16 and 2027-01-01.
-- Other plants: 02.00 … 23.00 on all three dates.
-- Open session at 15 Nov 23:30: 23.00. At 16 Nov 00:10 and 02:30: 00.00. At 09:05: 09.00.
+
+- Acid Plant: 02.00 … 23.00 on 13 Nov; 00.00 … 21.00 on 14 Nov and on 2027-01-01.
+- Chloride Plant: 02.00 … 23.00 on 14 Nov.
+- Open session at 14 Nov 16:55: 15.00 until 18:00. At 18:05: 18.00. At 21:30: 21.00. At 15 Nov 00:10: 00.00.
+- The read-only `/sessions` for 14 Nov before the switch listed 10 captured slots (02.00-14.00).
 
 Not covered: the Settings and Capture pages in a browser.
